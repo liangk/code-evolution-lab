@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+model Repository {
+  id            String     @id @default(uuid())
+  githubUrl     String     @map("github_url")
+  name          String
+  ownerId       String     @map("owner_id")
+  lastAnalyzedAt DateTime? @map("last_analyzed_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  analyses      Analysis[]
+
+  @@map("repositories")
+}
+
+model Analysis {
+  id             String     @id @default(uuid())
+  repositoryId   String     @map("repository_id")
+  repository     Repository @relation(fields: [repositoryId], references: [id])
+  score          Int
+  totalIssues    Int        @map("total_issues")
+  criticalIssues Int        @map("critical_issues")
+  highIssues     Int        @map("high_issues")
+  mediumIssues   Int        @map("medium_issues")
+  analyzedAt     DateTime   @default(now()) @map("analyzed_at")
+  issues         Issue[]
+
+  @@map("analyses")
+}
+
+model Issue {
+  id              String     @id @default(uuid())
+  analysisId      String     @map("analysis_id")
+  analysis        Analysis   @relation(fields: [analysisId], references: [id])
+  type            String
+  severity        String
+  filePath        String     @map("file_path")
+  lineNumber      Int?       @map("line_number")
+  title           String
+  description     String?
+  codeBefore      String?    @map("code_before")
+  codeAfter       String?    @map("code_after")
+  estimatedImpact Json?      @map("estimated_impact")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  solutions       Solution[]
+
+  @@map("issues")
+}
+
+model Solution {
+  id              String   @id @default(uuid())
+  issueId         String   @map("issue_id")
+  issue           Issue    @relation(fields: [issueId], references: [id])
+  type            String
+  description     String
+  codeAfter       String   @map("code_after")
+  explanation     String?
+  estimatedImpact String?  @map("estimated_impact")
+  difficulty      String?
+  fitnessScore    Float    @map("fitness_score")
+  rank            Int
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@map("solutions")
+}

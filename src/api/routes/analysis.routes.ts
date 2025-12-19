@@ -80,12 +80,12 @@ router.post('/repository/:repoId/analyze', async (req: Request, res: Response) =
         const dbIssue = await db.createIssue(analysis.id, {
           type: result.detectorName,
           severity: issue.severity,
-          filePath: issue.location.file,
-          lineNumber: issue.location.start.line,
-          title: issue.message,
-          description: issue.suggestion,
+          filePath: issue.filePath,
+          lineNumber: issue.lineNumber,
+          title: issue.title,
+          description: issue.description,
           codeBefore: issue.codeBefore,
-          codeAfter: issue.solution || null,
+          codeAfter: issue.codeAfter || null,
           estimatedImpact: issue.estimatedImpact || {},
         });
 
@@ -121,10 +121,6 @@ router.get('/analysis/:analysisId', async (req: Request, res: Response) => {
     }
 
     const issues = await db.getIssuesByAnalysis(analysisId);
-
-    for (const issue of issues) {
-      issue.solutions = await db.getSolutionsByIssue(issue.id);
-    }
 
     res.json({
       success: true,

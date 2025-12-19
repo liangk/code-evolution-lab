@@ -17,8 +17,50 @@ export class DashboardComponent {
   analyzing = false;
   result: AnalysisResult | null = null;
   error: string | null = null;
-
+  
+  // Filtering and search
+  searchTerm = '';
+  selectedSeverity = 'all';
+  selectedDetector = 'all';
+  severityOptions = ['all', 'critical', 'high', 'medium', 'low'];
+  
   constructor(private analysisService: AnalysisService) {}
+  
+  get filteredResults() {
+    if (!this.result) return null;
+    
+    const filtered = { ...this.result };
+    filtered.results = this.result.results.map(detector => {
+      const filteredIssues = detector.issues.filter((issue: any) => {
+        const matchesSearch = !this.searchTerm || 
+          issue.description.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
+          issue.id.toLowerCase().includes(this.searchTerm.toLowerCase());
+        
+        const matchesSeverity = this.selectedSeverity === 'all' || 
+          issue.severity.toLowerCase() === this.selectedSeverity;
+        
+        const matchesDetector = this.selectedDetector === 'all' || 
+          detector.detectorName === this.selectedDetector;
+        
+        return matchesSearch && matchesSeverity && matchesDetector;
+      });
+      
+      return { ...detector, issues: filteredIssues };
+    }).filter(detector => detector.issues.length > 0);
+    
+    return filtered;
+  }
+  
+  get detectorOptions() {
+    if (!this.result) return ['all'];
+    return ['all', ...this.result.results.map(r => r.detectorName)];
+  }
+  
+  clearFilters() {
+    this.searchTerm = '';
+    this.selectedSeverity = 'all';
+    this.selectedDetector = 'all';
+  }
 
   analyzeCode() {
     if (!this.code.trim()) {

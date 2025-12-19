@@ -39,6 +39,7 @@ export interface Issue {
     queriesOptimal?: number;
     performanceGain?: string;
   };
+  solutions?: Solution[];
 }
 
 export interface AnalysisContext {
