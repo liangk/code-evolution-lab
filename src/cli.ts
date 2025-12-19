@@ -1,18 +1,22 @@
 #!/usr/bin/env node
 
-import { CodeAnalyzer } from './analyzer/code-analyzer';
+import { readFileSync } from 'fs';
 import { existsSync } from 'fs';
+import { CodeAnalyzer } from './analyzer/code-analyzer';
 
 async function main() {
   const args = process.argv.slice(2);
 
   if (args.length === 0) {
-    console.log('Usage: code-evolution-lab <file-path>');
+    console.log('Usage: code-evolution-lab <file-path> [--solutions]');
     console.log('Example: code-evolution-lab ./examples/bad-code.js');
+    console.log('Options:');
+    console.log('  --solutions    Generate solution suggestions for detected issues');
     process.exit(1);
   }
 
   const filePath = args[0];
+  const generateSolutions = args.includes('--solutions');
 
   if (!existsSync(filePath)) {
     console.error(`Error: File not found: ${filePath}`);
@@ -24,7 +28,8 @@ async function main() {
   const analyzer = new CodeAnalyzer();
 
   try {
-    const results = await analyzer.analyzeFile(filePath);
+    const sourceCode = readFileSync(filePath, 'utf-8');
+    const results = await analyzer.analyzeCode(sourceCode, filePath, generateSolutions);
 
     let totalIssues = 0;
 
@@ -46,6 +51,23 @@ async function main() {
             console.log('\nEstimated Impact:');
             Object.entries(issue.estimatedImpact).forEach(([key, value]) => {
               console.log(`  - ${key}: ${value}`);
+            });
+          }
+
+          const issueWithSolutions = issue as any;
+          if (issueWithSolutions.solutions && issueWithSolutions.solutions.length > 0) {
+            console.log('\n📋 Suggested Solutions:');
+            issueWithSolutions.solutions.slice(0, 3).forEach((solution: any, sIndex: number) => {
+              console.log(`\n  Solution ${sIndex + 1}: ${solution.type.replace(/_/g, ' ').toUpperCase()}`);
+              console.log(`  Fitness Score: ${solution.fitnessScore.toFixed(1)}/100`);
+              console.log(`  Implementation Time: ~${solution.implementationTime} minutes`);
+              console.log(`  Risk Level: ${solution.riskLevel.toUpperCase()}`);
+              console.log(`  \n  ${solution.reasoning}`);
+              
+              if (sIndex === 0) {
+                console.log('\n  Code Example:');
+                console.log('  ' + solution.code.split('\n').join('\n  '));
+              }
             });
           }
 

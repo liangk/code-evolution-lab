@@ -26,7 +26,7 @@ export class CodeParser {
     }
   }
 
-  traverse(ast: any, visitors: traverse.Visitor): void {
+  traverse(ast: any, visitors: any): void {
     traverse(ast, visitors);
   }
 

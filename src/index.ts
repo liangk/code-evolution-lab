@@ -1,5 +1,11 @@
 export { CodeParser } from './analyzer/parser';
 export { CodeAnalyzer } from './analyzer/code-analyzer';
 export { N1QueryDetector } from './detectors/n1-query-detector';
+export { InefficientLoopDetector } from './detectors/inefficient-loop-detector';
+export { MemoryLeakDetector } from './detectors/memory-leak-detector';
+export { LargePayloadDetector } from './detectors/large-payload-detector';
 export { BaseDetector } from './detectors/base-detector';
+export { BaseSolutionGenerator } from './generators/base-generator';
+export { N1SolutionGenerator } from './generators/n1-solution-generator';
+export { FitnessCalculator } from './generators/fitness-calculator';
 export * from './types';
