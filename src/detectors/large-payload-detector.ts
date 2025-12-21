@@ -34,22 +34,57 @@ export class LargePayloadDetector extends BaseDetector {
       const functionScope = path.getFunctionParent();
       let hasSelectFields = false;
       let hasLimit = false;
+      let hasPaginationWrapper = false;
+      let hasStreaming = false;
+      let dataFlowFromQuery = false;
 
       if (functionScope) {
+        const jsonArgument = path.parent.arguments?.[0];
+        
         traverse(functionScope.node, {
           ObjectProperty: (innerPath: any) => {
             if (innerPath.node.key?.name === 'attributes' || 
                 innerPath.node.key?.name === 'select') {
               hasSelectFields = true;
             }
-            if (innerPath.node.key?.name === 'limit') {
+            if (innerPath.node.key?.name === 'limit' || 
+                innerPath.node.key?.name === 'take' ||
+                innerPath.node.key?.name === 'perPage') {
               hasLimit = true;
+            }
+          },
+          CallExpression: (innerPath: any) => {
+            const methodName = innerPath.node.callee?.property?.name;
+            const functionName = innerPath.node.callee?.name;
+            
+            if (['paginate', 'withPagination', 'paginateResults'].includes(methodName) ||
+                ['paginate', 'withPagination', 'paginateResults'].includes(functionName)) {
+              hasPaginationWrapper = true;
+            }
+            
+            if (methodName === 'stream' || functionName === 'createReadStream') {
+              hasStreaming = true;
+            }
+            
+            if (['findAll', 'findMany', 'find'].includes(methodName)) {
+              if (jsonArgument && this.isDataFlowConnected(innerPath.node, jsonArgument, functionScope)) {
+                dataFlowFromQuery = true;
+              }
+            }
+          },
+          Identifier: (innerPath: any) => {
+            if (['cursor', 'nextCursor', 'prevCursor', 'pageToken'].includes(innerPath.node.name)) {
+              hasPaginationWrapper = true;
             }
           },
         }, functionScope.scope);
       }
 
-      if (!hasSelectFields || !hasLimit) {
+      if (hasStreaming || hasPaginationWrapper) {
+        return;
+      }
+
+      if (dataFlowFromQuery && (!hasSelectFields || !hasLimit)) {
         const lineNumber = node.loc?.start.line || 0;
         const code = this.getCode(functionScope?.node || node, context.sourceCode);
 
@@ -57,17 +92,19 @@ export class LargePayloadDetector extends BaseDetector {
           !hasSelectFields ? 'Field selection (select/attributes)' : null,
           !hasLimit ? 'Pagination (limit/offset)' : null,
         ].filter(Boolean) as string[];
+        
         const issue = this.createIssue(
           'large_api_payload',
           'high',
           context,
           lineNumber,
-          'Potentially Large API Response',
-          'API endpoint may return large payloads without field selection or pagination. This impacts performance and bandwidth.',
+          'Large API Response from Database Query',
+          'API endpoint returns database query results without proper pagination or field selection. This can cause performance issues with large datasets.',
           code,
           undefined,
-          this.createImpact(7, 'Large payloads impact performance and bandwidth', 70, {
+          this.createImpact(7, 'Large payloads impact performance and bandwidth', 80, 'network', 'easy', {
             missingOptimizations,
+            dataFlowTracked: true,
             recommendation: 'Add field selection and pagination',
           })
         );
@@ -75,6 +112,48 @@ export class LargePayloadDetector extends BaseDetector {
         this.issues.push(issue);
       }
     }
+  }
+
+  private isDataFlowConnected(queryNode: any, targetNode: any, scope: any): boolean {
+    if (queryNode === targetNode) return true;
+    
+    let isConnected = false;
+    const queryParent = scope.path.getStatementParent();
+    
+    if (queryParent) {
+      traverse(queryParent.node, {
+        VariableDeclarator: (varPath: any) => {
+          if (varPath.node.init === queryNode) {
+            const varName = varPath.node.id?.name;
+            if (varName && this.identifierReferencesTarget(targetNode, varName)) {
+              isConnected = true;
+            }
+          }
+        },
+        AssignmentExpression: (assignPath: any) => {
+          if (assignPath.node.right === queryNode) {
+            const varName = assignPath.node.left?.name;
+            if (varName && this.identifierReferencesTarget(targetNode, varName)) {
+              isConnected = true;
+            }
+          }
+        },
+      }, scope);
+    }
+    
+    return isConnected;
+  }
+
+  private identifierReferencesTarget(node: any, varName: string): boolean {
+    let found = false;
+    traverse(node, {
+      Identifier: (path: any) => {
+        if (path.node.name === varName) {
+          found = true;
+        }
+      },
+    }, undefined);
+    return found;
   }
 
   private checkSelectAllQuery(path: any, context: AnalysisContext): void {
@@ -119,7 +198,7 @@ export class LargePayloadDetector extends BaseDetector {
           'Database query selects all fields without limits. This can load unnecessary data and impact performance.',
           code,
           undefined,
-          this.createImpact(5, 'Increased memory usage and slower queries', 75, {
+          this.createImpact(5, 'Increased memory usage and slower queries', 75, 'performance', 'easy', {
             issues: queryIssues,
             impact: 'Increased memory usage and slower queries',
             solution: 'Specify required fields and add pagination',
@@ -166,7 +245,7 @@ export class LargePayloadDetector extends BaseDetector {
             'Function returns database query results without pagination. This can cause memory issues and slow responses.',
             code,
             undefined,
-            this.createImpact(7, 'Memory overflow with large datasets', 80, {
+            this.createImpact(7, 'Memory overflow with large datasets', 80, 'memory', 'easy', {
               risk: 'Memory overflow with large datasets',
               solution: 'Add pagination (limit/offset or cursor-based)',
             })

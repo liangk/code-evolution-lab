@@ -211,6 +211,8 @@ export class N1QueryDetector extends BaseDetector {
         severity === 'critical' ? 9 : severity === 'high' ? 7 : 5,
         `${queriesIfN100} queries for 100 items vs 1 optimal query`,
         85,
+        'performance',
+        'moderate',
         { queriesIfN100, queriesOptimal: 1, performanceGain: `${queriesIfN100}x slower` }
       )
     );

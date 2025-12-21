@@ -2,16 +2,24 @@ import traverse from '@babel/traverse';
 import { BaseDetector } from './base-detector';
 import { AnalysisContext, DetectorResult } from '../types';
 
+interface FrameworkContext {
+  framework: 'react' | 'vue' | 'angular' | 'none';
+  hasCleanupMethod: boolean;
+  cleanupMethodName?: string;
+}
+
 export class MemoryLeakDetector extends BaseDetector {
   name = 'Memory Leak Detector';
 
   async detect(ast: any, context: AnalysisContext): Promise<DetectorResult> {
     this.reset();
 
+    const frameworkContext = this.detectFramework(ast);
+
     traverse(ast, {
       CallExpression: (path: any) => {
-        this.checkEventListenerLeak(path, context);
-        this.checkTimerLeak(path, context);
+        this.checkEventListenerLeakWithLifecycle(path, context, frameworkContext);
+        this.checkTimerLeakWithLifecycle(path, context, frameworkContext);
         this.checkGlobalVariableLeak(path, context);
       },
 
@@ -26,12 +34,72 @@ export class MemoryLeakDetector extends BaseDetector {
     };
   }
 
-  private checkEventListenerLeak(path: any, context: AnalysisContext): void {
+  private detectFramework(ast: any): FrameworkContext {
+    let framework: 'react' | 'vue' | 'angular' | 'none' = 'none';
+    let hasCleanupMethod = false;
+    let cleanupMethodName: string | undefined;
+
+    traverse(ast, {
+      ImportDeclaration: (path: any) => {
+        const source = path.node.source.value;
+        if (source === 'react' || source.startsWith('react/')) {
+          framework = 'react';
+        } else if (source === 'vue' || source.startsWith('@vue/')) {
+          framework = 'vue';
+        } else if (source.startsWith('@angular/')) {
+          framework = 'angular';
+        }
+      },
+      CallExpression: (path: any) => {
+        const callee = path.node.callee;
+        if (callee?.name === 'useEffect') {
+          framework = 'react';
+          const callback = path.node.arguments?.[0];
+          if (callback?.body?.type === 'BlockStatement') {
+            traverse(callback.body, {
+              ReturnStatement: (innerPath: any) => {
+                if (innerPath.node.argument?.type === 'ArrowFunctionExpression' ||
+                    innerPath.node.argument?.type === 'FunctionExpression') {
+                  hasCleanupMethod = true;
+                  cleanupMethodName = 'useEffect cleanup';
+                }
+              },
+            }, path.scope);
+          }
+        }
+      },
+      ClassMethod: (path: any) => {
+        const methodName = path.node.key?.name;
+        if (methodName === 'componentWillUnmount') {
+          framework = 'react';
+          hasCleanupMethod = true;
+          cleanupMethodName = 'componentWillUnmount';
+        } else if (methodName === 'ngOnDestroy') {
+          framework = 'angular';
+          hasCleanupMethod = true;
+          cleanupMethodName = 'ngOnDestroy';
+        } else if (methodName === 'unmounted' || methodName === 'beforeUnmount') {
+          framework = 'vue';
+          hasCleanupMethod = true;
+          cleanupMethodName = methodName;
+        }
+      },
+    });
+
+    return { framework, hasCleanupMethod, cleanupMethodName };
+  }
+
+  private checkEventListenerLeakWithLifecycle(
+    path: any,
+    context: AnalysisContext,
+    frameworkContext: FrameworkContext
+  ): void {
     const node = path.node;
     
     if (node.callee?.property?.name === 'addEventListener') {
       const functionScope = path.getFunctionParent();
       let hasRemoveListener = false;
+      let hasCleanupInLifecycle = false;
 
       if (functionScope) {
         traverse(functionScope.node, {
@@ -41,24 +109,70 @@ export class MemoryLeakDetector extends BaseDetector {
             }
           },
         }, functionScope.scope);
+
+        if (frameworkContext.framework !== 'none' && frameworkContext.hasCleanupMethod) {
+          const classScope = path.scope.getFunctionParent()?.parent;
+          if (classScope) {
+            traverse(classScope.block, {
+              ClassMethod: (methodPath: any) => {
+                if (methodPath.node.key?.name === frameworkContext.cleanupMethodName ||
+                    (frameworkContext.framework === 'angular' && methodPath.node.key?.name === 'ngOnDestroy') ||
+                    (frameworkContext.framework === 'vue' && ['unmounted', 'beforeUnmount'].includes(methodPath.node.key?.name))) {
+                  traverse(methodPath.node, {
+                    CallExpression: (cleanupPath: any) => {
+                      if (cleanupPath.node.callee?.property?.name === 'removeEventListener') {
+                        hasCleanupInLifecycle = true;
+                      }
+                    },
+                  }, methodPath.scope);
+                }
+              },
+              ReturnStatement: (returnPath: any) => {
+                if (frameworkContext.framework === 'react' &&
+                    (returnPath.node.argument?.type === 'ArrowFunctionExpression' ||
+                     returnPath.node.argument?.type === 'FunctionExpression')) {
+                  traverse(returnPath.node.argument, {
+                    CallExpression: (cleanupPath: any) => {
+                      if (cleanupPath.node.callee?.property?.name === 'removeEventListener') {
+                        hasCleanupInLifecycle = true;
+                      }
+                    },
+                  }, returnPath.scope);
+                }
+              },
+            }, classScope);
+          }
+        }
       }
 
-      if (!hasRemoveListener) {
+      if (!hasRemoveListener && !hasCleanupInLifecycle) {
         const lineNumber = node.loc?.start.line || 0;
         const code = this.getCode(node, context.sourceCode);
+        const severity = frameworkContext.framework !== 'none' ? 'high' : 'medium';
+        const confidenceScore = frameworkContext.framework !== 'none' ? 85 : 70;
+
+        let solution = 'Add removeEventListener in cleanup';
+        if (frameworkContext.framework === 'react') {
+          solution = 'Add removeEventListener in useEffect cleanup or componentWillUnmount';
+        } else if (frameworkContext.framework === 'angular') {
+          solution = 'Add removeEventListener in ngOnDestroy lifecycle hook';
+        } else if (frameworkContext.framework === 'vue') {
+          solution = 'Add removeEventListener in unmounted or beforeUnmount hook';
+        }
 
         const issue = this.createIssue(
           'event_listener_leak',
-          'high',
+          severity,
           context,
           lineNumber,
-          'Potential Event Listener Memory Leak',
-          'addEventListener without corresponding removeEventListener can cause memory leaks. Ensure listeners are removed when components unmount.',
+          'Event Listener Memory Leak',
+          `addEventListener without corresponding removeEventListener causes memory leaks. ${solution}.`,
           code,
           undefined,
-          this.createImpact(7, 'Memory leak in long-running applications', 70, {
+          this.createImpact(7, 'Memory leak in long-running applications', confidenceScore, 'memory', 'easy', {
+            framework: frameworkContext.framework,
             risk: 'Memory leak in long-running applications',
-            solution: 'Add removeEventListener in cleanup/unmount',
+            solution,
           })
         );
 
@@ -67,13 +181,19 @@ export class MemoryLeakDetector extends BaseDetector {
     }
   }
 
-  private checkTimerLeak(path: any, context: AnalysisContext): void {
+  private checkTimerLeakWithLifecycle(
+    path: any,
+    context: AnalysisContext,
+    frameworkContext: FrameworkContext
+  ): void {
     const node = path.node;
     const timerMethods = ['setTimeout', 'setInterval'];
     
     if (timerMethods.includes(node.callee?.name)) {
       const functionScope = path.getFunctionParent();
       let hasClearTimer = false;
+      let hasCleanupInLifecycle = false;
+      let timerIdStored = false;
 
       if (functionScope) {
         traverse(functionScope.node, {
@@ -82,25 +202,82 @@ export class MemoryLeakDetector extends BaseDetector {
               hasClearTimer = true;
             }
           },
+          VariableDeclarator: (varPath: any) => {
+            if (varPath.node.init === node) {
+              timerIdStored = true;
+            }
+          },
+          AssignmentExpression: (assignPath: any) => {
+            if (assignPath.node.right === node) {
+              timerIdStored = true;
+            }
+          },
         }, functionScope.scope);
+
+        if (frameworkContext.framework !== 'none' && frameworkContext.hasCleanupMethod) {
+          const classScope = path.scope.getFunctionParent()?.parent;
+          if (classScope) {
+            traverse(classScope.block, {
+              ClassMethod: (methodPath: any) => {
+                if (methodPath.node.key?.name === frameworkContext.cleanupMethodName ||
+                    (frameworkContext.framework === 'angular' && methodPath.node.key?.name === 'ngOnDestroy') ||
+                    (frameworkContext.framework === 'vue' && ['unmounted', 'beforeUnmount'].includes(methodPath.node.key?.name))) {
+                  traverse(methodPath.node, {
+                    CallExpression: (cleanupPath: any) => {
+                      if (['clearTimeout', 'clearInterval'].includes(cleanupPath.node.callee?.name)) {
+                        hasCleanupInLifecycle = true;
+                      }
+                    },
+                  }, methodPath.scope);
+                }
+              },
+              ReturnStatement: (returnPath: any) => {
+                if (frameworkContext.framework === 'react' &&
+                    (returnPath.node.argument?.type === 'ArrowFunctionExpression' ||
+                     returnPath.node.argument?.type === 'FunctionExpression')) {
+                  traverse(returnPath.node.argument, {
+                    CallExpression: (cleanupPath: any) => {
+                      if (['clearTimeout', 'clearInterval'].includes(cleanupPath.node.callee?.name)) {
+                        hasCleanupInLifecycle = true;
+                      }
+                    },
+                  }, returnPath.scope);
+                }
+              },
+            }, classScope);
+          }
+        }
       }
 
-      if (!hasClearTimer && node.callee?.name === 'setInterval') {
+      if (!hasClearTimer && !hasCleanupInLifecycle && node.callee?.name === 'setInterval') {
         const lineNumber = node.loc?.start.line || 0;
         const code = this.getCode(node, context.sourceCode);
+        const severity = frameworkContext.framework !== 'none' ? 'critical' : 'high';
+        const confidenceScore = frameworkContext.framework !== 'none' && timerIdStored ? 90 : 85;
+
+        let solution = 'Store interval ID and call clearInterval in cleanup';
+        if (frameworkContext.framework === 'react') {
+          solution = 'Store interval ID and call clearInterval in useEffect cleanup or componentWillUnmount';
+        } else if (frameworkContext.framework === 'angular') {
+          solution = 'Store interval ID and call clearInterval in ngOnDestroy lifecycle hook';
+        } else if (frameworkContext.framework === 'vue') {
+          solution = 'Store interval ID and call clearInterval in unmounted or beforeUnmount hook';
+        }
 
         const issue = this.createIssue(
           'timer_leak',
-          'critical',
+          severity,
           context,
           lineNumber,
           'Uncleaned setInterval Detected',
-          'setInterval without clearInterval causes memory leaks and continues running indefinitely. Always clear intervals in cleanup.',
+          `setInterval without clearInterval causes memory leaks and continues running indefinitely. ${solution}.`,
           code,
           undefined,
-          this.createImpact(9, 'Continuous memory growth and CPU usage', 85, {
+          this.createImpact(9, 'Continuous memory growth and CPU usage', confidenceScore, 'memory', 'easy', {
+            framework: frameworkContext.framework,
+            timerIdStored,
             risk: 'Continuous memory growth and CPU usage',
-            solution: 'Store interval ID and call clearInterval in cleanup',
+            solution,
           })
         );
 
@@ -125,7 +302,7 @@ export class MemoryLeakDetector extends BaseDetector {
         'Assigning to global variables can cause memory leaks and namespace pollution. Use module scope or proper cleanup.',
         code,
         undefined,
-        this.createImpact(5, 'Memory leaks and namespace pollution', 65, {
+        this.createImpact(5, 'Memory leaks and namespace pollution', 65, 'memory', 'moderate', {
           risk: 'Memory leaks and namespace pollution',
           solution: 'Use module scope or clean up global references',
         })
@@ -169,7 +346,7 @@ export class MemoryLeakDetector extends BaseDetector {
           'Closure captures large data structures from outer scope, preventing garbage collection. Consider limiting scope or using WeakMap.',
           code,
           undefined,
-          this.createImpact(6, 'Prevents garbage collection of large objects', 55, {
+          this.createImpact(6, 'Prevents garbage collection of large objects', 55, 'memory', 'moderate', {
             risk: 'Prevents garbage collection of large objects',
             solution: 'Limit closure scope or use WeakMap for large data',
           })

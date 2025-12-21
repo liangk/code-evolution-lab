@@ -28,6 +28,8 @@ export interface EstimatedImpact {
   severityScore: number;
   description: string;
   confidenceScore: number;
+  category: 'performance' | 'memory' | 'network' | 'complexity';
+  fixDifficulty: 'trivial' | 'easy' | 'moderate' | 'complex';
   metrics: Record<string, string | number | boolean | string[]>;
 }
 

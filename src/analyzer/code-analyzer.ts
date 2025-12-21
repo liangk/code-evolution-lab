@@ -6,6 +6,9 @@ import { InefficientLoopDetector } from '../detectors/inefficient-loop-detector'
 import { MemoryLeakDetector } from '../detectors/memory-leak-detector';
 import { LargePayloadDetector } from '../detectors/large-payload-detector';
 import { N1SolutionGenerator } from '../generators/n1-solution-generator';
+import { InefficientLoopSolutionGenerator } from '../generators/inefficient-loop-solution-generator';
+import { MemoryLeakSolutionGenerator } from '../generators/memory-leak-solution-generator';
+import { LargePayloadSolutionGenerator } from '../generators/large-payload-solution-generator';
 import { FitnessCalculator } from '../generators/fitness-calculator';
 import { AnalysisContext, DetectorResult, Issue } from '../types';
 
@@ -27,6 +30,33 @@ export class CodeAnalyzer {
     ];
     this.generators = new Map();
     this.generators.set('n_plus_1_query', new N1SolutionGenerator());
+    
+    // Inefficient loop generators
+    const loopGenerator = new InefficientLoopSolutionGenerator();
+    this.generators.set('await_in_loop', loopGenerator);
+    this.generators.set('array_lookup_in_loop', loopGenerator);
+    this.generators.set('nested_loops', loopGenerator);
+    this.generators.set('string_concat_in_loop', loopGenerator);
+    this.generators.set('regex_compilation_in_loop', loopGenerator);
+    this.generators.set('json_operations_in_loop', loopGenerator);
+    this.generators.set('sync_file_io_in_loop', loopGenerator);
+    this.generators.set('inefficient_array_chaining', loopGenerator);
+    this.generators.set('nested_array_methods', loopGenerator);
+    this.generators.set('dom_manipulation_in_loop', loopGenerator);
+    
+    // Memory leak generators
+    const memoryLeakGenerator = new MemoryLeakSolutionGenerator();
+    this.generators.set('event_listener_leak', memoryLeakGenerator);
+    this.generators.set('timer_leak', memoryLeakGenerator);
+    this.generators.set('global_variable_leak', memoryLeakGenerator);
+    this.generators.set('closure_memory_leak', memoryLeakGenerator);
+    
+    // Large payload generators
+    const payloadGenerator = new LargePayloadSolutionGenerator();
+    this.generators.set('large_api_payload', payloadGenerator);
+    this.generators.set('select_all_query', payloadGenerator);
+    this.generators.set('large_return_payload', payloadGenerator);
+    
     this.fitnessCalculator = new FitnessCalculator();
   }
 

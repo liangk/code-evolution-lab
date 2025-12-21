@@ -35,9 +35,11 @@ export abstract class BaseDetector {
     severityScore: number,
     description: string,
     confidenceScore: number,
+    category: 'performance' | 'memory' | 'network' | 'complexity',
+    fixDifficulty: 'trivial' | 'easy' | 'moderate' | 'complex',
     metrics: Record<string, string | number | boolean | string[]>
   ): EstimatedImpact {
-    return { severityScore, description, confidenceScore, metrics };
+    return { severityScore, description, confidenceScore, category, fixDifficulty, metrics };
   }
 
   protected generateId(): string {
