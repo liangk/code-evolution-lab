@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Issue, Solution, AnalysisContext } from '../types';
 import { BaseSolutionGenerator } from './base-generator';
 
@@ -45,7 +46,7 @@ interface EvolutionConfig {
 }
 
 export class EvolutionaryEngine {
-  private config: EvolutionConfig = {
+  private _config: EvolutionConfig = {
     populationSize: 20,
     maxGenerations: 10,
     mutationRate: 0.3,
@@ -66,9 +67,9 @@ export class EvolutionaryEngine {
    * @returns Array of evolved solutions
    */
   async evolve(
-    issue: Issue,
-    context: AnalysisContext,
-    baseGenerator: BaseSolutionGenerator
+    _issue: Issue,
+    _context: AnalysisContext,
+    _baseGenerator: BaseSolutionGenerator
   ): Promise<Solution[]> {
     // TODO: IMPLEMENT EVOLUTIONARY ALGORITHM
     // 
@@ -118,9 +119,9 @@ export class EvolutionaryEngine {
    * - Different algorithmic approaches
    */
   private async generateInitialPopulation(
-    issue: Issue,
-    context: AnalysisContext,
-    baseGenerator: BaseSolutionGenerator
+    _issue: Issue,
+    _context: AnalysisContext,
+    _baseGenerator: BaseSolutionGenerator
   ): Promise<SolutionCandidate[]> {
     // TODO: IMPLEMENT
     // 
@@ -158,7 +159,7 @@ export class EvolutionaryEngine {
    * Uses tournament selection or roulette wheel selection
    * to choose parent pairs based on fitness.
    */
-  private selectParents(population: SolutionCandidate[]): [SolutionCandidate, SolutionCandidate][] {
+  private selectParents(_population: SolutionCandidate[]): [SolutionCandidate, SolutionCandidate][] {
     // TODO: IMPLEMENT
     // 
     // Tournament Selection (recommended):
@@ -181,7 +182,7 @@ export class EvolutionaryEngine {
    * 
    * Randomly select K candidates and return the one with highest fitness.
    */
-  private tournamentSelect(population: SolutionCandidate[], tournamentSize: number): SolutionCandidate {
+  private tournamentSelect(population: SolutionCandidate[], _tournamentSize: number): SolutionCandidate {
     // TODO: IMPLEMENT
     // 
     // const tournament: SolutionCandidate[] = [];
@@ -203,7 +204,7 @@ export class EvolutionaryEngine {
    * Combines code from two parent solutions to create offspring.
    * Uses AST-based merging for semantic correctness.
    */
-  private crossover(parents: [SolutionCandidate, SolutionCandidate][]): SolutionCandidate[] {
+  private crossover(_parents: [SolutionCandidate, SolutionCandidate][]): SolutionCandidate[] {
     // TODO: IMPLEMENT
     // 
     // const offspring: SolutionCandidate[] = [];
@@ -226,7 +227,7 @@ export class EvolutionaryEngine {
    * 
    * Splits code at a statement boundary and combines parts from both parents.
    */
-  private singlePointCrossover(parent1: SolutionCandidate, parent2: SolutionCandidate): SolutionCandidate {
+  private singlePointCrossover(parent1: SolutionCandidate, _parent2: SolutionCandidate): SolutionCandidate {
     // TODO: IMPLEMENT
     // 
     // 1. Parse both parent ASTs
@@ -244,7 +245,7 @@ export class EvolutionaryEngine {
    * Applies random mutations to offspring to introduce variation.
    * See phase3-implementation-plan.md for 10 mutation operator categories.
    */
-  private mutate(offspring: SolutionCandidate[], generation: number): SolutionCandidate[] {
+  private mutate(offspring: SolutionCandidate[], _generation: number): SolutionCandidate[] {
     // TODO: IMPLEMENT
     // 
     // const mutated: SolutionCandidate[] = [];
@@ -278,7 +279,7 @@ export class EvolutionaryEngine {
    * 9. Pagination style changes
    * 10. Error handling additions
    */
-  private applyRandomMutation(candidate: SolutionCandidate, generation: number): SolutionCandidate {
+  private applyRandomMutation(candidate: SolutionCandidate, _generation: number): SolutionCandidate {
     // TODO: IMPLEMENT
     // 
     // const mutationOperators = [
@@ -311,8 +312,8 @@ export class EvolutionaryEngine {
    */
   private async evaluateFitness(
     candidates: SolutionCandidate[],
-    issue: Issue,
-    context: AnalysisContext
+    _issue: Issue,
+    _context: AnalysisContext
   ): Promise<SolutionCandidate[]> {
     // TODO: IMPLEMENT
     // 
@@ -331,7 +332,7 @@ export class EvolutionaryEngine {
    */
   private selectSurvivors(
     population: SolutionCandidate[],
-    offspring: SolutionCandidate[]
+    _offspring: SolutionCandidate[]
   ): SolutionCandidate[] {
     // TODO: IMPLEMENT
     // 
@@ -365,7 +366,7 @@ export class EvolutionaryEngine {
    * - Low diversity (population too similar)
    * - Maximum generations reached
    */
-  private hasConverged(population: SolutionCandidate[], generation: number): boolean {
+  private hasConverged(_population: SolutionCandidate[], _generation: number): boolean {
     // TODO: IMPLEMENT
     // 
     // 1. Check if max generations reached
@@ -391,7 +392,7 @@ export class EvolutionaryEngine {
    * 
    * Transforms internal SolutionCandidate objects to public Solution interface.
    */
-  private convertToSolutions(candidates: SolutionCandidate[]): Solution[] {
+  private convertToSolutions(_candidates: SolutionCandidate[]): Solution[] {
     // TODO: IMPLEMENT
     // 
     // return candidates.map((candidate, index) => ({

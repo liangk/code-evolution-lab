@@ -1,0 +1,84 @@
+-- CreateTable
+CREATE TABLE "users" (
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "password" TEXT NOT NULL,
+    "name" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "repositories" (
+    "id" TEXT NOT NULL,
+    "github_url" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "owner_id" TEXT NOT NULL,
+    "last_analyzed_at" TIMESTAMP(3),
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "repositories_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "analyses" (
+    "id" TEXT NOT NULL,
+    "repository_id" TEXT NOT NULL,
+    "score" INTEGER NOT NULL,
+    "total_issues" INTEGER NOT NULL,
+    "critical_issues" INTEGER NOT NULL,
+    "high_issues" INTEGER NOT NULL,
+    "medium_issues" INTEGER NOT NULL,
+    "analyzed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "analyses_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "issues" (
+    "id" TEXT NOT NULL,
+    "analysis_id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "severity" TEXT NOT NULL,
+    "file_path" TEXT NOT NULL,
+    "line_number" INTEGER,
+    "title" TEXT NOT NULL,
+    "description" TEXT,
+    "code_before" TEXT,
+    "code_after" TEXT,
+    "estimated_impact" JSONB,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "issues_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "solutions" (
+    "id" TEXT NOT NULL,
+    "issue_id" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "code_after" TEXT NOT NULL,
+    "explanation" TEXT,
+    "estimated_impact" TEXT,
+    "difficulty" TEXT,
+    "fitness_score" DOUBLE PRECISION NOT NULL,
+    "rank" INTEGER NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "solutions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+
+-- AddForeignKey
+ALTER TABLE "analyses" ADD CONSTRAINT "analyses_repository_id_fkey" FOREIGN KEY ("repository_id") REFERENCES "repositories"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "issues" ADD CONSTRAINT "issues_analysis_id_fkey" FOREIGN KEY ("analysis_id") REFERENCES "analyses"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "solutions" ADD CONSTRAINT "solutions_issue_id_fkey" FOREIGN KEY ("issue_id") REFERENCES "issues"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

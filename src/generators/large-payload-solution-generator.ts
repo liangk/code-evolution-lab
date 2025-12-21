@@ -4,7 +4,7 @@ import { Issue, Solution, AnalysisContext } from '../types';
 export class LargePayloadSolutionGenerator extends BaseSolutionGenerator {
   name = 'Large Payload Solution Generator';
 
-  async generateSolutions(issue: Issue, context?: AnalysisContext): Promise<Solution[]> {
+  async generateSolutions(issue: Issue, _context?: AnalysisContext): Promise<Solution[]> {
     const solutions: Solution[] = [];
     const issueType = issue.type;
 
