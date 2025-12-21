@@ -42,10 +42,17 @@ export interface Issue {
   solutions?: Solution[];
 }
 
+export interface ORMContext {
+  detectedORMs: Set<string>;
+  symbolToORM: Map<string, string>;
+  prismaClientVar?: string;
+}
+
 export interface AnalysisContext {
   sourceCode: string;
   filePath: string;
   ast: any;
+  ormContext?: ORMContext;
 }
 
 export interface DetectorResult {

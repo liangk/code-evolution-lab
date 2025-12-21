@@ -30,9 +30,11 @@ router.post('/register', async (req: Request, res: Response) => {
       token,
       user: { id: user.id, email: user.email, name: user.name },
     });
+    return;
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ error: 'Registration failed' });
+    return;
   }
 });
 
@@ -61,9 +63,11 @@ router.post('/login', async (req: Request, res: Response) => {
       token,
       user: { id: user.id, email: user.email, name: user.name },
     });
+    return;
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ error: 'Login failed' });
+    return;
   }
 });
 

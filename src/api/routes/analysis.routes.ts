@@ -30,16 +30,31 @@ router.post('/analyze', async (req: Request, res: Response) => {
 
     const score = Math.max(0, 100 - totalIssues * 5);
 
+    // Normalize solution fields for frontend (generator uses code/reasoning, frontend expects codeAfter/description)
+    const normalizedResults = results.map((detector) => ({
+      ...detector,
+      issues: detector.issues.map((issue) => ({
+        ...issue,
+        solutions: issue.solutions?.map((sol: any) => ({
+          ...sol,
+          description: sol.description ?? sol.reasoning ?? '',
+          codeAfter: sol.codeAfter ?? sol.code ?? '',
+        })),
+      })),
+    }));
+
     res.json({
       success: true,
       score,
       totalIssues,
       issuesBySeverity,
-      results,
+      results: normalizedResults,
     });
+    return;
   } catch (error) {
     console.error('Analysis error:', error);
     res.status(500).json({ error: 'Analysis failed', message: (error as Error).message });
+    return;
   }
 });
 
@@ -97,17 +112,32 @@ router.post('/repository/:repoId/analyze', async (req: Request, res: Response) =
       }
     }
 
+    // Normalize solution fields for frontend
+    const normalizedResults = results.map((detector) => ({
+      ...detector,
+      issues: detector.issues.map((issue) => ({
+        ...issue,
+        solutions: issue.solutions?.map((sol: any) => ({
+          ...sol,
+          description: sol.description ?? sol.reasoning ?? '',
+          codeAfter: sol.codeAfter ?? sol.code ?? '',
+        })),
+      })),
+    }));
+
     res.json({
       success: true,
       analysisId: analysis.id,
       score,
       totalIssues,
       issuesBySeverity,
-      results,
+      results: normalizedResults,
     });
+    return;
   } catch (error) {
     console.error('Repository analysis error:', error);
     res.status(500).json({ error: 'Analysis failed', message: (error as Error).message });
+    return;
   }
 });
 
@@ -129,9 +159,11 @@ router.get('/analysis/:analysisId', async (req: Request, res: Response) => {
         issues,
       },
     });
+    return;
   } catch (error) {
     console.error('Get analysis error:', error);
     res.status(500).json({ error: 'Failed to retrieve analysis', message: (error as Error).message });
+    return;
   }
 });
 
@@ -151,9 +183,11 @@ router.get('/repository/:repoId/analyses', async (req: Request, res: Response) =
       repository,
       analyses,
     });
+    return;
   } catch (error) {
     console.error('Get analyses error:', error);
     res.status(500).json({ error: 'Failed to retrieve analyses', message: (error as Error).message });
+    return;
   }
 });
 

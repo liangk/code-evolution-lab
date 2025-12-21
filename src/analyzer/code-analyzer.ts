@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import { CodeParser } from './parser';
+import { ImportAnalyzer } from './import-analyzer';
 import { N1QueryDetector } from '../detectors/n1-query-detector';
 import { InefficientLoopDetector } from '../detectors/inefficient-loop-detector';
 import { MemoryLeakDetector } from '../detectors/memory-leak-detector';
@@ -10,12 +11,14 @@ import { AnalysisContext, DetectorResult, Issue } from '../types';
 
 export class CodeAnalyzer {
   private parser: CodeParser;
+  private importAnalyzer: ImportAnalyzer;
   private detectors: any[];
   private generators: Map<string, any>;
   private fitnessCalculator: FitnessCalculator;
 
   constructor() {
     this.parser = new CodeParser();
+    this.importAnalyzer = new ImportAnalyzer();
     this.detectors = [
       new N1QueryDetector(),
       new InefficientLoopDetector(),
@@ -38,11 +41,13 @@ export class CodeAnalyzer {
     generateSolutions: boolean = false
   ): Promise<DetectorResult[]> {
     const ast = this.parser.parse(sourceCode);
+    const ormContext = this.importAnalyzer.buildORMContext(ast);
 
     const context: AnalysisContext = {
       sourceCode,
       filePath,
       ast,
+      ormContext,
     };
 
     const results: DetectorResult[] = [];

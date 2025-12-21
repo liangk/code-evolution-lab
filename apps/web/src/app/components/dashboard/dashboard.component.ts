@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalysisService, AnalysisRequest, AnalysisResult } from '../../services/analysis.service';
@@ -11,99 +11,59 @@ import { AnalysisService, AnalysisRequest, AnalysisResult } from '../../services
   styleUrls: ['./dashboard.component.scss']
 })
 export class DashboardComponent {
-  code = '';
-  filePath = 'example.js';
-  generateSolutions = true;
-  analyzing = false;
-  result: AnalysisResult | null = null;
-  error: string | null = null;
-  
-  // Filtering and search
-  searchTerm = '';
-  selectedSeverity = 'all';
-  selectedDetector = 'all';
-  severityOptions = ['all', 'critical', 'high', 'medium', 'low'];
+  code = signal('');
+  filePath = signal('example.js');
+  generateSolutions = signal(true);
+  analyzing = signal(false);
+  result = signal<AnalysisResult | null>(null);
+  error = signal<string | null>(null);
   
   constructor(private analysisService: AnalysisService) {}
-  
-  get filteredResults() {
-    if (!this.result) return null;
-    
-    const filtered = { ...this.result };
-    filtered.results = this.result.results.map(detector => {
-      const filteredIssues = detector.issues.filter((issue: any) => {
-        const matchesSearch = !this.searchTerm || 
-          issue.description.toLowerCase().includes(this.searchTerm.toLowerCase()) ||
-          issue.id.toLowerCase().includes(this.searchTerm.toLowerCase());
-        
-        const matchesSeverity = this.selectedSeverity === 'all' || 
-          issue.severity.toLowerCase() === this.selectedSeverity;
-        
-        const matchesDetector = this.selectedDetector === 'all' || 
-          detector.detectorName === this.selectedDetector;
-        
-        return matchesSearch && matchesSeverity && matchesDetector;
-      });
-      
-      return { ...detector, issues: filteredIssues };
-    }).filter(detector => detector.issues.length > 0);
-    
-    return filtered;
-  }
-  
-  get detectorOptions() {
-    if (!this.result) return ['all'];
-    return ['all', ...this.result.results.map(r => r.detectorName)];
-  }
-  
-  clearFilters() {
-    this.searchTerm = '';
-    this.selectedSeverity = 'all';
-    this.selectedDetector = 'all';
-  }
 
   analyzeCode() {
-    if (!this.code.trim()) {
-      this.error = 'Please enter code to analyze';
+    if (!this.code().trim()) {
+      this.error.set('Please enter code to analyze');
       return;
     }
 
-    this.analyzing = true;
-    this.error = null;
-    this.result = null;
+    this.analyzing.set(true);
+    this.error.set(null);
+    this.result.set(null);
 
     const request: AnalysisRequest = {
-      code: this.code,
-      filePath: this.filePath,
-      generateSolutions: this.generateSolutions
+      code: this.code(),
+      filePath: this.filePath(),
+      generateSolutions: this.generateSolutions()
     };
 
     this.analysisService.analyzeCode(request).subscribe({
       next: (result) => {
-        this.result = result;
-        this.analyzing = false;
+        console.log('Analysis result received:', result);
+        this.result.set(result);
+        this.analyzing.set(false);
       },
       error: (err) => {
-        this.error = err.error?.message || 'Analysis failed';
-        this.analyzing = false;
+        console.error('Analysis error:', err);
+        this.error.set(err.error?.message || 'Analysis failed');
+        this.analyzing.set(false);
       }
     });
   }
 
   loadExample() {
-    this.code = `// N+1 Query Example
+    this.code.set(`// N+1 Query Example
 async function getUsers() {
   const users = await User.findAll();
   for (const user of users) {
     user.orders = await Order.findAll({ where: { userId: user.id } });
   }
   return users;
-}`;
-    this.filePath = 'example.js';
+}`);
+    this.filePath.set('example.js');
   }
 
   clearResults() {
-    this.result = null;
-    this.error = null;
+    this.result.set(null);
+    this.error.set(null);
   }
 }
