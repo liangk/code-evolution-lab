@@ -46,14 +46,17 @@ interface EvolutionConfig {
 }
 
 export class EvolutionaryEngine {
-  private _config: EvolutionConfig = {
-    populationSize: 20,
-    maxGenerations: 10,
-    mutationRate: 0.3,
-    crossoverRate: 0.7,
-    elitismCount: 2,
-    convergenceThreshold: 0.01, // Stop if fitness improvement < 1%
+  private config: EvolutionConfig = {
+    populationSize: parseInt(process.env.EVO_POPULATION_SIZE || '20', 10),
+    maxGenerations: parseInt(process.env.EVO_MAX_GENERATIONS || '10', 10),
+    mutationRate: parseFloat(process.env.EVO_MUTATION_RATE || '0.3'),
+    crossoverRate: parseFloat(process.env.EVO_CROSSOVER_RATE || '0.7'),
+    elitismCount: parseInt(process.env.EVO_ELITISM_COUNT || '2', 10),
+    convergenceThreshold: parseFloat(process.env.EVO_CONVERGENCE_THRESHOLD || '0.01'),
   };
+
+  private tournamentSize = parseInt(process.env.EVO_TOURNAMENT_SIZE || '3', 10);
+  private enableAlgorithm = process.env.EVO_ENABLE_ALGORITHM === 'true';
 
   /**
    * PLACEHOLDER: Main evolution loop

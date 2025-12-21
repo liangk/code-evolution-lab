@@ -9,13 +9,25 @@
       <h2>Code Input</h2>
       
       <div class="form-group">
+        <label for="exampleSelect">Load Example Code</label>
+        <select id="exampleSelect" [ngModel]="selectedExample()" (ngModelChange)="loadExample($event)" class="example-selector">
+          <option value="">-- Select an example --</option>
+          @for (example of examples; track example.id) {
+            <option [value]="example.id">
+              {{ example.name }} ({{ example.severity }}) - {{ example.description }}
+            </option>
+          }
+        </select>
+      </div>
+
+      <div class="form-group">
         <label for="filePath">File Path</label>
         <input id="filePath" type="text" [ngModel]="filePath()" (ngModelChange)="filePath.set($event)" placeholder="example.js" />
       </div>
 
       <div class="form-group">
         <label for="code">Code to Analyze</label>
-        <textarea id="code" [ngModel]="code()" (ngModelChange)="code.set($event)" placeholder="Paste your code here..." rows="15"></textarea>
+        <textarea id="code" [ngModel]="code()" (ngModelChange)="code.set($event)" placeholder="Paste your code here or select an example above..." rows="15"></textarea>
       </div>
 
       <div class="form-group checkbox">
@@ -27,7 +39,6 @@
         <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing()">
           {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
         </button>
-        <button class="btn btn-secondary" (click)="loadExample()">Load Example</button>
         @if (result()) {
           <button class="btn btn-secondary" (click)="clearResults()">Clear Results</button>
         }
