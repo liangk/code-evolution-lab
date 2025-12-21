@@ -1,4 +1,4 @@
-import { Issue, AnalysisContext, DetectorResult } from '../types';
+import { Issue, AnalysisContext, DetectorResult, EstimatedImpact } from '../types';
 
 export abstract class BaseDetector {
   abstract name: string;
@@ -15,7 +15,7 @@ export abstract class BaseDetector {
     description: string,
     codeBefore: string,
     codeAfter?: string,
-    estimatedImpact?: any
+    estimatedImpact?: EstimatedImpact
   ): Issue {
     return {
       id: this.generateId(),
@@ -29,6 +29,15 @@ export abstract class BaseDetector {
       codeAfter,
       estimatedImpact,
     };
+  }
+
+  protected createImpact(
+    severityScore: number,
+    description: string,
+    confidenceScore: number,
+    metrics: Record<string, string | number | boolean | string[]>
+  ): EstimatedImpact {
+    return { severityScore, description, confidenceScore, metrics };
   }
 
   protected generateId(): string {

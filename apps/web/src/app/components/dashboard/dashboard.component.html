@@ -98,6 +98,26 @@
                           </div>
                           <div class="issue-body">
                             <p class="issue-description">{{ issue.description }}</p>
+                            @if (issue.estimatedImpact; as impact) {
+                              <div class="impact-section">
+                                <div class="impact-header">
+                                  <span class="impact-title">Impact Analysis</span>
+                                  <span class="impact-score">Score: {{ impact.severityScore }}/10</span>
+                                  <span class="impact-confidence" title="Confidence Score">({{ impact.confidenceScore }}%)</span>
+                                </div>
+                                <p class="impact-description">{{ impact.description }}</p>
+                                @if (impact.metrics) {
+                                  <div class="metrics-grid">
+                                    @for (metric of impact.metrics | keyvalue; track metric.key) {
+                                      <div class="metric-item">
+                                        <span class="metric-label">{{ metric.key }}:</span>
+                                        <span class="metric-value">{{ metric.value }}</span>
+                                      </div>
+                                    }
+                                  </div>
+                                }
+                              </div>
+                            }
                             @if (issue.codeBefore) {
                               <div class="code-block">
                                 <strong>Code:</strong>

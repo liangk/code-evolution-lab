@@ -1,0 +1,36 @@
+{
+  "ignore": [
+    "**/test/**",
+    "**/fixtures/**"
+  ],
+  "detectors": {
+    "n1-query": {
+      "enabled": true,
+      "severity": "high"
+    },
+    "inefficient-loop": {
+      "enabled": true
+    },
+    "memory-leak": {
+      "enabled": false
+    },
+    "large-payload": {
+      "enabled": true,
+      "customPatterns": ["fetchAllData", "loadEverything"]
+    }
+  },
+  "severity": {
+    "minReportLevel": "medium",
+    "failOn": "high"
+  },
+  "output": {
+    "format": "text",
+    "file": null
+  },
+  "dbPatterns": [
+    {
+      "orm": "custom",
+      "methods": ["customQuery", "fetchRecords"]
+    }
+  ]
+}

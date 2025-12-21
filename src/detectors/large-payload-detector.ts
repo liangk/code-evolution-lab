@@ -53,6 +53,10 @@ export class LargePayloadDetector extends BaseDetector {
         const lineNumber = node.loc?.start.line || 0;
         const code = this.getCode(functionScope?.node || node, context.sourceCode);
 
+        const missingOptimizations = [
+          !hasSelectFields ? 'Field selection (select/attributes)' : null,
+          !hasLimit ? 'Pagination (limit/offset)' : null,
+        ].filter(Boolean) as string[];
         const issue = this.createIssue(
           'large_api_payload',
           'high',
@@ -62,13 +66,10 @@ export class LargePayloadDetector extends BaseDetector {
           'API endpoint may return large payloads without field selection or pagination. This impacts performance and bandwidth.',
           code,
           undefined,
-          {
-            missingOptimizations: [
-              !hasSelectFields ? 'Field selection (select/attributes)' : null,
-              !hasLimit ? 'Pagination (limit/offset)' : null,
-            ].filter(Boolean),
+          this.createImpact(7, 'Large payloads impact performance and bandwidth', 70, {
+            missingOptimizations,
             recommendation: 'Add field selection and pagination',
-          }
+          })
         );
 
         this.issues.push(issue);
@@ -105,6 +106,10 @@ export class LargePayloadDetector extends BaseDetector {
         const lineNumber = node.loc?.start.line || 0;
         const code = this.getCode(node, context.sourceCode);
 
+        const queryIssues = [
+          !hasAttributes ? 'Selects all columns (SELECT *)' : null,
+          !hasLimit ? 'No row limit specified' : null,
+        ].filter(Boolean) as string[];
         const issue = this.createIssue(
           'select_all_query',
           'medium',
@@ -114,14 +119,11 @@ export class LargePayloadDetector extends BaseDetector {
           'Database query selects all fields without limits. This can load unnecessary data and impact performance.',
           code,
           undefined,
-          {
-            issues: [
-              !hasAttributes ? 'Selects all columns (SELECT *)' : null,
-              !hasLimit ? 'No row limit specified' : null,
-            ].filter(Boolean),
+          this.createImpact(5, 'Increased memory usage and slower queries', 75, {
+            issues: queryIssues,
             impact: 'Increased memory usage and slower queries',
             solution: 'Specify required fields and add pagination',
-          }
+          })
         );
 
         this.issues.push(issue);
@@ -164,10 +166,10 @@ export class LargePayloadDetector extends BaseDetector {
             'Function returns database query results without pagination. This can cause memory issues and slow responses.',
             code,
             undefined,
-            {
+            this.createImpact(7, 'Memory overflow with large datasets', 80, {
               risk: 'Memory overflow with large datasets',
               solution: 'Add pagination (limit/offset or cursor-based)',
-            }
+            })
           );
 
           this.issues.push(issue);

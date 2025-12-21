@@ -24,6 +24,13 @@ export interface DatabaseCall {
   code: string;
 }
 
+export interface EstimatedImpact {
+  severityScore: number;
+  description: string;
+  confidenceScore: number;
+  metrics: Record<string, string | number | boolean | string[]>;
+}
+
 export interface Issue {
   id: string;
   type: string;
@@ -34,11 +41,7 @@ export interface Issue {
   description: string;
   codeBefore: string;
   codeAfter?: string;
-  estimatedImpact?: {
-    queriesIfN100?: number;
-    queriesOptimal?: number;
-    performanceGain?: string;
-  };
+  estimatedImpact?: EstimatedImpact;
   solutions?: Solution[];
 }
 

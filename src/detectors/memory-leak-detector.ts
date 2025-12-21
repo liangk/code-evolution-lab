@@ -56,10 +56,10 @@ export class MemoryLeakDetector extends BaseDetector {
           'addEventListener without corresponding removeEventListener can cause memory leaks. Ensure listeners are removed when components unmount.',
           code,
           undefined,
-          {
+          this.createImpact(7, 'Memory leak in long-running applications', 70, {
             risk: 'Memory leak in long-running applications',
             solution: 'Add removeEventListener in cleanup/unmount',
-          }
+          })
         );
 
         this.issues.push(issue);
@@ -98,10 +98,10 @@ export class MemoryLeakDetector extends BaseDetector {
           'setInterval without clearInterval causes memory leaks and continues running indefinitely. Always clear intervals in cleanup.',
           code,
           undefined,
-          {
+          this.createImpact(9, 'Continuous memory growth and CPU usage', 85, {
             risk: 'Continuous memory growth and CPU usage',
             solution: 'Store interval ID and call clearInterval in cleanup',
-          }
+          })
         );
 
         this.issues.push(issue);
@@ -125,10 +125,10 @@ export class MemoryLeakDetector extends BaseDetector {
         'Assigning to global variables can cause memory leaks and namespace pollution. Use module scope or proper cleanup.',
         code,
         undefined,
-        {
+        this.createImpact(5, 'Memory leaks and namespace pollution', 65, {
           risk: 'Memory leaks and namespace pollution',
           solution: 'Use module scope or clean up global references',
-        }
+        })
       );
 
       this.issues.push(issue);
@@ -169,10 +169,10 @@ export class MemoryLeakDetector extends BaseDetector {
           'Closure captures large data structures from outer scope, preventing garbage collection. Consider limiting scope or using WeakMap.',
           code,
           undefined,
-          {
+          this.createImpact(6, 'Prevents garbage collection of large objects', 55, {
             risk: 'Prevents garbage collection of large objects',
             solution: 'Limit closure scope or use WeakMap for large data',
-          }
+          })
         );
 
         this.issues.push(issue);

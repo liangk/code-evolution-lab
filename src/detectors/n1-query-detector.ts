@@ -197,6 +197,7 @@ export class N1QueryDetector extends BaseDetector {
     const codeBefore = this.getCode(loop.node, context.sourceCode);
     const description = this.generateDescription(loop, dbQueries);
 
+    const queriesIfN100 = dbQueries.length * 100 + 1;
     const issue = this.createIssue(
       'n_plus_1_query',
       severity,
@@ -206,11 +207,12 @@ export class N1QueryDetector extends BaseDetector {
       description,
       codeBefore,
       undefined,
-      {
-        queriesIfN100: dbQueries.length * 100 + 1,
-        queriesOptimal: 1,
-        performanceGain: `${((dbQueries.length * 100) / 1) * 100}x faster`,
-      }
+      this.createImpact(
+        severity === 'critical' ? 9 : severity === 'high' ? 7 : 5,
+        `${queriesIfN100} queries for 100 items vs 1 optimal query`,
+        85,
+        { queriesIfN100, queriesOptimal: 1, performanceGain: `${queriesIfN100}x slower` }
+      )
     );
 
     this.issues.push(issue);

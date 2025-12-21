@@ -47,11 +47,11 @@ export class InefficientLoopDetector extends BaseDetector {
         'Multiple array iterations detected. Using .filter().map() iterates the array twice. Consider using .reduce() or a single loop for better performance.',
         code,
         undefined,
-        {
+        this.createImpact(5, '~50% faster for large arrays with single iteration', 80, {
           currentIterations: 2,
           optimalIterations: 1,
-          performanceGain: '~50% faster for large arrays',
-        }
+          performanceGain: '~50% faster',
+        })
       );
 
       this.issues.push(issue);
@@ -88,10 +88,10 @@ export class InefficientLoopDetector extends BaseDetector {
           'Nested array methods create O(n²) or worse complexity. Consider flattening the logic or using more efficient data structures.',
           code,
           undefined,
-          {
+          this.createImpact(7, 'O(n²) complexity causes exponential slowdown', 75, {
             complexity: 'O(n²) or worse',
             recommendation: 'Use Map/Set for lookups, or flatten the logic',
-          }
+          })
         );
 
         this.issues.push(issue);
@@ -123,9 +123,9 @@ export class InefficientLoopDetector extends BaseDetector {
         'Using array.push() in a loop is less efficient than using array methods like .map() or pre-allocating the array size.',
         code,
         undefined,
-        {
+        this.createImpact(3, 'Minor performance impact, better patterns available', 60, {
           suggestion: 'Consider using .map(), .filter(), or pre-allocate array size',
-        }
+        })
       );
 
       this.issues.push(issue);
@@ -162,10 +162,10 @@ export class InefficientLoopDetector extends BaseDetector {
         'DOM manipulation in loops causes multiple reflows/repaints. Use DocumentFragment or build HTML string first.',
         code,
         undefined,
-        {
+        this.createImpact(8, 'Multiple browser reflows cause severe UI jank', 90, {
           impact: 'Causes multiple browser reflows',
           solution: 'Use DocumentFragment or batch DOM updates',
-        }
+        })
       );
 
       this.issues.push(issue);
