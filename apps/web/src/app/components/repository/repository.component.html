@@ -43,6 +43,9 @@
           <div class="repo-header">
             <h3>{{ repo.name }}</h3>
             <div class="repo-actions">
+              <button class="btn btn-small btn-primary" (click)="analyzeRepository(repo.id)" [disabled]="loading()">
+                {{ loading() ? 'Analyzing...' : 'Analyze' }}
+              </button>
               <button class="btn btn-small" (click)="viewAnalyses(repo.id)">View Analyses</button>
               <button class="btn btn-small btn-danger" (click)="deleteRepository(repo.id)">Delete</button>
             </div>

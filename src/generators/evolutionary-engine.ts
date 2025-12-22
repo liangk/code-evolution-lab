@@ -1,6 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Issue, Solution, AnalysisContext } from '../types';
 import { BaseSolutionGenerator } from './base-generator';
+import { FitnessCalculator } from './fitness-calculator';
+import { parseCode, generateCode, cloneAST, getStatements, isValidSyntax } from '../utils/ast-utils';
+import { applyRandomMutation } from './mutation-operators';
+import * as t from '@babel/types';
 
 /**
  * PLACEHOLDER: Evolutionary Algorithm Engine
@@ -57,406 +60,444 @@ export class EvolutionaryEngine {
 
   private tournamentSize = parseInt(process.env.EVO_TOURNAMENT_SIZE || '3', 10);
   private enableAlgorithm = process.env.EVO_ENABLE_ALGORITHM === 'true';
+  private fitnessCalculator = new FitnessCalculator();
 
   /**
-   * PLACEHOLDER: Main evolution loop
-   * 
-   * This method will implement the complete evolutionary algorithm.
-   * Currently returns empty array - to be implemented in Phase 3.
-   * 
-   * @param issue - The detected issue to generate solutions for
-   * @param context - Analysis context with AST and source code
-   * @param baseGenerator - Template generator to create initial population
-   * @returns Array of evolved solutions
+   * Generate unique ID for candidates
+   */
+  private generateId(): string {
+    return `cand_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  /**
+   * Main evolution loop - Implements complete evolutionary algorithm
    */
   async evolve(
-    _issue: Issue,
-    _context: AnalysisContext,
-    _baseGenerator: BaseSolutionGenerator
+    issue: Issue,
+    context: AnalysisContext,
+    baseGenerator: BaseSolutionGenerator
   ): Promise<Solution[]> {
-    // TODO: IMPLEMENT EVOLUTIONARY ALGORITHM
-    // 
-    // Step 1: Generate initial population
-    // let population = await this.generateInitialPopulation(issue, context, baseGenerator);
-    // 
-    // Step 2: Evolution loop
-    // for (let generation = 0; generation < this.config.maxGenerations; generation++) {
-    //   // 2a. Evaluate fitness for all candidates
-    //   population = await this.evaluateFitness(population, issue, context);
-    //   
-    //   // 2b. Check convergence
-    //   if (this.hasConverged(population, generation)) {
-    //     console.log(`Converged at generation ${generation}`);
-    //     break;
-    //   }
-    //   
-    //   // 2c. Select parents
-    //   const parents = this.selectParents(population);
-    //   
-    //   // 2d. Create offspring through crossover
-    //   const offspring = this.crossover(parents);
-    //   
-    //   // 2e. Apply mutations
-    //   const mutated = this.mutate(offspring, generation);
-    //   
-    //   // 2f. Evaluate offspring fitness
-    //   const evaluatedOffspring = await this.evaluateFitness(mutated, issue, context);
-    //   
-    //   // 2g. Select survivors (elitism + fitness-based)
-    //   population = this.selectSurvivors(population, evaluatedOffspring);
-    // }
-    // 
-    // Step 3: Convert top candidates to Solution objects
-    // return this.convertToSolutions(population.slice(0, 5));
+    // Check if algorithm is enabled
+    if (!this.enableAlgorithm) {
+      console.log('⚠️  Evolutionary algorithm disabled. Using template-based generation.');
+      return baseGenerator.generateSolutions(issue, context);
+    }
 
-    console.warn('EvolutionaryEngine.evolve() is not yet implemented. Returning empty array.');
-    return [];
+    console.log('🧬 Starting evolutionary algorithm...');
+    console.log(`📊 Config: Population=${this.config.populationSize}, Generations=${this.config.maxGenerations}`);
+    
+    try {
+      // Step 1: Generate initial population
+      let population = await this.generateInitialPopulation(issue, context, baseGenerator);
+      console.log(`✅ Initial population: ${population.length} candidates`);
+      
+      if (population.length === 0) {
+        console.warn('⚠️  No initial population generated. Falling back to templates.');
+        return baseGenerator.generateSolutions(issue, context);
+      }
+
+      // Step 2: Evolution loop
+      for (let generation = 0; generation < this.config.maxGenerations; generation++) {
+        console.log(`\n🔄 Generation ${generation + 1}/${this.config.maxGenerations}`);
+        
+        // 2a. Evaluate fitness
+        population = await this.evaluateFitness(population, issue, context);
+        const bestFitness = Math.max(...population.map(c => c.fitness));
+        const avgFitness = population.reduce((sum, c) => sum + c.fitness, 0) / population.length;
+        console.log(`  📈 Best fitness: ${bestFitness.toFixed(2)}, Avg: ${avgFitness.toFixed(2)}`);
+        
+        // 2b. Check convergence
+        if (this.hasConverged(population, generation)) {
+          console.log(`✅ Converged at generation ${generation + 1}`);
+          break;
+        }
+        
+        // 2c. Select parents
+        const parents = this.selectParents(population);
+        console.log(`  👥 Selected ${parents.length} parent pairs`);
+        
+        // 2d. Crossover
+        const offspring = this.crossover(parents);
+        console.log(`  🧬 Created ${offspring.length} offspring`);
+        
+        // 2e. Mutate
+        const mutated = this.mutate(offspring, generation);
+        const mutationCount = mutated.filter((c, i) => c.code !== offspring[i].code).length;
+        console.log(`  🔀 Applied ${mutationCount} mutations`);
+        
+        // 2f. Evaluate offspring
+        const evaluatedOffspring = await this.evaluateFitness(mutated, issue, context);
+        
+        // 2g. Select survivors
+        population = this.selectSurvivors(population, evaluatedOffspring);
+      }
+      
+      // Step 3: Return top solutions
+      population.sort((a, b) => b.fitness - a.fitness);
+      const topCandidates = population.slice(0, Math.min(5, population.length));
+      
+      console.log(`\n🎯 Evolution complete! Returning top ${topCandidates.length} solutions`);
+      console.log(`   Best fitness: ${topCandidates[0].fitness.toFixed(2)}`);
+      
+      return this.convertToSolutions(topCandidates);
+    } catch (error) {
+      console.error('❌ Evolution error:', error);
+      console.log('⚠️  Falling back to template-based generation');
+      return baseGenerator.generateSolutions(issue, context);
+    }
   }
 
   /**
-   * PLACEHOLDER: Generate initial population
-   * 
-   * Creates diverse initial solution candidates using:
-   * - Template variations from base generator
-   * - Random parameter choices
-   * - Different algorithmic approaches
+   * Generate initial population from template solutions
    */
   private async generateInitialPopulation(
-    _issue: Issue,
-    _context: AnalysisContext,
-    _baseGenerator: BaseSolutionGenerator
+    issue: Issue,
+    context: AnalysisContext,
+    baseGenerator: BaseSolutionGenerator
   ): Promise<SolutionCandidate[]> {
-    // TODO: IMPLEMENT
-    // 
-    // 1. Get template solutions from base generator
-    // const templates = await baseGenerator.generateSolutions(issue, context);
-    // 
-    // 2. Create variations of each template
-    // const candidates: SolutionCandidate[] = [];
-    // for (const template of templates) {
-    //   // Create base candidate
-    //   candidates.push(this.solutionToCandidate(template, 0));
-    //   
-    //   // Create variations with random mutations
-    //   for (let i = 0; i < 3; i++) {
-    //     const variant = this.createVariant(template);
-    //     candidates.push(this.solutionToCandidate(variant, 0));
-    //   }
-    // }
-    // 
-    // 3. Ensure population size
-    // while (candidates.length < this.config.populationSize) {
-    //   const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
-    //   const variant = this.createVariant(randomTemplate);
-    //   candidates.push(this.solutionToCandidate(variant, 0));
-    // }
-    // 
-    // return candidates.slice(0, this.config.populationSize);
+    try {
+      // 1. Get template solutions from base generator
+      const templates = await baseGenerator.generateSolutions(issue, context);
+      
+      if (templates.length === 0) {
+        console.warn('No template solutions generated');
+        return [];
+      }
 
-    return [];
+      const candidates: SolutionCandidate[] = [];
+      
+      // 2. Create base candidates from templates
+      for (const template of templates) {
+        try {
+          const ast = parseCode(template.code);
+          candidates.push({
+            id: this.generateId(),
+            ast,
+            code: template.code,
+            fitness: 0,
+            generation: 0,
+            parentIds: [],
+            mutations: []
+          });
+        } catch (error) {
+          console.warn(`Failed to parse template: ${error}`);
+        }
+      }
+      
+      // 3. Create variations with mutations
+      const variationsPerTemplate = Math.floor((this.config.populationSize - templates.length) / templates.length);
+      
+      for (const template of templates) {
+        for (let i = 0; i < variationsPerTemplate; i++) {
+          const mutationResult = applyRandomMutation(template.code);
+          
+          if (mutationResult.success) {
+            try {
+              const ast = parseCode(mutationResult.code);
+              candidates.push({
+                id: this.generateId(),
+                ast,
+                code: mutationResult.code,
+                fitness: 0,
+                generation: 0,
+                parentIds: [],
+                mutations: [{
+                  operator: 'initial',
+                  generation: 0,
+                  description: mutationResult.description
+                }]
+              });
+            } catch (error) {
+              // Skip invalid mutations
+            }
+          }
+        }
+      }
+      
+      // 4. Fill remaining slots if needed
+      while (candidates.length < this.config.populationSize && templates.length > 0) {
+        const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
+        const mutationResult = applyRandomMutation(randomTemplate.code);
+        
+        if (mutationResult.success) {
+          try {
+            const ast = parseCode(mutationResult.code);
+            candidates.push({
+              id: this.generateId(),
+              ast,
+              code: mutationResult.code,
+              fitness: 0,
+              generation: 0,
+              parentIds: [],
+              mutations: [{
+                operator: 'initial',
+                generation: 0,
+                description: mutationResult.description
+              }]
+            });
+          } catch (error) {
+            // Skip invalid mutations
+          }
+        }
+      }
+      
+      return candidates.slice(0, this.config.populationSize);
+    } catch (error) {
+      console.error('Error generating initial population:', error);
+      return [];
+    }
   }
 
   /**
-   * PLACEHOLDER: Select parents for reproduction
-   * 
-   * Uses tournament selection or roulette wheel selection
-   * to choose parent pairs based on fitness.
+   * Evaluate fitness for all candidates
    */
-  private selectParents(_population: SolutionCandidate[]): [SolutionCandidate, SolutionCandidate][] {
-    // TODO: IMPLEMENT
-    // 
-    // Tournament Selection (recommended):
-    // const pairs: [SolutionCandidate, SolutionCandidate][] = [];
-    // const numPairs = Math.floor(population.length * this.config.crossoverRate / 2);
-    // 
-    // for (let i = 0; i < numPairs; i++) {
-    //   const parent1 = this.tournamentSelect(population, 3);
-    //   const parent2 = this.tournamentSelect(population, 3);
-    //   pairs.push([parent1, parent2]);
-    // }
-    // 
-    // return pairs;
-
-    return [];
+  private async evaluateFitness(
+    candidates: SolutionCandidate[],
+    issue: Issue,
+    context: AnalysisContext
+  ): Promise<SolutionCandidate[]> {
+    return candidates.map(candidate => {
+      // Convert candidate to Solution format for fitness calculation
+      const solution: Solution = {
+        id: candidate.id,
+        issueId: issue.id || '',
+        rank: 0,
+        type: issue.type,
+        code: candidate.code,
+        fitnessScore: 0,
+        reasoning: '',
+        implementationTime: 0,
+        riskLevel: 'medium'
+      };
+      
+      // Calculate fitness using existing FitnessCalculator
+      const fitness = this.fitnessCalculator.calculateFitness(solution, issue, context);
+      
+      return {
+        ...candidate,
+        fitness
+      };
+    });
   }
 
   /**
-   * PLACEHOLDER: Tournament selection
-   * 
-   * Randomly select K candidates and return the one with highest fitness.
+   * Select parent pairs using tournament selection
    */
-  private tournamentSelect(population: SolutionCandidate[], _tournamentSize: number): SolutionCandidate {
-    // TODO: IMPLEMENT
-    // 
-    // const tournament: SolutionCandidate[] = [];
-    // for (let i = 0; i < tournamentSize; i++) {
-    //   const randomIndex = Math.floor(Math.random() * population.length);
-    //   tournament.push(population[randomIndex]);
-    // }
-    // 
-    // return tournament.reduce((best, current) => 
-    //   current.fitness > best.fitness ? current : best
-    // );
-
-    return population[0];
+  private selectParents(population: SolutionCandidate[]): [SolutionCandidate, SolutionCandidate][] {
+    const pairs: [SolutionCandidate, SolutionCandidate][] = [];
+    const numPairs = Math.floor(population.length * this.config.crossoverRate / 2);
+    
+    for (let i = 0; i < numPairs; i++) {
+      const parent1 = this.tournamentSelect(population, this.tournamentSize);
+      const parent2 = this.tournamentSelect(population, this.tournamentSize);
+      pairs.push([parent1, parent2]);
+    }
+    
+    return pairs;
   }
 
   /**
-   * PLACEHOLDER: Crossover operator
-   * 
-   * Combines code from two parent solutions to create offspring.
-   * Uses AST-based merging for semantic correctness.
+   * Tournament selection - select K random candidates and return the best
    */
-  private crossover(_parents: [SolutionCandidate, SolutionCandidate][]): SolutionCandidate[] {
-    // TODO: IMPLEMENT
-    // 
-    // const offspring: SolutionCandidate[] = [];
-    // 
-    // for (const [parent1, parent2] of parents) {
-    //   // Single-point crossover
-    //   const child1 = this.singlePointCrossover(parent1, parent2);
-    //   const child2 = this.singlePointCrossover(parent2, parent1);
-    //   
-    //   offspring.push(child1, child2);
-    // }
-    // 
-    // return offspring;
-
-    return [];
+  private tournamentSelect(population: SolutionCandidate[], tournamentSize: number): SolutionCandidate {
+    const tournament: SolutionCandidate[] = [];
+    
+    for (let i = 0; i < tournamentSize; i++) {
+      const randomIndex = Math.floor(Math.random() * population.length);
+      tournament.push(population[randomIndex]);
+    }
+    
+    return tournament.reduce((best, current) => 
+      current.fitness > best.fitness ? current : best
+    );
   }
 
   /**
-   * PLACEHOLDER: Single-point crossover
-   * 
-   * Splits code at a statement boundary and combines parts from both parents.
+   * Crossover operator - combines parent solutions
    */
-  private singlePointCrossover(parent1: SolutionCandidate, _parent2: SolutionCandidate): SolutionCandidate {
-    // TODO: IMPLEMENT
-    // 
-    // 1. Parse both parent ASTs
-    // 2. Find valid split points (statement boundaries)
-    // 3. Combine first half of parent1 with second half of parent2
-    // 4. Generate code from merged AST
-    // 5. Return new candidate
-
-    return parent1;
-  }
-
-  /**
-   * PLACEHOLDER: Mutation operator
-   * 
-   * Applies random mutations to offspring to introduce variation.
-   * See phase3-implementation-plan.md for 10 mutation operator categories.
-   */
-  private mutate(offspring: SolutionCandidate[], _generation: number): SolutionCandidate[] {
-    // TODO: IMPLEMENT
-    // 
-    // const mutated: SolutionCandidate[] = [];
-    // 
-    // for (const candidate of offspring) {
-    //   if (Math.random() < this.config.mutationRate) {
-    //     const mutatedCandidate = this.applyRandomMutation(candidate, generation);
-    //     mutated.push(mutatedCandidate);
-    //   } else {
-    //     mutated.push(candidate);
-    //   }
-    // }
-    // 
-    // return mutated;
-
+  private crossover(parents: [SolutionCandidate, SolutionCandidate][]): SolutionCandidate[] {
+    const offspring: SolutionCandidate[] = [];
+    
+    for (const [parent1, parent2] of parents) {
+      const child1 = this.singlePointCrossover(parent1, parent2);
+      const child2 = this.singlePointCrossover(parent2, parent1);
+      
+      offspring.push(child1, child2);
+    }
+    
     return offspring;
   }
 
   /**
-   * PLACEHOLDER: Apply random mutation
-   * 
-   * Selects and applies one of the mutation operators:
-   * 1. Variable renaming
-   * 2. Query parameter modification
-   * 3. Loop transformation
-   * 4. ORM method changes
-   * 5. Include/join modifications
-   * 6. Async pattern changes
-   * 7. Code structure refactoring
-   * 8. Optimization additions
-   * 9. Pagination style changes
-   * 10. Error handling additions
+   * Single-point crossover - combines code at statement boundary
    */
-  private applyRandomMutation(candidate: SolutionCandidate, _generation: number): SolutionCandidate {
-    // TODO: IMPLEMENT
-    // 
-    // const mutationOperators = [
-    //   this.mutateVariableNames,
-    //   this.mutateQueryParameters,
-    //   this.mutateLoopStructure,
-    //   this.mutateORMMethod,
-    //   this.mutateIncludes,
-    //   this.mutateAsyncPattern,
-    //   this.mutateCodeStructure,
-    //   this.addOptimization,
-    //   this.mutatePaginationStyle,
-    //   this.addErrorHandling,
-    // ];
-    // 
-    // const operator = mutationOperators[Math.floor(Math.random() * mutationOperators.length)];
-    // return operator.call(this, candidate, generation);
-
-    return candidate;
+  private singlePointCrossover(parent1: SolutionCandidate, parent2: SolutionCandidate): SolutionCandidate {
+    try {
+      const statements1 = getStatements(parent1.ast);
+      const statements2 = getStatements(parent2.ast);
+      
+      if (statements1.length === 0 || statements2.length === 0) {
+        return { ...parent1 };
+      }
+      
+      // Choose random split point
+      const splitPoint = Math.floor(Math.random() * Math.min(statements1.length, statements2.length));
+      
+      // Combine statements
+      const childStatements = [
+        ...statements1.slice(0, splitPoint),
+        ...statements2.slice(splitPoint)
+      ];
+      
+      // Create new AST
+      const childAst = cloneAST(parent1.ast) as t.File;
+      childAst.program.body = childStatements;
+      
+      const childCode = generateCode(childAst);
+      
+      // Validate
+      if (!isValidSyntax(childCode)) {
+        return { ...parent1 };
+      }
+      
+      return {
+        id: this.generateId(),
+        ast: childAst,
+        code: childCode,
+        fitness: 0,
+        generation: parent1.generation + 1,
+        parentIds: [parent1.id, parent2.id],
+        mutations: []
+      };
+    } catch (error) {
+      return { ...parent1 };
+    }
   }
 
   /**
-   * PLACEHOLDER: Evaluate fitness
-   * 
-   * Calculates fitness score for each candidate based on:
-   * - Performance gain
-   * - Code complexity
-   * - Maintainability
-   * - Compatibility with existing codebase
+   * Mutation operator - applies random mutations
    */
-  private async evaluateFitness(
-    candidates: SolutionCandidate[],
-    _issue: Issue,
-    _context: AnalysisContext
-  ): Promise<SolutionCandidate[]> {
-    // TODO: IMPLEMENT
-    // 
-    // return candidates.map(candidate => ({
-    //   ...candidate,
-    //   fitness: this.calculateFitness(candidate, issue, context)
-    // }));
-
-    return candidates;
+  private mutate(offspring: SolutionCandidate[], generation: number): SolutionCandidate[] {
+    const mutated: SolutionCandidate[] = [];
+    
+    for (const candidate of offspring) {
+      if (Math.random() < this.config.mutationRate) {
+        const mutationResult = applyRandomMutation(candidate.code);
+        
+        if (mutationResult.success) {
+          try {
+            const ast = parseCode(mutationResult.code);
+            mutated.push({
+              ...candidate,
+              code: mutationResult.code,
+              ast,
+              mutations: [
+                ...candidate.mutations,
+                {
+                  operator: 'mutation',
+                  generation,
+                  description: mutationResult.description
+                }
+              ]
+            });
+          } catch (error) {
+            mutated.push(candidate);
+          }
+        } else {
+          mutated.push(candidate);
+        }
+      } else {
+        mutated.push(candidate);
+      }
+    }
+    
+    return mutated;
   }
 
+
   /**
-   * PLACEHOLDER: Select survivors
-   * 
-   * Combines elitism (keep best solutions) with fitness-based selection.
+   * Select survivors - elitism + fitness-based selection
    */
   private selectSurvivors(
     population: SolutionCandidate[],
-    _offspring: SolutionCandidate[]
+    offspring: SolutionCandidate[]
   ): SolutionCandidate[] {
-    // TODO: IMPLEMENT
-    // 
-    // 1. Combine population and offspring
-    // const combined = [...population, ...offspring];
-    // 
-    // 2. Sort by fitness
-    // combined.sort((a, b) => b.fitness - a.fitness);
-    // 
-    // 3. Keep top elites
-    // const survivors = combined.slice(0, this.config.elitismCount);
-    // 
-    // 4. Fill remaining slots with fitness-proportional selection
-    // while (survivors.length < this.config.populationSize) {
-    //   const selected = this.rouletteWheelSelect(combined);
-    //   if (!survivors.includes(selected)) {
-    //     survivors.push(selected);
-    //   }
-    // }
-    // 
-    // return survivors;
-
-    return population;
+    // Combine population and offspring
+    const combined = [...population, ...offspring];
+    
+    // Sort by fitness (descending)
+    combined.sort((a, b) => b.fitness - a.fitness);
+    
+    // Keep top elites
+    const survivors = combined.slice(0, this.config.elitismCount);
+    
+    // Fill remaining slots with roulette wheel selection
+    const remaining = combined.slice(this.config.elitismCount);
+    const totalFitness = remaining.reduce((sum, c) => sum + Math.max(0, c.fitness), 0);
+    
+    while (survivors.length < this.config.populationSize && remaining.length > 0) {
+      if (totalFitness === 0) {
+        // If all fitness is 0, select randomly
+        const randomIndex = Math.floor(Math.random() * remaining.length);
+        survivors.push(remaining[randomIndex]);
+        remaining.splice(randomIndex, 1);
+      } else {
+        // Roulette wheel selection
+        let random = Math.random() * totalFitness;
+        
+        for (let i = 0; i < remaining.length; i++) {
+          random -= Math.max(0, remaining[i].fitness);
+          if (random <= 0) {
+            survivors.push(remaining[i]);
+            remaining.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+    
+    return survivors.slice(0, this.config.populationSize);
   }
 
   /**
-   * PLACEHOLDER: Check convergence
-   * 
-   * Determines if evolution should stop early due to:
-   * - Fitness plateau (no improvement)
-   * - Low diversity (population too similar)
-   * - Maximum generations reached
+   * Convert candidates to Solution objects
    */
-  private hasConverged(_population: SolutionCandidate[], _generation: number): boolean {
-    // TODO: IMPLEMENT
-    // 
-    // 1. Check if max generations reached
-    // if (generation >= this.config.maxGenerations) return true;
-    // 
-    // 2. Check fitness plateau
-    // if (generation > 3) {
-    //   const recentImprovement = this.calculateRecentImprovement(population, generation);
-    //   if (recentImprovement < this.config.convergenceThreshold) return true;
-    // }
-    // 
-    // 3. Check diversity
-    // const diversity = this.calculateDiversity(population);
-    // if (diversity < 0.1) return true; // Population too similar
-    // 
-    // return false;
+  private convertToSolutions(candidates: SolutionCandidate[]): Solution[] {
+    return candidates.map((candidate, index) => ({
+      id: candidate.id,
+      issueId: '',
+      rank: index + 1,
+      type: 'evolved',
+      code: candidate.code,
+      fitnessScore: candidate.fitness,
+      reasoning: `Evolved solution (Generation ${candidate.generation}, ${candidate.mutations.length} mutations applied)`,
+      implementationTime: 5,
+      riskLevel: 'medium'
+    }));
+  }
 
+  /**
+   * Check if evolution has converged
+   */
+  private hasConverged(population: SolutionCandidate[], generation: number): boolean {
+    // Check max generations
+    if (generation >= this.config.maxGenerations - 1) {
+      return true;
+    }
+    
+    // Check if all candidates have similar fitness (low diversity)
+    if (population.length > 1) {
+      const avgFitness = population.reduce((sum, c) => sum + c.fitness, 0) / population.length;
+      const maxFitness = Math.max(...population.map(c => c.fitness));
+      
+      if (maxFitness > 0) {
+        const improvement = (maxFitness - avgFitness) / maxFitness;
+        if (improvement < this.config.convergenceThreshold) {
+          return true;
+        }
+      }
+    }
+    
     return false;
   }
-
-  /**
-   * PLACEHOLDER: Convert candidates to solutions
-   * 
-   * Transforms internal SolutionCandidate objects to public Solution interface.
-   */
-  private convertToSolutions(_candidates: SolutionCandidate[]): Solution[] {
-    // TODO: IMPLEMENT
-    // 
-    // return candidates.map((candidate, index) => ({
-    //   id: candidate.id,
-    //   issueId: '', // Set from issue
-    //   rank: index + 1,
-    //   type: this.inferSolutionType(candidate),
-    //   code: candidate.code,
-    //   fitnessScore: candidate.fitness,
-    //   reasoning: this.generateReasoning(candidate),
-    //   implementationTime: this.estimateImplementationTime(candidate),
-    //   riskLevel: this.assessRiskLevel(candidate),
-    // }));
-
-    return [];
-  }
 }
-
-/**
- * MUTATION OPERATORS TO IMPLEMENT
- * 
- * See temp/phase3-implementation-plan.md Priority 3 for detailed specifications.
- * 
- * Each mutation operator should:
- * 1. Check if applicable to the candidate's AST
- * 2. Parse and modify the AST
- * 3. Generate new code from modified AST
- * 4. Record mutation in history
- * 5. Return mutated candidate
- * 
- * Categories:
- * 1. Variable & Naming Mutations
- * 2. Query Parameter Mutations
- * 3. Loop Transformation Mutations
- * 4. ORM Method Mutations
- * 5. Include/Join Mutations
- * 6. Async Pattern Mutations
- * 7. Code Structure Mutations
- * 8. Optimization Mutations
- * 9. Pagination Mutations
- * 10. Error Handling Mutations
- */
-
-/**
- * CROSSOVER OPERATORS TO IMPLEMENT
- * 
- * See temp/phase3-implementation-plan.md Priority 4 for detailed specifications.
- * 
- * Strategies:
- * 1. Single-Point Crossover - Split at statement boundary
- * 2. Multi-Point Crossover - Multiple split points
- * 3. Uniform Crossover - Random selection per statement
- * 4. Semantic Crossover - Merge query parameters intelligently
- */
-
-/**
- * USAGE EXAMPLE (when implemented):
- * 
- * const engine = new EvolutionaryEngine();
- * const baseGenerator = new N1SolutionGenerator();
- * 
- * const evolvedSolutions = await engine.evolve(issue, context, baseGenerator);
- * // Returns top 5 evolved solutions after 10 generations
- */

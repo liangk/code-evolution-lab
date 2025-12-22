@@ -96,4 +96,21 @@ export class RepositoryComponent implements OnInit {
       }
     });
   }
+
+  analyzeRepository(repoId: string) {
+    this.loading.set(true);
+    this.error.set(null);
+
+    this.analysisService.analyzeGithubRepository(repoId, true).subscribe({
+      next: (result) => {
+        console.log('Analysis complete:', result);
+        this.loading.set(false);
+        alert(`Analysis complete!\nScore: ${result.score}\nFiles analyzed: ${result.filesAnalyzed}\nTotal issues: ${result.totalIssues}`);
+      },
+      error: (err) => {
+        this.error.set(err.error?.message || 'Failed to analyze repository');
+        this.loading.set(false);
+      }
+    });
+  }
 }

@@ -52,4 +52,8 @@ export class AnalysisService {
   deleteRepository(id: string): Observable<any> {
     return this.http.delete(`${this.apiUrl}/repositories/${id}`);
   }
+
+  analyzeGithubRepository(repoId: string, generateSolutions = false): Observable<any> {
+    return this.http.post(`${this.apiUrl}/repository/${repoId}/analyze-github`, { generateSolutions });
+  }
 }
