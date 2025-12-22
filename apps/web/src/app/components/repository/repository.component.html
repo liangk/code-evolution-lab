@@ -18,31 +18,34 @@
         <input id="githubUrl" type="text" [(ngModel)]="newRepo.githubUrl" placeholder="https://github.com/username/repo" />
       </div>
 
-      <button class="btn btn-primary" (click)="addRepository()" [disabled]="loading">
-        {{ loading ? 'Adding...' : 'Add Repository' }}
+      <button class="btn btn-primary" (click)="addRepository()" [disabled]="loading()">
+        {{ loading() ? 'Adding...' : 'Add Repository' }}
       </button>
     </div>
 
-    <div class="error-message" *ngIf="error">
-      <p>{{ error }}</p>
+    <div class="error-message" *ngIf="error()">
+      <p>{{ error() }}</p>
     </div>
 
     <div class="repositories-section">
       <h2>Your Repositories</h2>
       
-      <div class="loading" *ngIf="loading && repositories.length === 0">
+      <div class="loading" *ngIf="loading() && repositories().length === 0">
         <p>Loading repositories...</p>
       </div>
 
-      <div class="empty-state" *ngIf="!loading && repositories.length === 0">
+      <div class="empty-state" *ngIf="!loading() && repositories().length === 0">
         <p>No repositories yet. Add your first repository above!</p>
       </div>
 
-      <div class="repo-list" *ngIf="repositories.length > 0">
-        <div class="repo-card" *ngFor="let repo of repositories">
+      <div class="repo-list" *ngIf="repositories().length > 0">
+        <div class="repo-card" *ngFor="let repo of repositories()">
           <div class="repo-header">
             <h3>{{ repo.name }}</h3>
             <div class="repo-actions">
+              <button class="btn btn-small btn-primary" (click)="analyzeRepository(repo.id)" [disabled]="loading()">
+                {{ loading() ? 'Analyzing...' : 'Analyze' }}
+              </button>
               <button class="btn btn-small" (click)="viewAnalyses(repo.id)">View Analyses</button>
               <button class="btn btn-small btn-danger" (click)="deleteRepository(repo.id)">Delete</button>
             </div>

@@ -9,99 +9,160 @@
       <h2>Code Input</h2>
       
       <div class="form-group">
+        <label for="exampleSelect">Load Example Code</label>
+        <select id="exampleSelect" [ngModel]="selectedExample()" (ngModelChange)="loadExample($event)" class="example-selector">
+          <option value="">-- Select an example --</option>
+          @for (example of examples; track example.id) {
+            <option [value]="example.id">
+              {{ example.name }} ({{ example.severity }}) - {{ example.description }}
+            </option>
+          }
+        </select>
+      </div>
+
+      <div class="form-group">
         <label for="filePath">File Path</label>
-        <input id="filePath" type="text" [(ngModel)]="filePath" placeholder="example.js" />
+        <input id="filePath" type="text" [ngModel]="filePath()" (ngModelChange)="filePath.set($event)" placeholder="example.js" />
       </div>
 
       <div class="form-group">
         <label for="code">Code to Analyze</label>
-        <textarea id="code" [(ngModel)]="code" placeholder="Paste your code here..." rows="15"></textarea>
+        <textarea id="code" [ngModel]="code()" (ngModelChange)="code.set($event)" placeholder="Paste your code here or select an example above..." rows="15"></textarea>
       </div>
 
       <div class="form-group checkbox">
-        <input id="generateSolutions" type="checkbox" [(ngModel)]="generateSolutions" />
+        <input id="generateSolutions" type="checkbox" [ngModel]="generateSolutions()" (ngModelChange)="generateSolutions.set($event)" />
         <label for="generateSolutions">Generate AI Solutions</label>
       </div>
-
+ 
       <div class="actions">
-        <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing">
-          {{ analyzing ? 'Analyzing...' : 'Analyze Code' }}
+        <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing()">
+          {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
         </button>
-        <button class="btn btn-secondary" (click)="loadExample()">Load Example</button>
-        <button class="btn btn-secondary" (click)="clearResults()" *ngIf="result">Clear Results</button>
+        @if (result()) {
+          <button class="btn btn-secondary" (click)="clearResults()">Clear Results</button>
+        }
       </div>
     </div>
 
-    <div class="results-section" *ngIf="result || error">
-      <div class="error-message" *ngIf="error">
-        <h3>Error</h3>
-        <p>{{ error }}</p>
-      </div>
-
-      <div class="analysis-results" *ngIf="result">
-        <h2>Analysis Results</h2>
-        
-        <div class="score-card">
-          <div class="score-value" [class.good]="result.score >= 80" [class.warning]="result.score >= 50 && result.score < 80" [class.bad]="result.score < 50">
-            {{ result.score }}
+    @if (result() || error()) {
+      <div class="results-section">
+        @if (error(); as err) {
+          <div class="error-message">
+            <h3>Error</h3>
+            <p>{{ err }}</p>
           </div>
-          <div class="score-label">Performance Score</div>
-        </div>
+        }
 
-        <div class="issues-summary">
-          <h3>Issues Found: {{ result.totalIssues }}</h3>
-          <div class="severity-badges">
-            <span class="badge critical" *ngIf="result.issuesBySeverity.critical > 0">
-              Critical: {{ result.issuesBySeverity.critical }}
-            </span>
-            <span class="badge high" *ngIf="result.issuesBySeverity.high > 0">
-              High: {{ result.issuesBySeverity.high }}
-            </span>
-            <span class="badge medium" *ngIf="result.issuesBySeverity.medium > 0">
-              Medium: {{ result.issuesBySeverity.medium }}
-            </span>
-            <span class="badge low" *ngIf="result.issuesBySeverity.low > 0">
-              Low: {{ result.issuesBySeverity.low }}
-            </span>
-          </div>
-        </div>
-
-        <div class="detectors-results">
-          <div class="detector-result" *ngFor="let detector of result.results">
-            <h3>{{ detector.detectorName }}</h3>
-            <p *ngIf="detector.issues.length === 0" class="no-issues">✓ No issues found</p>
+        @if (result(); as res) {
+          <div class="analysis-results">
+            <h2>Analysis Results</h2>
             
-            <div class="issues-list" *ngIf="detector.issues.length > 0">
-              <div class="issue-card" *ngFor="let issue of detector.issues">
-                <div class="issue-header">
-                  <span class="severity-badge" [class]="issue.severity.toLowerCase()">{{ issue.severity }}</span>
-                  <span class="issue-id">{{ issue.id }}</span>
-                </div>
-                <div class="issue-body">
-                  <p class="issue-description">{{ issue.description }}</p>
-                  <div class="code-block" *ngIf="issue.codeBefore">
-                    <strong>Code:</strong>
-                    <pre>{{ issue.codeBefore }}</pre>
-                  </div>
-                  <div class="solutions" *ngIf="issue.solutions && issue.solutions.length > 0">
-                    <h4>Suggested Solutions ({{ issue.solutions.length }})</h4>
-                    <div class="solution-card" *ngFor="let solution of issue.solutions">
-                      <div class="solution-header">
-                        <span class="solution-rank">Rank #{{ solution.rank }}</span>
-                        <span class="fitness-score">Fitness: {{ solution.fitnessScore }}</span>
-                      </div>
-                      <p class="solution-description">{{ solution.description }}</p>
-                      <div class="code-block">
-                        <pre>{{ solution.codeAfter }}</pre>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            <div class="score-card">
+              <div class="score-value" [class.good]="res.score >= 80" [class.warning]="res.score >= 50 && res.score < 80" [class.bad]="res.score < 50">
+                {{ res.score }}
+              </div>
+              <div class="score-label">Performance Score</div>
+            </div>
+
+            <div class="issues-summary">
+              <h3>Issues Found: {{ res.totalIssues }}</h3>
+              <div class="severity-badges">
+                @if (res.issuesBySeverity.critical > 0) {
+                  <span class="badge critical">
+                    Critical: {{ res.issuesBySeverity.critical }}
+                  </span>
+                }
+                @if (res.issuesBySeverity.high > 0) {
+                  <span class="badge high">
+                    High: {{ res.issuesBySeverity.high }}
+                  </span>
+                }
+                @if (res.issuesBySeverity.medium > 0) {
+                  <span class="badge medium">
+                    Medium: {{ res.issuesBySeverity.medium }}
+                  </span>
+                }
+                @if (res.issuesBySeverity.low > 0) {
+                  <span class="badge low">
+                    Low: {{ res.issuesBySeverity.low }}
+                  </span>
+                }
               </div>
             </div>
+
+            <div class="detectors-results">
+              @for (detector of res.results; track detector.detectorName) {
+                <div class="detector-result">
+                  <h3>{{ detector.detectorName }}</h3>
+                  @if (detector.issues.length === 0) {
+                    <p class="no-issues">✓ No issues found</p>
+                  }
+                  
+                  @if (detector.issues.length > 0) {
+                    <div class="issues-list">
+                      @for (issue of detector.issues; track issue.id) {
+                        <div class="issue-card">
+                          <div class="issue-header">
+                            <span class="severity-badge" [class]="issue.severity.toLowerCase()">{{ issue.severity }}</span>
+                            <span class="issue-id">{{ issue.id }}</span>
+                          </div>
+                          <div class="issue-body">
+                            <p class="issue-description">{{ issue.description }}</p>
+                            @if (issue.estimatedImpact; as impact) {
+                              <div class="impact-section">
+                                <div class="impact-header">
+                                  <span class="impact-title">Impact Analysis</span>
+                                  <span class="impact-score">Score: {{ impact.severityScore }}/10</span>
+                                  <span class="impact-confidence" title="Confidence Score">({{ impact.confidenceScore }}%)</span>
+                                </div>
+                                <p class="impact-description">{{ impact.description }}</p>
+                                @if (impact.metrics) {
+                                  <div class="metrics-grid">
+                                    @for (metric of impact.metrics | keyvalue; track metric.key) {
+                                      <div class="metric-item">
+                                        <span class="metric-label">{{ metric.key }}:</span>
+                                        <span class="metric-value">{{ metric.value }}</span>
+                                      </div>
+                                    }
+                                  </div>
+                                }
+                              </div>
+                            }
+                            @if (issue.codeBefore) {
+                              <div class="code-block">
+                                <strong>Code:</strong>
+                                <pre>{{ issue.codeBefore }}</pre>
+                              </div>
+                            }
+                            @if (issue.solutions?.length > 0) {
+                              <div class="solutions">
+                                <h4>Suggested Solutions ({{ issue.solutions.length }})</h4>
+                                @for (solution of issue.solutions; track solution.id) {
+                                  <div class="solution-card">
+                                    <div class="solution-header">
+                                      <span class="solution-rank">Rank #{{ solution.rank }}</span>
+                                      <span class="fitness-score">Fitness: {{ solution.fitnessScore }}</span>
+                                    </div>
+                                    <p class="solution-description">{{ solution.reasoning || solution.description }}</p>
+                                    <div class="code-block">
+                                      <pre>{{ solution.code || solution.codeAfter }}</pre>
+                                    </div>
+                                  </div>
+                                }
+                              </div>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
           </div>
-        </div>
+        }
       </div>
-    </div>
+    }
   </div>
 </div>

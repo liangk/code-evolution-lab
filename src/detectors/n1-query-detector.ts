@@ -1,9 +1,11 @@
 import traverse from '@babel/traverse';
 import { BaseDetector } from './base-detector';
-import { Loop, DatabaseCall, AnalysisContext, DetectorResult } from '../types';
+import { ImportAnalyzer } from '../analyzer/import-analyzer';
+import { Loop, DatabaseCall, AnalysisContext, DetectorResult, ORMContext } from '../types';
 
 export class N1QueryDetector extends BaseDetector {
   name = 'N+1 Query Detector';
+  private importAnalyzer = new ImportAnalyzer();
 
   async detect(ast: any, context: AnalysisContext): Promise<DetectorResult> {
     this.reset();
@@ -11,7 +13,7 @@ export class N1QueryDetector extends BaseDetector {
     const loops = this.findLoops(ast);
 
     for (const loop of loops) {
-      const dbQueries = this.findDatabaseQueries(loop, context.sourceCode);
+      const dbQueries = this.findDatabaseQueries(loop, context);
 
       if (dbQueries.length > 0) {
         this.reportIssue(loop, dbQueries, context);
@@ -80,7 +82,7 @@ export class N1QueryDetector extends BaseDetector {
     return loops;
   }
 
-  private findDatabaseQueries(loop: Loop, sourceCode: string): DatabaseCall[] {
+  private findDatabaseQueries(loop: Loop, context: AnalysisContext): DatabaseCall[] {
     const dbCalls: DatabaseCall[] = [];
     const dbPatterns = [
       'findOne', 'findAll', 'findByPk', 'findAndCountAll',
@@ -92,31 +94,39 @@ export class N1QueryDetector extends BaseDetector {
 
     traverse(loop.node, {
       AwaitExpression: (path: any) => {
-        const callee = path.node.argument?.callee;
+        const callExpr = path.node.argument;
+        if (callExpr?.type !== 'CallExpression') return;
+        
+        const callee = callExpr.callee;
+        if (!callee?.property) return;
 
-        if (callee?.property) {
-          const methodName = callee.property.name;
+        const methodName = callee.property.name;
+        if (!dbPatterns.includes(methodName)) return;
 
-          if (dbPatterns.includes(methodName)) {
-            dbCalls.push({
-              method: methodName,
-              orm: this.detectORM(methodName),
-              location: path.node.loc,
-              code: this.getCode(path.node, sourceCode),
-            });
-          }
+        const orm = this.detectORMFromNode(callExpr, methodName, context.ormContext);
+        if (orm) {
+          dbCalls.push({
+            method: methodName,
+            orm,
+            location: path.node.loc,
+            code: this.getCode(path.node, context.sourceCode),
+          });
         }
       },
 
       CallExpression: (path: any) => {
+        if (path.parent?.type === 'AwaitExpression') return;
+        
         const methodName = path.node.callee?.property?.name;
+        if (!methodName || !dbPatterns.includes(methodName)) return;
 
-        if (methodName && dbPatterns.includes(methodName)) {
+        const orm = this.detectORMFromNode(path.node, methodName, context.ormContext);
+        if (orm) {
           dbCalls.push({
             method: methodName,
-            orm: this.detectORM(methodName),
+            orm,
             location: path.node.loc,
-            code: this.getCode(path.node, sourceCode),
+            code: this.getCode(path.node, context.sourceCode),
           });
         }
       },
@@ -125,7 +135,27 @@ export class N1QueryDetector extends BaseDetector {
     return dbCalls;
   }
 
-  private detectORM(methodName: string): string {
+  private detectORMFromNode(node: any, methodName: string, ormContext?: ORMContext): string | null {
+    if (ormContext) {
+      const importBasedORM = this.importAnalyzer.getORMFromCallExpression(node, ormContext);
+      if (importBasedORM) {
+        return this.formatORMName(importBasedORM);
+      }
+
+      if (ormContext.detectedORMs.size > 0) {
+        const fallbackORM = this.detectORMByMethodName(methodName);
+        const normalizedFallback = fallbackORM.toLowerCase().replace(' ', '_');
+        if (ormContext.detectedORMs.has(normalizedFallback)) {
+          return fallbackORM;
+        }
+        return null;
+      }
+    }
+
+    return this.detectORMByMethodName(methodName);
+  }
+
+  private detectORMByMethodName(methodName: string): string {
     if (['findOne', 'findAll', 'findByPk', 'findAndCountAll'].includes(methodName)) {
       return 'Sequelize';
     }
@@ -139,6 +169,18 @@ export class N1QueryDetector extends BaseDetector {
       return 'Raw SQL';
     }
     return 'Unknown';
+  }
+
+  private formatORMName(orm: string): string {
+    const names: Record<string, string> = {
+      'sequelize': 'Sequelize',
+      'prisma': 'Prisma',
+      'mongoose': 'Mongoose',
+      'typeorm': 'TypeORM',
+      'knex': 'Knex',
+      'raw_sql': 'Raw SQL',
+    };
+    return names[orm] || orm;
   }
 
   private getCode(node: any, sourceCode: string): string {
@@ -155,6 +197,7 @@ export class N1QueryDetector extends BaseDetector {
     const codeBefore = this.getCode(loop.node, context.sourceCode);
     const description = this.generateDescription(loop, dbQueries);
 
+    const queriesIfN100 = dbQueries.length * 100 + 1;
     const issue = this.createIssue(
       'n_plus_1_query',
       severity,
@@ -164,11 +207,14 @@ export class N1QueryDetector extends BaseDetector {
       description,
       codeBefore,
       undefined,
-      {
-        queriesIfN100: dbQueries.length * 100 + 1,
-        queriesOptimal: 1,
-        performanceGain: `${((dbQueries.length * 100) / 1) * 100}x faster`,
-      }
+      this.createImpact(
+        severity === 'critical' ? 9 : severity === 'high' ? 7 : 5,
+        `${queriesIfN100} queries for 100 items vs 1 optimal query`,
+        85,
+        'performance',
+        'moderate',
+        { queriesIfN100, queriesOptimal: 1, performanceGain: `${queriesIfN100}x slower` }
+      )
     );
 
     this.issues.push(issue);

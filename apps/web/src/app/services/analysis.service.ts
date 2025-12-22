@@ -38,6 +38,22 @@ export class AnalysisService {
   }
 
   getRepositoryAnalyses(repoId: string): Observable<any> {
-    return this.http.get(`${this.apiUrl}/repository/${repoId}/analyses`);
+    return this.http.get(`${this.apiUrl}/repositories/${repoId}/analyses`);
+  }
+
+  getAllRepositories(): Observable<any> {
+    return this.http.get(`${this.apiUrl}/repositories`);
+  }
+
+  createRepository(data: { name: string; githubUrl: string; ownerId: string }): Observable<any> {
+    return this.http.post(`${this.apiUrl}/repositories`, data);
+  }
+
+  deleteRepository(id: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/repositories/${id}`);
+  }
+
+  analyzeGithubRepository(repoId: string, generateSolutions = false): Observable<any> {
+    return this.http.post(`${this.apiUrl}/repository/${repoId}/analyze-github`, { generateSolutions });
   }
 }

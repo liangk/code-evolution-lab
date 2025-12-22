@@ -11,6 +11,22 @@ export class DatabaseService {
     return prisma.repository.findUnique({ where: { id } });
   }
 
+  async getAllRepositories() {
+    return prisma.repository.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        analyses: {
+          orderBy: { analyzedAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+  }
+
+  async deleteRepository(id: string) {
+    return prisma.repository.delete({ where: { id } });
+  }
+
   async createAnalysis(repositoryId: string, score: number, issuesCounts: any) {
     return prisma.analysis.create({
       data: {

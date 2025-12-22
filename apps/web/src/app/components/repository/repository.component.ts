@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalysisService } from '../../services/analysis.service';
@@ -19,9 +19,9 @@ interface Repository {
   styleUrls: ['./repository.component.scss']
 })
 export class RepositoryComponent implements OnInit {
-  repositories: Repository[] = [];
-  loading = false;
-  error: string | null = null;
+  repositories = signal<Repository[]>([]);
+  loading = signal(false);
+  error = signal<string | null>(null);
   
   newRepo = {
     name: '',
@@ -36,41 +36,53 @@ export class RepositoryComponent implements OnInit {
   }
 
   loadRepositories() {
-    this.loading = true;
-    this.error = null;
+    this.loading.set(true);
+    this.error.set(null);
     
-    // Mock data for now - will be replaced with actual API call
-    setTimeout(() => {
-      this.repositories = [];
-      this.loading = false;
-    }, 500);
+    this.analysisService.getAllRepositories().subscribe({
+      next: (data) => {
+        this.repositories.set(data);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.error.set(err.error?.message || 'Failed to load repositories');
+        this.loading.set(false);
+      }
+    });
   }
 
   addRepository() {
     if (!this.newRepo.name || !this.newRepo.githubUrl) {
-      this.error = 'Please fill in all fields';
+      this.error.set('Please fill in all fields');
       return;
     }
 
-    this.loading = true;
-    this.error = null;
+    this.loading.set(true);
+    this.error.set(null);
 
-    // Mock implementation - will be replaced with actual API call
-    const repo: Repository = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: this.newRepo.name,
-      githubUrl: this.newRepo.githubUrl,
-      createdAt: new Date()
-    };
-
-    this.repositories.unshift(repo);
-    this.newRepo = { name: '', githubUrl: '', ownerId: 'default-user' };
-    this.loading = false;
+    this.analysisService.createRepository(this.newRepo).subscribe({
+      next: (repo) => {
+        this.repositories.update(repos => [repo, ...repos]);
+        this.newRepo = { name: '', githubUrl: '', ownerId: 'default-user' };
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.error.set(err.error?.message || 'Failed to create repository');
+        this.loading.set(false);
+      }
+    });
   }
 
   deleteRepository(id: string) {
     if (confirm('Are you sure you want to delete this repository?')) {
-      this.repositories = this.repositories.filter(r => r.id !== id);
+      this.analysisService.deleteRepository(id).subscribe({
+        next: () => {
+          this.repositories.update(repos => repos.filter(r => r.id !== id));
+        },
+        error: (err) => {
+          this.error.set(err.error?.message || 'Failed to delete repository');
+        }
+      });
     }
   }
 
@@ -80,7 +92,24 @@ export class RepositoryComponent implements OnInit {
         console.log('Analyses:', data);
       },
       error: (err) => {
-        this.error = err.error?.message || 'Failed to load analyses';
+        this.error.set(err.error?.message || 'Failed to load analyses');
+      }
+    });
+  }
+
+  analyzeRepository(repoId: string) {
+    this.loading.set(true);
+    this.error.set(null);
+
+    this.analysisService.analyzeGithubRepository(repoId, true).subscribe({
+      next: (result) => {
+        console.log('Analysis complete:', result);
+        this.loading.set(false);
+        alert(`Analysis complete!\nScore: ${result.score}\nFiles analyzed: ${result.filesAnalyzed}\nTotal issues: ${result.totalIssues}`);
+      },
+      error: (err) => {
+        this.error.set(err.error?.message || 'Failed to analyze repository');
+        this.loading.set(false);
       }
     });
   }

@@ -24,10 +24,13 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     }
     req.user = user as { id: string; email: string };
     next();
+    return;
   });
+
+  return;
 };
 
-export const optionalAuth = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const optionalAuth = (req: AuthRequest, _res: Response, next: NextFunction) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
@@ -36,9 +39,13 @@ export const optionalAuth = (req: AuthRequest, res: Response, next: NextFunction
       if (!err) {
         req.user = user as { id: string; email: string };
       }
+      next();
+      return;
     });
+    return;
   }
   next();
+  return;
 };
 
 export const generateToken = (userId: string, email: string): string => {

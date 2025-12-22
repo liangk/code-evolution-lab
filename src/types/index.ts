@@ -24,6 +24,15 @@ export interface DatabaseCall {
   code: string;
 }
 
+export interface EstimatedImpact {
+  severityScore: number;
+  description: string;
+  confidenceScore: number;
+  category: 'performance' | 'memory' | 'network' | 'complexity';
+  fixDifficulty: 'trivial' | 'easy' | 'moderate' | 'complex';
+  metrics: Record<string, string | number | boolean | string[]>;
+}
+
 export interface Issue {
   id: string;
   type: string;
@@ -34,18 +43,21 @@ export interface Issue {
   description: string;
   codeBefore: string;
   codeAfter?: string;
-  estimatedImpact?: {
-    queriesIfN100?: number;
-    queriesOptimal?: number;
-    performanceGain?: string;
-  };
+  estimatedImpact?: EstimatedImpact;
   solutions?: Solution[];
+}
+
+export interface ORMContext {
+  detectedORMs: Set<string>;
+  symbolToORM: Map<string, string>;
+  prismaClientVar?: string;
 }
 
 export interface AnalysisContext {
   sourceCode: string;
   filePath: string;
   ast: any;
+  ormContext?: ORMContext;
 }
 
 export interface DetectorResult {
