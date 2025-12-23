@@ -1,0 +1,52 @@
+.evolution-progress { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; color: #fff; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+    h3 { margin: 0; font-size: 18px; color: #00d9ff; }
+    .issue-badge { background: #0f3460; padding: 4px 12px; border-radius: 20px; font-size: 12px; color: #e94560; }
+  }
+  .issue-info { margin-bottom: 16px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 8px;
+    .label { color: #888; margin-right: 8px; }
+    .value { color: #fff; font-weight: 500; }
+  }
+  .progress-bar-container { position: relative; height: 24px; background: #0f3460; border-radius: 12px; margin-bottom: 20px; overflow: hidden;
+    .progress-bar { height: 100%; background: linear-gradient(90deg, #00d9ff 0%, #e94560 100%); border-radius: 12px; transition: width 0.3s ease; }
+    .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+  }
+  .fitness-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;
+    .stat-card { background: rgba(255,255,255,0.05); padding: 16px; border-radius: 8px; text-align: center;
+      &.best { border-left: 3px solid #00d9ff; }
+      &.avg { border-left: 3px solid #e94560; }
+      &.generations { border-left: 3px solid #ffd700; }
+      .stat-label { font-size: 12px; color: #888; margin-bottom: 4px; }
+      .stat-value { font-size: 24px; font-weight: 700; color: #fff; }
+      .stat-indicator { font-size: 12px; color: #4ade80; margin-top: 4px; }
+    }
+  }
+  .fitness-chart { margin-bottom: 20px;
+    .chart-title { font-size: 14px; color: #888; margin-bottom: 12px; }
+    .chart-container { background: rgba(255,255,255,0.03); border-radius: 8px; padding: 16px; }
+    .chart-bars { display: flex; align-items: flex-end; gap: 8px; height: 120px; padding-bottom: 24px; }
+    .bar-group { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 30px; position: relative; height: 100%;
+      .bar { width: 12px; border-radius: 4px 4px 0 0; transition: height 0.3s ease; position: absolute; bottom: 0;
+        &.best-bar { background: #00d9ff; left: 2px; }
+        &.avg-bar { background: #e94560; left: 16px; opacity: 0.7; }
+      }
+      .bar-label { position: absolute; bottom: -20px; font-size: 10px; color: #666; }
+    }
+    .chart-legend { display: flex; gap: 16px; justify-content: center; margin-top: 8px;
+      .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }
+      .legend-color { width: 12px; height: 12px; border-radius: 2px;
+        &.best { background: #00d9ff; }
+        &.avg { background: #e94560; }
+      }
+    }
+  }
+  .best-solution {
+    .solution-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+      .solution-title { font-size: 14px; color: #ffd700; }
+      .solution-fitness { font-size: 12px; color: #4ade80; background: rgba(74,222,128,0.1); padding: 4px 8px; border-radius: 4px; }
+    }
+    .solution-code { background: #0d1117; border-radius: 8px; padding: 16px; margin: 0; overflow-x: auto; font-size: 13px; line-height: 1.5;
+      code { color: #c9d1d9; font-family: 'Fira Code', monospace; }
+    }
+  }
+}

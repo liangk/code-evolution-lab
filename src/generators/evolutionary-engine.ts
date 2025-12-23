@@ -4,6 +4,7 @@ import { FitnessCalculator } from './fitness-calculator';
 import { parseCode, generateCode, cloneAST, getStatements, isValidSyntax } from '../utils/ast-utils';
 import { applyRandomMutation } from './mutation-operators';
 import * as t from '@babel/types';
+import { EventEmitter } from 'events';
 
 /**
  * PLACEHOLDER: Evolutionary Algorithm Engine
@@ -48,7 +49,7 @@ interface EvolutionConfig {
   convergenceThreshold: number;
 }
 
-export class EvolutionaryEngine {
+export class EvolutionaryEngine extends EventEmitter {
   private config: EvolutionConfig = {
     populationSize: parseInt(process.env.EVO_POPULATION_SIZE || '20', 10),
     maxGenerations: parseInt(process.env.EVO_MAX_GENERATIONS || '10', 10),
@@ -61,6 +62,10 @@ export class EvolutionaryEngine {
   private tournamentSize = parseInt(process.env.EVO_TOURNAMENT_SIZE || '3', 10);
   private enableAlgorithm = process.env.EVO_ENABLE_ALGORITHM === 'true';
   private fitnessCalculator = new FitnessCalculator();
+
+  constructor() {
+    super();
+  }
 
   /**
    * Generate unique ID for candidates
@@ -105,6 +110,20 @@ export class EvolutionaryEngine {
         const bestFitness = Math.max(...population.map(c => c.fitness));
         const avgFitness = population.reduce((sum, c) => sum + c.fitness, 0) / population.length;
         console.log(`  📈 Best fitness: ${bestFitness.toFixed(2)}, Avg: ${avgFitness.toFixed(2)}`);
+        
+        // Emit progress event
+        const bestCandidate = population.reduce((best, c) => c.fitness > best.fitness ? c : best);
+        this.emit('progress', {
+          generation: generation + 1,
+          maxGenerations: this.config.maxGenerations,
+          bestFitness,
+          avgFitness,
+          bestSolution: {
+            code: bestCandidate.code,
+            fitness: bestCandidate.fitness
+          },
+          population: population.map(c => ({ fitness: c.fitness, generation: c.generation }))
+        });
         
         // 2b. Check convergence
         if (this.hasConverged(population, generation)) {

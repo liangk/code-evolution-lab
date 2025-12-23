@@ -1,0 +1,131 @@
+<div class="landing-page">
+  <!-- Hero Section -->
+  <section class="hero-section">
+    <div class="container">
+      <div class="hero-content">
+        <span class="hero-badge">
+          <span class="badge-icon">✨</span>
+          AI-Powered Performance Analysis
+        </span>
+        
+        <h1 class="hero-title">
+          Find Performance Bottlenecks
+          <span class="gradient-text">in Minutes</span>
+          Not Days
+        </h1>
+        
+        <p class="hero-subtitle">
+          Code Evolution Lab analyzes your JavaScript/TypeScript code,
+          detects N+1 queries, memory leaks, and slow loops—then shows
+          you exactly how to fix them with AI-generated solutions.
+        </p>
+        
+        <div class="hero-cta">
+          <button class="btn btn-primary btn-large" (click)="tryExample()">
+            <span>▶</span>
+            Try Live Example
+          </button>
+          
+          <button class="btn btn-secondary btn-large" (click)="analyzeRepo()">
+            <span>→</span>
+            Analyze Your Repo
+          </button>
+        </div>
+        
+        <div class="hero-stats">
+          <div class="stat" *ngFor="let stat of stats">
+            <span class="stat-value">{{ stat.value }}</span>
+            <span class="stat-label">{{ stat.label }}</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="hero-visual">
+        <div class="code-preview">
+          <div class="code-header">
+            <span class="code-dot red"></span>
+            <span class="code-dot yellow"></span>
+            <span class="code-dot green"></span>
+            <span class="code-title">example.js</span>
+          </div>
+          <div class="code-content">
+            <pre [innerHTML]="codeExample"></pre>
+          </div>
+          <div class="code-badge">
+            <span class="badge badge-success">✓ 10x Faster</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="features-section">
+    <div class="container">
+      <div class="section-header">
+        <h2>Powerful Performance Detection</h2>
+        <p>Comprehensive analysis with AI-powered solutions</p>
+      </div>
+      
+      <div class="features-grid">
+        <div class="feature-card" *ngFor="let feature of features">
+          <div class="feature-icon">{{ feature.icon }}</div>
+          <h3>{{ feature.title }}</h3>
+          <p>{{ feature.description }}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works Section -->
+  <section class="how-it-works-section">
+    <div class="container">
+      <div class="section-header">
+        <h2>How It Works</h2>
+        <p>Three simple steps to optimize your code</p>
+      </div>
+      
+      <div class="steps-grid">
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <h3>Paste Your Code</h3>
+          <p>Copy and paste your JavaScript/TypeScript code or connect your GitHub repository</p>
+        </div>
+        
+        <div class="step-arrow">→</div>
+        
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <h3>AI Analysis</h3>
+          <p>Our evolutionary algorithm analyzes your code and generates optimized solutions</p>
+        </div>
+        
+        <div class="step-arrow">→</div>
+        
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <h3>Apply Fixes</h3>
+          <p>Review ranked solutions and apply the best fix with confidence</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Section -->
+  <section class="cta-section">
+    <div class="container">
+      <div class="cta-content">
+        <h2>Ready to Optimize Your Code?</h2>
+        <p>Start analyzing your code in seconds. No credit card required.</p>
+        <div class="cta-buttons">
+          <button class="btn btn-primary btn-large" (click)="tryExample()">
+            Get Started Free
+          </button>
+          <button class="btn btn-ghost btn-large" (click)="analyzeRepo()">
+            View Documentation
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>

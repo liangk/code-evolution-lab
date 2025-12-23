@@ -561,10 +561,11 @@ lsof -ti:3000 | xargs kill -9
    - Reduce `EVO_MAX_GENERATIONS` for quicker convergence
    - Increase both for better solution quality
 
-3. **Database**: SQLite is used for simplicity. For production:
-   - Consider PostgreSQL for better concurrency
-   - Add indexes for frequently queried fields
-   - Implement connection pooling
+3. **Database**: PostgreSQL is used with Prisma ORM. For production:
+   - The current setup is production-ready with PostgreSQL
+   - Add indexes for frequently queried fields in prisma/schema.prisma
+   - Consider connection pooling with PgBouncer for high traffic
+   - Monitor database performance and optimize queries
 
 ## Contributing
 

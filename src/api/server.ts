@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import analysisRoutes from './routes/analysis.routes';
 import authRoutes from './routes/auth.routes';
 import repositoryRoutes from './routes/repository.routes';
+import sseRoutes from './routes/sse.routes';
 import { apiLimiter, analysisLimiter } from './middleware/rateLimiter';
 
 dotenv.config();
@@ -21,6 +22,7 @@ app.get('/health', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/repositories', repositoryRoutes);
+app.use('/api/sse', sseRoutes);
 app.use('/api', analysisLimiter, analysisRoutes);
 
 app.listen(PORT, () => {

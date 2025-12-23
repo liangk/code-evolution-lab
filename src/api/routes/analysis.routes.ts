@@ -1,13 +1,26 @@
 import { Router, Request, Response } from 'express';
 import { CodeAnalyzer } from '../../analyzer/code-analyzer';
 import { db } from '../database';
+import { sendProgressUpdate } from './sse.routes';
 
 const router = Router();
-const analyzer = new CodeAnalyzer();
 
 router.post('/analyze', async (req: Request, res: Response) => {
   try {
-    const { code, filePath, generateSolutions = false } = req.body;
+    const { code, filePath, generateSolutions = false, sessionId } = req.body;
+    
+    // Create analyzer instance for this request
+    const analyzer = new CodeAnalyzer();
+    
+    // Listen for evolution progress events
+    if (sessionId) {
+      analyzer.on('evolution-progress', (progress) => {
+        sendProgressUpdate(sessionId, {
+          type: 'evolution-progress',
+          ...progress
+        });
+      });
+    }
 
     if (!code) {
       return res.status(400).json({ error: 'Code is required' });
@@ -53,89 +66,6 @@ router.post('/analyze', async (req: Request, res: Response) => {
     return;
   } catch (error) {
     console.error('Analysis error:', error);
-    res.status(500).json({ error: 'Analysis failed', message: (error as Error).message });
-    return;
-  }
-});
-
-router.post('/repository/:repoId/analyze', async (req: Request, res: Response) => {
-  try {
-    const { repoId } = req.params;
-    const { code, filePath, generateSolutions = false } = req.body;
-
-    const repository = await db.getRepository(repoId);
-    if (!repository) {
-      return res.status(404).json({ error: 'Repository not found' });
-    }
-
-    const results = await analyzer.analyzeCode(code, filePath || 'unknown.js', generateSolutions);
-
-    let totalIssues = 0;
-    const issuesBySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
-
-    results.forEach((result) => {
-      totalIssues += result.issues.length;
-      result.issues.forEach((issue) => {
-        const severity = issue.severity.toLowerCase();
-        if (severity in issuesBySeverity) {
-          issuesBySeverity[severity as keyof typeof issuesBySeverity]++;
-        }
-      });
-    });
-
-    const score = Math.max(0, 100 - totalIssues * 5);
-
-    const analysis = await db.createAnalysis(repoId, score, {
-      total: totalIssues,
-      ...issuesBySeverity,
-    });
-
-    for (const result of results) {
-      for (const issue of result.issues) {
-        const dbIssue = await db.createIssue(analysis.id, {
-          type: result.detectorName,
-          severity: issue.severity,
-          filePath: issue.filePath,
-          lineNumber: issue.lineNumber,
-          title: issue.title,
-          description: issue.description,
-          codeBefore: issue.codeBefore,
-          codeAfter: issue.codeAfter || null,
-          estimatedImpact: issue.estimatedImpact || {},
-        });
-
-        if (issue.solutions) {
-          for (const solution of issue.solutions) {
-            await db.createSolution(dbIssue.id, solution);
-          }
-        }
-      }
-    }
-
-    // Normalize solution fields for frontend
-    const normalizedResults = results.map((detector) => ({
-      ...detector,
-      issues: detector.issues.map((issue) => ({
-        ...issue,
-        solutions: issue.solutions?.map((sol: any) => ({
-          ...sol,
-          description: sol.description ?? sol.reasoning ?? '',
-          codeAfter: sol.codeAfter ?? sol.code ?? '',
-        })),
-      })),
-    }));
-
-    res.json({
-      success: true,
-      analysisId: analysis.id,
-      score,
-      totalIssues,
-      issuesBySeverity,
-      results: normalizedResults,
-    });
-    return;
-  } catch (error) {
-    console.error('Repository analysis error:', error);
     res.status(500).json({ error: 'Analysis failed', message: (error as Error).message });
     return;
   }
@@ -197,11 +127,24 @@ router.post('/repository/:repoId/analyze-github', async (req: Request, res: Resp
   
   try {
     const { repoId } = req.params;
-    const { generateSolutions = false } = req.body;
+    const { generateSolutions = false, sessionId } = req.body;
 
     const repository = await db.getRepository(repoId);
     if (!repository) {
       return res.status(404).json({ error: 'Repository not found' });
+    }
+
+    // Create analyzer instance for this request
+    const analyzer = new CodeAnalyzer();
+    
+    // Listen for evolution progress events
+    if (sessionId) {
+      analyzer.on('evolution-progress', (progress) => {
+        sendProgressUpdate(sessionId, {
+          type: 'evolution-progress',
+          ...progress
+        });
+      });
     }
 
     // Clone the repository

@@ -1,0 +1,138 @@
+// ============================================
+// Code Evolution Lab - Component Styles
+// ============================================
+
+@use 'variables' as *;
+@use 'mixins' as *;
+@use 'sass:color';
+
+// ============================================
+// CARD COMPONENT
+// ============================================
+
+.app-card { background: white; border-radius: $radius-lg; box-shadow: $shadow-md; padding: $spacing-6; transition: all $transition-base; @include dark-mode { background: $dark-bg-secondary; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
+  &:hover { box-shadow: $shadow-lg; transform: translateY(-2px); }
+  &.card-flat { box-shadow: none; border: 1px solid $gray-200; @include dark-mode { border-color: $dark-bg-tertiary; } }
+}
+
+.app-card-header { @include flex-between; margin-bottom: $spacing-4;
+  h3 { font-size: $text-xl; font-weight: $font-semibold; margin: 0; }
+  .card-actions { @include flex-start; gap: $spacing-2; }
+}
+
+.app-card-content { font-size: $text-sm; color: $gray-700; @include dark-mode { color: $dark-text-secondary; } }
+
+.app-card-footer { margin-top: $spacing-4; padding-top: $spacing-4; border-top: 1px solid $gray-200; @include dark-mode { border-top-color: $dark-bg-tertiary; } }
+
+// ============================================
+// BUTTON SYSTEM
+// ============================================
+
+.btn { display: inline-flex; align-items: center; gap: $spacing-2; padding: $spacing-3 $spacing-6; border-radius: $radius-md; font-weight: $font-semibold; font-size: $text-sm; cursor: pointer; transition: all $transition-base; border: none; text-decoration: none;
+  &:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+  &:focus-visible { @include focus-ring; }
+}
+
+.btn-primary { background: $primary-gradient; color: white;
+  &:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
+  &:active:not(:disabled) { transform: translateY(0); }
+}
+
+.btn-secondary { background: white; color: $primary-600; border: 2px solid $primary-600;
+  &:hover:not(:disabled) { background: $primary-600; color: white; }
+  @include dark-mode { background: $dark-bg-secondary; color: $primary-600; }
+}
+
+.btn-ghost { background: transparent; color: $gray-700; padding: $spacing-2 $spacing-4;
+  &:hover:not(:disabled) { background: $gray-100; }
+  @include dark-mode { color: $dark-text-secondary; &:hover:not(:disabled) { background: $dark-bg-tertiary; } }
+}
+
+.btn-danger { background: $danger; color: white;
+  &:hover:not(:disabled) { background: color.adjust($danger, $lightness: -10%); box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4); }
+}
+
+.btn-success { background: $success; color: white;
+  &:hover:not(:disabled) { background: color.adjust($success, $lightness: -10%); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
+}
+
+.btn-large { padding: $spacing-4 $spacing-8; font-size: $text-base; }
+.btn-small { padding: $spacing-2 $spacing-4; font-size: $text-xs; }
+
+// ============================================
+// BADGE COMPONENT
+// ============================================
+
+.badge { display: inline-flex; align-items: center; gap: $spacing-1; padding: $spacing-1 $spacing-3; border-radius: $radius-full; font-size: $text-xs; font-weight: $font-semibold; text-transform: uppercase; letter-spacing: 0.05em;
+  &.badge-critical { background: rgba(239, 68, 68, 0.1); color: $danger; }
+  &.badge-high { background: rgba(245, 158, 11, 0.1); color: $warning; }
+  &.badge-medium { background: rgba(59, 130, 246, 0.1); color: $info; }
+  &.badge-low { background: rgba(107, 114, 128, 0.1); color: $gray-600; }
+  &.badge-success { background: rgba(16, 185, 129, 0.1); color: $success; }
+}
+
+// ============================================
+// INPUT COMPONENT
+// ============================================
+
+.form-group { margin-bottom: $spacing-4;
+  label { display: block; font-size: $text-sm; font-weight: $font-medium; color: $gray-700; margin-bottom: $spacing-2; @include dark-mode { color: $dark-text-secondary; } }
+  input, textarea, select { width: 100%; padding: $spacing-3; border: 1px solid $gray-300; border-radius: $radius-md; font-size: $text-sm; font-family: $font-primary; transition: all $transition-fast; @include dark-mode { background: $dark-bg-tertiary; border-color: $dark-bg-tertiary; color: $dark-text-primary; }
+    &:focus { outline: none; border-color: $primary-600; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }
+    &::placeholder { color: $gray-400; }
+  }
+  textarea { resize: vertical; min-height: 120px; font-family: $font-code; }
+}
+
+// ============================================
+// STAT CARD
+// ============================================
+
+.stat-card { background: white; border-radius: $radius-lg; padding: $spacing-6; box-shadow: $shadow-md; @include dark-mode { background: $dark-bg-secondary; }
+  .stat-label { font-size: $text-sm; color: $gray-600; margin-bottom: $spacing-2; @include dark-mode { color: $dark-text-secondary; } }
+  .stat-value { font-size: $text-3xl; font-weight: $font-bold; color: $gray-900; @include dark-mode { color: $dark-text-primary; } }
+  .stat-change { font-size: $text-sm; margin-top: $spacing-2;
+    &.positive { color: $success; }
+    &.negative { color: $danger; }
+  }
+}
+
+// ============================================
+// ALERT COMPONENT
+// ============================================
+
+.alert { padding: $spacing-4; border-radius: $radius-md; margin-bottom: $spacing-4; display: flex; align-items: flex-start; gap: $spacing-3;
+  &.alert-info { background: rgba(59, 130, 246, 0.1); color: $info; border-left: 4px solid $info; }
+  &.alert-success { background: rgba(16, 185, 129, 0.1); color: $success; border-left: 4px solid $success; }
+  &.alert-warning { background: rgba(245, 158, 11, 0.1); color: $warning; border-left: 4px solid $warning; }
+  &.alert-danger { background: rgba(239, 68, 68, 0.1); color: $danger; border-left: 4px solid $danger; }
+}
+
+// ============================================
+// LOADING SPINNER
+// ============================================
+
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid rgba(102, 126, 234, 0.2); border-top-color: $primary-600; border-radius: 50%; animation: spin 0.6s linear infinite;
+  &.spinner-large { width: 40px; height: 40px; border-width: 4px; }
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+// ============================================
+// PROGRESS BAR
+// ============================================
+
+.progress-bar { width: 100%; height: 8px; background: $gray-200; border-radius: $radius-full; overflow: hidden; @include dark-mode { background: $dark-bg-tertiary; }
+  .progress-fill { height: 100%; background: $primary-gradient; border-radius: $radius-full; transition: width $transition-base; }
+}
+
+// ============================================
+// TOOLTIP
+// ============================================
+
+.tooltip { position: relative; display: inline-block;
+  .tooltip-text { visibility: hidden; opacity: 0; position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%); background: $gray-900; color: white; padding: $spacing-2 $spacing-3; border-radius: $radius-md; font-size: $text-xs; white-space: nowrap; z-index: $z-tooltip; transition: opacity $transition-fast;
+    &::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: $gray-900; }
+  }
+  &:hover .tooltip-text { visibility: visible; opacity: 1; }
+}

@@ -10,18 +10,34 @@ import { InefficientLoopSolutionGenerator } from '../generators/inefficient-loop
 import { MemoryLeakSolutionGenerator } from '../generators/memory-leak-solution-generator';
 import { LargePayloadSolutionGenerator } from '../generators/large-payload-solution-generator';
 import { FitnessCalculator } from '../generators/fitness-calculator';
+import { EvolutionaryEngine } from '../generators/evolutionary-engine';
 import { AnalysisContext, DetectorResult, Issue } from '../types';
+import { EventEmitter } from 'events';
 
-export class CodeAnalyzer {
+export interface EvolutionProgress {
+  generation: number;
+  maxGenerations: number;
+  bestFitness: number;
+  avgFitness: number;
+  bestSolution: any;
+  population: any[];
+}
+
+export class CodeAnalyzer extends EventEmitter {
   private parser: CodeParser;
   private importAnalyzer: ImportAnalyzer;
   private detectors: any[];
   private generators: Map<string, any>;
   private fitnessCalculator: FitnessCalculator;
+  private evolutionaryEngine: EvolutionaryEngine;
+  private useEvolutionary: boolean;
 
   constructor() {
+    super();
     this.parser = new CodeParser();
     this.importAnalyzer = new ImportAnalyzer();
+    this.useEvolutionary = process.env.EVO_ENABLE_ALGORITHM === 'true';
+    this.evolutionaryEngine = new EvolutionaryEngine();
     this.detectors = [
       new N1QueryDetector(),
       new InefficientLoopDetector(),
@@ -105,14 +121,31 @@ export class CodeAnalyzer {
       const generator = this.generators.get(issue.type);
       
       if (generator) {
-        const solutions = await generator.generateSolutions(issue, context);
-        const rankedSolutions = this.fitnessCalculator.rankSolutions(
-          solutions,
-          issue,
-          context
-        );
+        let solutions;
         
-        (issue as any).solutions = rankedSolutions;
+        if (this.useEvolutionary) {
+          // Use evolutionary algorithm with progress tracking
+          this.evolutionaryEngine.on('progress', (progress: EvolutionProgress) => {
+            this.emit('evolution-progress', {
+              issueType: issue.type,
+              issueTitle: issue.title,
+              ...progress
+            });
+          });
+          
+          solutions = await this.evolutionaryEngine.evolve(issue, context, generator);
+        } else {
+          // Use simple generator
+          solutions = await generator.generateSolutions(issue, context);
+          const rankedSolutions = this.fitnessCalculator.rankSolutions(
+            solutions,
+            issue,
+            context
+          );
+          solutions = rankedSolutions;
+        }
+        
+        (issue as any).solutions = solutions;
       }
       
       issuesWithSolutions.push(issue);

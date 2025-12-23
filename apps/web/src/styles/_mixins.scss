@@ -1,0 +1,63 @@
+// ============================================
+// Code Evolution Lab - SCSS Mixins
+// ============================================
+
+@use 'variables' as *;
+
+// ============================================
+// RESPONSIVE BREAKPOINTS
+// ============================================
+
+@mixin sm { @media (min-width: $breakpoint-sm) { @content; } }
+@mixin md { @media (min-width: $breakpoint-md) { @content; } }
+@mixin lg { @media (min-width: $breakpoint-lg) { @content; } }
+@mixin xl { @media (min-width: $breakpoint-xl) { @content; } }
+@mixin xxl { @media (min-width: $breakpoint-2xl) { @content; } }
+
+// ============================================
+// DARK MODE
+// ============================================
+
+@mixin dark-mode { @media (prefers-color-scheme: dark) { @content; } }
+
+// ============================================
+// FLEXBOX UTILITIES
+// ============================================
+
+@mixin flex-center { display: flex; align-items: center; justify-content: center; }
+@mixin flex-between { display: flex; align-items: center; justify-content: space-between; }
+@mixin flex-start { display: flex; align-items: center; justify-content: flex-start; }
+@mixin flex-end { display: flex; align-items: center; justify-content: flex-end; }
+@mixin flex-column { display: flex; flex-direction: column; }
+
+// ============================================
+// TRUNCATE TEXT
+// ============================================
+
+@mixin truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@mixin line-clamp($lines) { display: -webkit-box; -webkit-line-clamp: $lines; -webkit-box-orient: vertical; overflow: hidden; }
+
+// ============================================
+// GRADIENT TEXT
+// ============================================
+
+@mixin gradient-text($gradient) { background: $gradient; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+
+// ============================================
+// CARD SHADOW HOVER
+// ============================================
+
+@mixin card-hover { transition: all $transition-base; &:hover { transform: translateY(-2px); box-shadow: $shadow-lg; } }
+
+// ============================================
+// FOCUS RING
+// ============================================
+
+@mixin focus-ring { outline: 2px solid $primary-600; outline-offset: 2px; }
+
+// ============================================
+// SCROLLBAR STYLING
+// ============================================
+
+@mixin custom-scrollbar { &::-webkit-scrollbar { width: 8px; height: 8px; } &::-webkit-scrollbar-track { background: $gray-100; border-radius: $radius-full; } &::-webkit-scrollbar-thumb { background: $gray-400; border-radius: $radius-full; &:hover { background: $gray-500; } } }

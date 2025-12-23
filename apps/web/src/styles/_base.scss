@@ -1,0 +1,77 @@
+// ============================================
+// Code Evolution Lab - Base Styles
+// ============================================
+
+@use 'variables' as *;
+@use 'mixins' as *;
+
+// ============================================
+// GOOGLE FONTS IMPORT
+// ============================================
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fira+Code:wght@400;500;600&display=swap');
+
+// ============================================
+// GLOBAL RESETS
+// ============================================
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+
+body { font-family: $font-primary; font-size: $text-base; line-height: $leading-normal; color: $gray-900; background: $gray-50; @include dark-mode { background: $dark-bg-primary; color: $dark-text-primary; } }
+
+// ============================================
+// TYPOGRAPHY
+// ============================================
+
+h1, h2, h3, h4, h5, h6 { font-weight: $font-semibold; line-height: $leading-tight; margin-bottom: $spacing-4; }
+
+h1 { font-size: $text-4xl; font-weight: $font-bold; @include md { font-size: $text-5xl; } }
+h2 { font-size: $text-3xl; @include md { font-size: $text-4xl; } }
+h3 { font-size: $text-2xl; @include md { font-size: $text-3xl; } }
+h4 { font-size: $text-xl; @include md { font-size: $text-2xl; } }
+h5 { font-size: $text-lg; @include md { font-size: $text-xl; } }
+h6 { font-size: $text-base; @include md { font-size: $text-lg; } }
+
+p { margin-bottom: $spacing-4; line-height: $leading-relaxed; }
+
+a { color: $primary-600; text-decoration: none; transition: color $transition-fast; &:hover { color: $primary-700; text-decoration: underline; } }
+
+code, pre { font-family: $font-code; font-size: $text-sm; }
+
+code { background: $gray-100; padding: $spacing-1 $spacing-2; border-radius: $radius-sm; color: $danger; @include dark-mode { background: $dark-bg-tertiary; color: $dark-text-primary; } }
+
+pre { background: $gray-900; color: $gray-100; padding: $spacing-4; border-radius: $radius-md; overflow-x: auto; margin-bottom: $spacing-4; @include custom-scrollbar; }
+
+// ============================================
+// UTILITY CLASSES
+// ============================================
+
+.container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 $spacing-4; @include md { padding: 0 $spacing-6; } @include lg { padding: 0 $spacing-8; } }
+
+.gradient-text { @include gradient-text($primary-gradient); }
+
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.mt-0 { margin-top: $spacing-0; }
+.mt-2 { margin-top: $spacing-2; }
+.mt-4 { margin-top: $spacing-4; }
+.mt-6 { margin-top: $spacing-6; }
+.mt-8 { margin-top: $spacing-8; }
+
+.mb-0 { margin-bottom: $spacing-0; }
+.mb-2 { margin-bottom: $spacing-2; }
+.mb-4 { margin-bottom: $spacing-4; }
+.mb-6 { margin-bottom: $spacing-6; }
+.mb-8 { margin-bottom: $spacing-8; }
+
+.flex { display: flex; }
+.flex-center { @include flex-center; }
+.flex-between { @include flex-between; }
+.flex-column { @include flex-column; }
+.gap-2 { gap: $spacing-2; }
+.gap-4 { gap: $spacing-4; }
+.gap-6 { gap: $spacing-6; }

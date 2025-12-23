@@ -1,0 +1,24 @@
+@use '../../../styles/variables' as *;
+@use '../../../styles/mixins' as *;
+
+.navbar { background: white; box-shadow: $shadow-sm; position: sticky; top: 0; z-index: $z-sticky; @include dark-mode { background: $dark-bg-secondary; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); } }
+
+.navbar-content { @include flex-between; padding: $spacing-4 0; }
+
+.navbar-brand { @include flex-start; gap: $spacing-2; text-decoration: none; font-size: $text-xl; font-weight: $font-bold; color: $gray-900; transition: color $transition-fast; @include dark-mode { color: $dark-text-primary; }
+  &:hover { color: $primary-600; text-decoration: none; }
+  .brand-icon { font-size: $text-2xl; }
+}
+
+.navbar-links { display: none; gap: $spacing-6; @include md { display: flex; }
+  &.mobile-open { display: flex; flex-direction: column; position: absolute; top: 100%; left: 0; right: 0; background: white; padding: $spacing-4; box-shadow: $shadow-lg; @include dark-mode { background: $dark-bg-secondary; } }
+}
+
+.nav-link { font-size: $text-sm; font-weight: $font-medium; color: $gray-700; text-decoration: none; padding: $spacing-2 $spacing-3; border-radius: $radius-md; transition: all $transition-fast; @include dark-mode { color: $dark-text-secondary; }
+  &:hover { color: $primary-600; background: rgba(102, 126, 234, 0.1); text-decoration: none; }
+  &.active { color: $primary-600; background: rgba(102, 126, 234, 0.1); }
+}
+
+.mobile-menu-toggle { display: flex; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: $spacing-2; @include md { display: none; }
+  .hamburger-line { width: 24px; height: 2px; background: $gray-700; border-radius: 2px; transition: all $transition-fast; @include dark-mode { background: $dark-text-secondary; } }
+}

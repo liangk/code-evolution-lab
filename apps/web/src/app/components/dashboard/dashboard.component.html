@@ -45,6 +45,11 @@
       </div>
     </div>
 
+    <!-- Evolution Progress Display -->
+    @if (showEvolutionProgress() && analyzing()) {
+      <app-evolution-progress></app-evolution-progress>
+    }
+
     @if (result() || error()) {
       <div class="results-section">
         @if (error(); as err) {

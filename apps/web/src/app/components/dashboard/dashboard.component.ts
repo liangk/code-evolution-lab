@@ -1,7 +1,8 @@
-import { Component, signal } from '@angular/core';
+import { Component, signal, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AnalysisService, AnalysisRequest, AnalysisResult } from '../../services/analysis.service';
+import { EvolutionProgressComponent } from '../evolution-progress/evolution-progress.component';
 
 interface ExampleFile {
   id: string;
@@ -15,11 +16,13 @@ interface ExampleFile {
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, EvolutionProgressComponent],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.scss']
 })
 export class DashboardComponent {
+  @ViewChild(EvolutionProgressComponent) evolutionProgress!: EvolutionProgressComponent;
+  
   code = signal('');
   filePath = signal('example.js');
   generateSolutions = signal(true);
@@ -27,6 +30,7 @@ export class DashboardComponent {
   result = signal<AnalysisResult | null>(null);
   error = signal<string | null>(null);
   selectedExample = signal<string>('');
+  showEvolutionProgress = signal(false);
   
   examples: ExampleFile[] = [
     {
@@ -358,6 +362,12 @@ export default UserList;`
     this.analyzing.set(true);
     this.error.set(null);
     this.result.set(null);
+    this.showEvolutionProgress.set(true);
+    
+    // Reset evolution progress display
+    if (this.evolutionProgress) {
+      this.evolutionProgress.reset();
+    }
 
     const request: AnalysisRequest = {
       code: this.code(),
@@ -365,16 +375,23 @@ export default UserList;`
       generateSolutions: this.generateSolutions()
     };
 
-    this.analysisService.analyzeCode(request).subscribe({
+    // Use SSE-enabled analysis with progress tracking
+    const { sessionId, result$ } = this.analysisService.analyzeCodeWithProgress(request);
+    console.log('Started analysis with session:', sessionId);
+
+    result$.subscribe({
       next: (result) => {
         console.log('Analysis result received:', result);
         this.result.set(result);
         this.analyzing.set(false);
+        // Disconnect SSE after analysis complete
+        this.analysisService.disconnectFromEvolutionProgress();
       },
       error: (err) => {
         console.error('Analysis error:', err);
         this.error.set(err.error?.message || 'Analysis failed');
         this.analyzing.set(false);
+        this.analysisService.disconnectFromEvolutionProgress();
       }
     });
   }

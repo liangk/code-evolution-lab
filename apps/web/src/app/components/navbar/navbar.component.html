@@ -1,0 +1,28 @@
+<nav class="navbar">
+  <div class="container">
+    <div class="navbar-content">
+      <a routerLink="/" class="navbar-brand">
+        <span class="brand-icon">🧬</span>
+        <span class="brand-text">Code Evolution Lab</span>
+      </a>
+      
+      <div class="navbar-links" [class.mobile-open]="mobileMenuOpen">
+        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
+          Home
+        </a>
+        <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
+          Dashboard
+        </a>
+        <a routerLink="/repositories" routerLinkActive="active" class="nav-link">
+          Repositories
+        </a>
+      </div>
+      
+      <button class="mobile-menu-toggle" (click)="toggleMobileMenu()" aria-label="Toggle menu">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </button>
+    </div>
+  </div>
+</nav>

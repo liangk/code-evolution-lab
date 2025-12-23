@@ -1,0 +1,59 @@
+<div class="evolution-progress" *ngIf="isActive()">
+  <div class="progress-header">
+    <h3>🧬 Evolutionary Algorithm Progress</h3>
+    <span class="issue-badge">{{ issueType() }}</span>
+  </div>
+  
+  <div class="issue-info" *ngIf="issueTitle()">
+    <span class="label">Optimizing:</span>
+    <span class="value">{{ issueTitle() }}</span>
+  </div>
+
+  <div class="progress-bar-container">
+    <div class="progress-bar" [style.width.%]="progressPercent()"></div>
+    <span class="progress-text">Generation {{ currentGeneration() }} / {{ maxGenerations() }}</span>
+  </div>
+
+  <div class="fitness-stats">
+    <div class="stat-card best">
+      <div class="stat-label">Best Fitness</div>
+      <div class="stat-value">{{ bestFitness().toFixed(1) }}</div>
+      <div class="stat-indicator" *ngIf="fitnessImprovement() > 0">
+        ↑ +{{ fitnessImprovement().toFixed(1) }}
+      </div>
+    </div>
+    <div class="stat-card avg">
+      <div class="stat-label">Avg Fitness</div>
+      <div class="stat-value">{{ avgFitness().toFixed(1) }}</div>
+    </div>
+    <div class="stat-card generations">
+      <div class="stat-label">Generations</div>
+      <div class="stat-value">{{ currentGeneration() }}</div>
+    </div>
+  </div>
+
+  <div class="fitness-chart" *ngIf="generationHistory().length > 0">
+    <div class="chart-title">Fitness Over Generations</div>
+    <div class="chart-container">
+      <div class="chart-bars">
+        <div class="bar-group" *ngFor="let gen of generationHistory()">
+          <div class="bar best-bar" [style.height.%]="getBarHeight(gen.bestFitness)" [title]="'Best: ' + gen.bestFitness.toFixed(1)"></div>
+          <div class="bar avg-bar" [style.height.%]="getBarHeight(gen.avgFitness)" [title]="'Avg: ' + gen.avgFitness.toFixed(1)"></div>
+          <span class="bar-label">{{ gen.generation }}</span>
+        </div>
+      </div>
+      <div class="chart-legend">
+        <span class="legend-item"><span class="legend-color best"></span> Best</span>
+        <span class="legend-item"><span class="legend-color avg"></span> Average</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="best-solution" *ngIf="bestSolutionCode()">
+    <div class="solution-header">
+      <span class="solution-title">🏆 Current Best Solution</span>
+      <span class="solution-fitness">Fitness: {{ bestFitness().toFixed(1) }}</span>
+    </div>
+    <pre class="solution-code"><code [textContent]="bestSolutionCode()"></code></pre>
+  </div>
+</div>

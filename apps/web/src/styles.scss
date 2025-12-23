@@ -1,1 +1,9 @@
-/* You can add global styles to this file, and also import other style files */
+// ============================================
+// Code Evolution Lab - Global Styles
+// ============================================
+
+// Import Design System
+@use 'styles/variables' as *;
+@use 'styles/mixins' as *;
+@use 'styles/base' as *;
+@use 'styles/components' as *;
