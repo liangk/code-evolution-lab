@@ -115,43 +115,107 @@ export class CodeAnalyzer extends EventEmitter {
     issues: Issue[],
     context: AnalysisContext
   ): Promise<Issue[]> {
-    const issuesWithSolutions: Issue[] = [];
+    const MAX_CONCURRENT = 5;
+    const MAX_TIME_PER_ISSUE = parseInt(process.env.EVO_MAX_TIME_MS || '30000', 10);
 
-    for (const issue of issues) {
+    const processIssue = async (issue: Issue): Promise<Issue> => {
       const generator = this.generators.get(issue.type);
       
-      if (generator) {
-        let solutions;
+      if (!generator) {
+        return issue;
+      }
+
+      try {
+        // Phase 1: Generate quick heuristic solutions (always fast)
+        const quickSolutions = await generator.generateSolutions(issue, context);
+        const rankedQuickSolutions = this.fitnessCalculator.rankSolutions(
+          quickSolutions,
+          issue,
+          context
+        );
         
-        if (this.useEvolutionary) {
-          // Use evolutionary algorithm with progress tracking
-          this.evolutionaryEngine.on('progress', (progress: EvolutionProgress) => {
+        // Send quick solutions immediately
+        (issue as any).solutions = rankedQuickSolutions;
+        this.emit('quick-solutions', {
+          issueId: issue.title,
+          issueType: issue.type,
+          solutions: rankedQuickSolutions,
+          phase: 'heuristic'
+        });
+
+        // Phase 2: Evolutionary refinement (if enabled and applicable)
+        if (this.useEvolutionary && this.shouldUseEvolutionFor(issue)) {
+          this.emit('evolution-start', {
+            issueId: issue.title,
+            issueType: issue.type
+          });
+
+          // Set up progress listener
+          const progressHandler = (progress: EvolutionProgress) => {
             this.emit('evolution-progress', {
+              issueId: issue.title,
               issueType: issue.type,
               issueTitle: issue.title,
               ...progress
             });
-          });
-          
-          solutions = await this.evolutionaryEngine.evolve(issue, context, generator);
-        } else {
-          // Use simple generator
-          solutions = await generator.generateSolutions(issue, context);
-          const rankedSolutions = this.fitnessCalculator.rankSolutions(
-            solutions,
-            issue,
-            context
-          );
-          solutions = rankedSolutions;
+          };
+          this.evolutionaryEngine.on('progress', progressHandler);
+
+          try {
+            // Run evolution with timeout
+            const evolvedSolutions = await Promise.race([
+              this.evolutionaryEngine.evolve(issue, context, generator),
+              this.createTimeout(MAX_TIME_PER_ISSUE)
+            ]);
+
+            if (evolvedSolutions) {
+              (issue as any).solutions = evolvedSolutions;
+              this.emit('evolution-complete', {
+                issueId: issue.title,
+                issueType: issue.type,
+                solutions: evolvedSolutions,
+                phase: 'evolutionary'
+              });
+            }
+          } catch (error: any) {
+            console.warn(`Evolution timeout or error for ${issue.title}:`, error.message);
+            this.emit('evolution-timeout', {
+              issueId: issue.title,
+              issueType: issue.type,
+              fallbackSolutions: rankedQuickSolutions
+            });
+          } finally {
+            this.evolutionaryEngine.removeListener('progress', progressHandler);
+          }
         }
-        
-        (issue as any).solutions = solutions;
+      } catch (error) {
+        console.error(`Error processing issue ${issue.title}:`, error);
       }
-      
-      issuesWithSolutions.push(issue);
+
+      return issue;
+    };
+
+    // Process issues in parallel with concurrency limit
+    const results: Issue[] = [];
+    for (let i = 0; i < issues.length; i += MAX_CONCURRENT) {
+      const batch = issues.slice(i, i + MAX_CONCURRENT);
+      const batchResults = await Promise.all(batch.map(processIssue));
+      results.push(...batchResults);
     }
 
-    return issuesWithSolutions;
+    return results;
+  }
+
+  private shouldUseEvolutionFor(issue: Issue): boolean {
+    const complexTypes = ['n1-query', 'inefficient-loop'];
+    const highSeverity = issue.severity === 'critical' || issue.severity === 'high';
+    return complexTypes.includes(issue.type) || highSeverity;
+  }
+
+  private createTimeout(ms: number): Promise<null> {
+    return new Promise((resolve) => {
+      setTimeout(() => resolve(null), ms);
+    });
   }
 
   addDetector(detector: any): void {

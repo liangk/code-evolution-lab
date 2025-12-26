@@ -261,25 +261,12 @@ useEffect(() => {
       ));
     }
 
-    // Solution 2: Class-based timer cleanup
+    // Solution 2: Class-based timer with cleanup method
     solutions.push(this.createSolution(
       issue.id,
       2,
       'class_timer_cleanup',
-      `// Before: Timer without cleanup
-class DataFetcher {
-  constructor() {
-    this.intervalId = setInterval(() => {
-      this.fetchData();
-    }, 5000);
-  }
-  
-  fetchData() {
-    // Fetch data
-  }
-}
-
-// After: Store ID and provide cleanup method
+      `// Store ID and provide cleanup method
 class DataFetcher {
   constructor() {
     this.intervalId = setInterval(() => {
@@ -314,14 +301,7 @@ fetcher.destroy();`,
       issue.id,
       3,
       'timeout_cancellation',
-      `// Before: setTimeout without cleanup
-function scheduleTask() {
-  setTimeout(() => {
-    performTask();
-  }, 5000);
-}
-
-// After: Return cancellation function
+      `// Return cancellation function
 function scheduleTask() {
   const timeoutId = setTimeout(() => {
     performTask();

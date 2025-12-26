@@ -92,7 +92,8 @@ export class AnalysisService {
       this.ngZone.run(() => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === 'evolution-progress') {
+          // Handle all event types from progressive enhancement
+          if (data.type) {
             this.progressSubject.next(data);
           }
         } catch (e) {

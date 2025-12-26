@@ -2,6 +2,7 @@ import { Issue, Solution, AnalysisContext } from '../types';
 import { BaseSolutionGenerator } from './base-generator';
 import { FitnessCalculator } from './fitness-calculator';
 import { parseCode, generateCode, cloneAST, getStatements, isValidSyntax } from '../utils/ast-utils';
+import { validateGeneratedCode } from '../utils/code-validator';
 import { applyRandomMutation } from './mutation-operators';
 import * as t from '@babel/types';
 import { EventEmitter } from 'events';
@@ -187,6 +188,13 @@ export class EvolutionaryEngine extends EventEmitter {
       
       // 2. Create base candidates from templates
       for (const template of templates) {
+        // Validate template before using it
+        const validation = validateGeneratedCode(template.code);
+        if (!validation.valid) {
+          console.warn(`Skipping invalid template: ${validation.errors.join(', ')}`);
+          continue;
+        }
+        
         try {
           const ast = parseCode(template.code);
           candidates.push({
@@ -211,6 +219,12 @@ export class EvolutionaryEngine extends EventEmitter {
           const mutationResult = applyRandomMutation(template.code);
           
           if (mutationResult.success) {
+            // Validate code before adding to population
+            const validation = validateGeneratedCode(mutationResult.code);
+            if (!validation.valid) {
+              continue;
+            }
+            
             try {
               const ast = parseCode(mutationResult.code);
               candidates.push({
@@ -239,6 +253,12 @@ export class EvolutionaryEngine extends EventEmitter {
         const mutationResult = applyRandomMutation(randomTemplate.code);
         
         if (mutationResult.success) {
+          // Validate code before adding to population
+          const validation = validateGeneratedCode(mutationResult.code);
+          if (!validation.valid) {
+            continue;
+          }
+          
           try {
             const ast = parseCode(mutationResult.code);
             candidates.push({
@@ -404,6 +424,13 @@ export class EvolutionaryEngine extends EventEmitter {
         const mutationResult = applyRandomMutation(candidate.code);
         
         if (mutationResult.success) {
+          // Validate mutated code before accepting it
+          const validation = validateGeneratedCode(mutationResult.code);
+          if (!validation.valid) {
+            mutated.push(candidate);
+            continue;
+          }
+          
           try {
             const ast = parseCode(mutationResult.code);
             mutated.push({

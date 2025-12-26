@@ -4,6 +4,10 @@
     <span class="issue-badge">{{ issueType() }}</span>
   </div>
   
+  <div class="status-message" [class.quick]="phase() === 'quick'" [class.evolving]="phase() === 'evolving'" [class.complete]="phase() === 'complete'" [class.timeout]="phase() === 'timeout'">
+    {{ statusMessage() }}
+  </div>
+  
   <div class="issue-info" *ngIf="issueTitle()">
     <span class="label">Optimizing:</span>
     <span class="value">{{ issueTitle() }}</span>

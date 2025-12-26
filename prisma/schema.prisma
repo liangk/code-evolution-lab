@@ -7,15 +7,72 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserType {
+  CUSTOMER
+  TUNER
+}
+
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  name      String?
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id               String    @id @default(uuid())
+  email            String    @unique
+  password         String?
+  name             String?
+  emailVerified    Boolean   @default(false)
+  avatarUrl        String?
+  authProvider     String?
+  googleId         String?   @unique
+  twitterId        String?   @unique
+  userType         UserType  @default(CUSTOMER)
+  tokenVersion     Int       @default(0)
+  failedLogins     Int       @default(0)
+  lockedUntil      DateTime?
+  lastLoginAt      DateTime?
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  isSuspended      Boolean   @default(false)
+  phone            String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  sessions         Session[]
 
   @@map("users")
+  @@index([email])
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  device     String?
+  location   String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  lastActive DateTime @updatedAt @map("last_active")
+  isActive   Boolean  @default(true) @map("is_active")
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@map("sessions")
+  @@index([userId])
+}
+
+model PasswordlessToken {
+  id        String    @id @default(uuid())
+  email     String
+  token     String    @unique
+  type      String
+  code      String?
+  expiresAt DateTime  @map("expires_at")
+  used      Boolean   @default(false)
+  usedAt    DateTime? @map("used_at")
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("passwordless_tokens")
+  @@index([email])
+  @@index([token])
+  @@index([code])
+  @@index([expiresAt])
 }
 
 model Repository {

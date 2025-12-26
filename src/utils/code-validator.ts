@@ -29,19 +29,25 @@ export function validateGeneratedCode(code: string): ValidationResult {
   try {
     const ast = parseCode(code);
 
-    // 2. Check for undefined variables (basic check)
+    // 2. Check for duplicate declarations (critical for evolutionary algorithm)
+    const duplicates = checkDuplicateDeclarations(ast);
+    if (duplicates.length > 0) {
+      errors.push(`Duplicate declarations: ${duplicates.join(', ')}`);
+    }
+
+    // 3. Check for undefined variables (basic check)
     const undefinedVars = checkUndefinedVariables(ast);
     if (undefinedVars.length > 0) {
       warnings.push(`Potentially undefined variables: ${undefinedVars.join(', ')}`);
     }
 
-    // 3. Check for unreachable code
+    // 4. Check for unreachable code
     const unreachable = checkUnreachableCode(ast);
     if (unreachable) {
       warnings.push('Contains unreachable code');
     }
 
-    // 4. Check for empty blocks
+    // 5. Check for empty blocks
     const emptyBlocks = checkEmptyBlocks(ast);
     if (emptyBlocks > 0) {
       warnings.push(`Contains ${emptyBlocks} empty block(s)`);
@@ -57,6 +63,78 @@ export function validateGeneratedCode(code: string): ValidationResult {
     errors,
     warnings
   };
+}
+
+/**
+ * Check for duplicate variable declarations in the same scope
+ */
+function checkDuplicateDeclarations(ast: t.File): string[] {
+  const duplicates: string[] = [];
+  const scopes: Map<any, Set<string>>[] = [new Map()];
+  
+  const traverse = (node: any, scopeLevel = 0) => {
+    if (!node || typeof node !== 'object') return;
+
+    // Create new scope for functions and blocks
+    if (t.isFunctionDeclaration(node) || t.isFunctionExpression(node) || t.isArrowFunctionExpression(node)) {
+      scopes[scopeLevel + 1] = new Map();
+    }
+
+    // Check declarations
+    if (t.isVariableDeclarator(node) && t.isIdentifier(node.id)) {
+      const currentScope = scopes[scopeLevel] || new Map();
+      const declared = currentScope.get(node) || new Set<string>();
+      
+      if (declared.has(node.id.name)) {
+        duplicates.push(node.id.name);
+      } else {
+        declared.add(node.id.name);
+        currentScope.set(node, declared);
+      }
+    }
+
+    if (t.isFunctionDeclaration(node) && node.id) {
+      const currentScope = scopes[scopeLevel] || new Map();
+      const declared = currentScope.get(node) || new Set<string>();
+      
+      if (declared.has(node.id.name)) {
+        duplicates.push(node.id.name);
+      } else {
+        declared.add(node.id.name);
+        currentScope.set(node, declared);
+      }
+    }
+
+    if (t.isClassDeclaration(node) && node.id) {
+      const currentScope = scopes[scopeLevel] || new Map();
+      const declared = currentScope.get(node) || new Set<string>();
+      
+      if (declared.has(node.id.name)) {
+        duplicates.push(node.id.name);
+      } else {
+        declared.add(node.id.name);
+        currentScope.set(node, declared);
+      }
+    }
+
+    // Traverse children
+    const nextLevel = (t.isFunctionDeclaration(node) || t.isFunctionExpression(node) || t.isArrowFunctionExpression(node)) 
+      ? scopeLevel + 1 
+      : scopeLevel;
+
+    for (const key in node) {
+      if (key === 'loc' || key === 'start' || key === 'end') continue;
+      const child = node[key];
+      if (Array.isArray(child)) {
+        child.forEach(c => traverse(c, nextLevel));
+      } else if (child && typeof child === 'object') {
+        traverse(child, nextLevel);
+      }
+    }
+  };
+
+  traverse(ast);
+  return [...new Set(duplicates)];
 }
 
 /**

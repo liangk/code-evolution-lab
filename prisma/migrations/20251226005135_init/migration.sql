@@ -1,13 +1,62 @@
+-- CreateEnum
+CREATE TYPE "UserType" AS ENUM ('CUSTOMER', 'TUNER');
+
 -- CreateTable
 CREATE TABLE "users" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
-    "password" TEXT NOT NULL,
+    "password" TEXT,
     "name" TEXT,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
+    "avatarUrl" TEXT,
+    "authProvider" TEXT,
+    "googleId" TEXT,
+    "twitterId" TEXT,
+    "userType" "UserType" NOT NULL DEFAULT 'CUSTOMER',
+    "tokenVersion" INTEGER NOT NULL DEFAULT 0,
+    "failedLogins" INTEGER NOT NULL DEFAULT 0,
+    "lockedUntil" TIMESTAMP(3),
+    "lastLoginAt" TIMESTAMP(3),
+    "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
+    "twoFactorSecret" TEXT,
+    "isSuspended" BOOLEAN NOT NULL DEFAULT false,
+    "phone" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "sessions" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "ip_address" TEXT,
+    "user_agent" TEXT,
+    "device" TEXT,
+    "location" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "last_active" TIMESTAMP(3) NOT NULL,
+    "is_active" BOOLEAN NOT NULL DEFAULT true,
+
+    CONSTRAINT "sessions_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "passwordless_tokens" (
+    "id" TEXT NOT NULL,
+    "email" TEXT NOT NULL,
+    "token" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "code" TEXT,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "used" BOOLEAN NOT NULL DEFAULT false,
+    "used_at" TIMESTAMP(3),
+    "ip_address" TEXT,
+    "user_agent" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "passwordless_tokens_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -73,6 +122,36 @@ CREATE TABLE "solutions" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_googleId_key" ON "users"("googleId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "users_twitterId_key" ON "users"("twitterId");
+
+-- CreateIndex
+CREATE INDEX "users_email_idx" ON "users"("email");
+
+-- CreateIndex
+CREATE INDEX "sessions_user_id_idx" ON "sessions"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "passwordless_tokens_token_key" ON "passwordless_tokens"("token");
+
+-- CreateIndex
+CREATE INDEX "passwordless_tokens_email_idx" ON "passwordless_tokens"("email");
+
+-- CreateIndex
+CREATE INDEX "passwordless_tokens_token_idx" ON "passwordless_tokens"("token");
+
+-- CreateIndex
+CREATE INDEX "passwordless_tokens_code_idx" ON "passwordless_tokens"("code");
+
+-- CreateIndex
+CREATE INDEX "passwordless_tokens_expires_at_idx" ON "passwordless_tokens"("expires_at");
+
+-- AddForeignKey
+ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "analyses" ADD CONSTRAINT "analyses_repository_id_fkey" FOREIGN KEY ("repository_id") REFERENCES "repositories"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

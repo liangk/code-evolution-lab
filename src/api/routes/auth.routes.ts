@@ -1,74 +1,133 @@
-import { Router, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import { generateToken } from '../middleware/auth';
-import prisma from '../prisma';
+import { Router } from 'express';
+import { body } from 'express-validator';
+import {
+  login,
+  register,
+  logout,
+  refresh,
+  profile,
+  updateProfile,
+  changePassword,
+  verifyEmail,
+  resendVerificationEmail,
+  forgotPassword,
+  resetPassword,
+} from '../controllers/authController';
+import { validateRequest } from '../middleware/validateRequest';
+import { requireAuth } from '../middleware/requireAuth';
+import { authRateLimiter } from '../middleware/authRateLimiter';
 
 const router = Router();
 
-router.post('/register', async (req: Request, res: Response) => {
-  try {
-    const { email, password, name } = req.body;
+router.post(
+  '/register',
+  authRateLimiter,
+  [
+    body('email').isEmail().withMessage('Valid email required').normalizeEmail(),
+    body('password')
+      .isLength({ max: 50 })
+      .withMessage('Password must be at most 50 chars')
+      .isStrongPassword({
+        minLength: 8,
+        minLowercase: 1,
+        minUppercase: 1,
+        minNumbers: 1,
+        minSymbols: 0,
+      })
+      .withMessage('Password must be at least 8 chars, include upper, lower, number'),
+    body('name').optional().isString().trim().escape().isLength({ max: 100 }),
+  ],
+  validateRequest,
+  register
+);
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
+router.post(
+  '/login',
+  authRateLimiter,
+  [
+    body('email').isEmail().withMessage('Valid email required').normalizeEmail(),
+    body('password').isString().notEmpty().withMessage('Password is required'),
+  ],
+  validateRequest,
+  login
+);
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
-    if (existingUser) {
-      return res.status(400).json({ error: 'User already exists' });
-    }
+router.post('/refresh', authRateLimiter, refresh);
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { email, password: hashedPassword, name },
-    });
+router.get('/verify-email', verifyEmail);
 
-    const token = generateToken(user.id, user.email);
+router.post(
+  '/resend-verification',
+  authRateLimiter,
+  [body('email').isEmail().withMessage('Valid email required').normalizeEmail()],
+  validateRequest,
+  resendVerificationEmail
+);
 
-    res.json({
-      success: true,
-      token,
-      user: { id: user.id, email: user.email, name: user.name },
-    });
-    return;
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ error: 'Registration failed' });
-    return;
-  }
-});
+router.post(
+  '/forgot-password',
+  authRateLimiter,
+  [body('email').isEmail().withMessage('Valid email required').normalizeEmail()],
+  validateRequest,
+  forgotPassword
+);
 
-router.post('/login', async (req: Request, res: Response) => {
-  try {
-    const { email, password } = req.body;
+router.post(
+  '/reset-password',
+  authRateLimiter,
+  [
+    body('password')
+      .isLength({ max: 50 })
+      .withMessage('Password must be at most 50 chars')
+      .isStrongPassword({
+        minLength: 8,
+        minLowercase: 1,
+        minUppercase: 1,
+        minNumbers: 1,
+        minSymbols: 0,
+      })
+      .withMessage('Password must be at least 8 chars, include upper, lower, number'),
+  ],
+  validateRequest,
+  resetPassword
+);
 
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password required' });
-    }
+router.post('/logout', requireAuth, logout);
 
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+router.get('/profile', requireAuth, profile);
+router.get('/me', requireAuth, profile);
 
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+router.put(
+  '/profile',
+  requireAuth,
+  [
+    body('name').optional().isString().trim().escape().isLength({ max: 100 }),
+    body('email').isEmail().withMessage('Valid email required').normalizeEmail(),
+  ],
+  validateRequest,
+  updateProfile
+);
 
-    const token = generateToken(user.id, user.email);
-
-    res.json({
-      success: true,
-      token,
-      user: { id: user.id, email: user.email, name: user.name },
-    });
-    return;
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ error: 'Login failed' });
-    return;
-  }
-});
+router.put(
+  '/change-password',
+  requireAuth,
+  authRateLimiter,
+  [
+    body('currentPassword').isString().notEmpty().withMessage('Current password is required'),
+    body('newPassword')
+      .isLength({ max: 50 })
+      .withMessage('New password must be at most 50 chars')
+      .isStrongPassword({
+        minLength: 8,
+        minLowercase: 1,
+        minUppercase: 1,
+        minNumbers: 1,
+        minSymbols: 0,
+      })
+      .withMessage('New password must be at least 8 chars, include upper, lower, number'),
+  ],
+  validateRequest,
+  changePassword
+);
 
 export default router;

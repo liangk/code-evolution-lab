@@ -12,13 +12,22 @@ router.post('/analyze', async (req: Request, res: Response) => {
     // Create analyzer instance for this request
     const analyzer = new CodeAnalyzer();
     
-    // Listen for evolution progress events
+    // Listen for all analysis events and stream to frontend
     if (sessionId) {
+      analyzer.on('quick-solutions', (data) => {
+        sendProgressUpdate(sessionId, { type: 'quick-solutions', ...data });
+      });
+      analyzer.on('evolution-start', (data) => {
+        sendProgressUpdate(sessionId, { type: 'evolution-start', ...data });
+      });
       analyzer.on('evolution-progress', (progress) => {
-        sendProgressUpdate(sessionId, {
-          type: 'evolution-progress',
-          ...progress
-        });
+        sendProgressUpdate(sessionId, { type: 'evolution-progress', ...progress });
+      });
+      analyzer.on('evolution-complete', (data) => {
+        sendProgressUpdate(sessionId, { type: 'evolution-complete', ...data });
+      });
+      analyzer.on('evolution-timeout', (data) => {
+        sendProgressUpdate(sessionId, { type: 'evolution-timeout', ...data });
       });
     }
 
@@ -137,13 +146,22 @@ router.post('/repository/:repoId/analyze-github', async (req: Request, res: Resp
     // Create analyzer instance for this request
     const analyzer = new CodeAnalyzer();
     
-    // Listen for evolution progress events
+    // Listen for all analysis events and stream to frontend
     if (sessionId) {
+      analyzer.on('quick-solutions', (data) => {
+        sendProgressUpdate(sessionId, { type: 'quick-solutions', ...data });
+      });
+      analyzer.on('evolution-start', (data) => {
+        sendProgressUpdate(sessionId, { type: 'evolution-start', ...data });
+      });
       analyzer.on('evolution-progress', (progress) => {
-        sendProgressUpdate(sessionId, {
-          type: 'evolution-progress',
-          ...progress
-        });
+        sendProgressUpdate(sessionId, { type: 'evolution-progress', ...progress });
+      });
+      analyzer.on('evolution-complete', (data) => {
+        sendProgressUpdate(sessionId, { type: 'evolution-complete', ...data });
+      });
+      analyzer.on('evolution-timeout', (data) => {
+        sendProgressUpdate(sessionId, { type: 'evolution-timeout', ...data });
       });
     }
 

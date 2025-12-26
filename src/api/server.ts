@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import analysisRoutes from './routes/analysis.routes';
 import authRoutes from './routes/auth.routes';
@@ -12,8 +13,12 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:4200',
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
 app.use(apiLimiter);
 
 app.get('/health', (_req, res) => {
