@@ -7,18 +7,13 @@ CREATE TABLE "users" (
     "email" TEXT NOT NULL,
     "password" TEXT,
     "name" TEXT,
-    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     "avatarUrl" TEXT,
     "authProvider" TEXT,
     "googleId" TEXT,
-    "twitterId" TEXT,
+    "githubId" TEXT,
     "userType" "UserType" NOT NULL DEFAULT 'CUSTOMER',
     "tokenVersion" INTEGER NOT NULL DEFAULT 0,
-    "failedLogins" INTEGER NOT NULL DEFAULT 0,
-    "lockedUntil" TIMESTAMP(3),
     "lastLoginAt" TIMESTAMP(3),
-    "twoFactorEnabled" BOOLEAN NOT NULL DEFAULT false,
-    "twoFactorSecret" TEXT,
     "isSuspended" BOOLEAN NOT NULL DEFAULT false,
     "phone" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -127,7 +122,7 @@ CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 CREATE UNIQUE INDEX "users_googleId_key" ON "users"("googleId");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "users_twitterId_key" ON "users"("twitterId");
+CREATE UNIQUE INDEX "users_githubId_key" ON "users"("githubId");
 
 -- CreateIndex
 CREATE INDEX "users_email_idx" ON "users"("email");

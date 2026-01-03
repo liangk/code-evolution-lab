@@ -9,11 +9,6 @@ export interface User {
   email: string;
   name: string;
   role: 'customer' | 'tuner' | 'admin';
-  emailVerified: boolean;
-  profileId?: string;
-  phone?: string;
-  customerProfile?: any;
-  tunerProfile?: any;
 }
 
 export interface AuthResponse {
@@ -35,7 +30,6 @@ export interface RegisterData {
   email: string;
   password: string;
   name?: string;
-  phone?: string;
   role: 'customer' | 'tuner';
   captchaToken?: string;
 }
@@ -88,12 +82,41 @@ export class AuthService {
     );
   }
 
-  googleLogin() {
-    window.location.href = `${this.apiUrl}/google`;
+  async googleLogin() {
+    try {
+      const response = await this.http.get<{ url: string }>(`${this.apiUrl}/social/google`).toPromise();
+      if (response?.url) {
+        window.location.href = response.url;
+      }
+    } catch (error) {
+      console.error('Google login error:', error);
+    }
   }
 
-  githubLogin() {
-    window.location.href = `${this.apiUrl}/github`;
+  async githubLogin() {
+    try {
+      const response = await this.http.get<{ url: string }>(`${this.apiUrl}/social/github`).toPromise();
+      if (response?.url) {
+        window.location.href = response.url;
+      }
+    } catch (error) {
+      console.error('GitHub login error:', error);
+    }
+  }
+
+  handleSocialCallback(code: string, state: string): Observable<any> {
+    const provider = state;
+    return this.http.post<any>(`${this.apiUrl}/social/callback`, { provider, code }).pipe(
+      tap(response => {
+        if (response && response.user) {
+          this.setUser(response.user);
+        }
+      }),
+      catchError(error => {
+        console.error('Social callback error:', error);
+        return throwError(() => error);
+      })
+    );
   }
 
   register(data: RegisterData): Observable<any> {
@@ -142,39 +165,6 @@ export class AuthService {
     );
   }
 
-  updateProfile(data: Partial<User>): Observable<User> {
-    return this.http.patch<{ success: boolean; data: User }>(`${this.apiUrl}/profile`, data).pipe(
-      tap(response => {
-        if (response.success) {
-          this.setUser(response.data);
-        }
-      }),
-      map(response => response.data)
-    );
-  }
-
-  changePassword(currentPassword: string, newPassword: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/change-password`, {
-      currentPassword,
-      newPassword
-    });
-  }
-
-  requestPasswordReset(email: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/forgot-password`, { email });
-  }
-
-  resetPassword(token: string, newPassword: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/reset-password`, { token, newPassword });
-  }
-
-  verifyEmail(token: string): Observable<any> {
-    return this.http.post(`${this.apiUrl}/verify-email`, { token });
-  }
-
-  resendVerificationEmail(): Observable<any> {
-    return this.http.post(`${this.apiUrl}/resend-verification`, {});
-  }
 
   navigateAfterAuth(forceRedirect = false): void {
     const user = this.currentUser;

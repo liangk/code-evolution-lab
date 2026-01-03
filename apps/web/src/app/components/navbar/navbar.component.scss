@@ -3,11 +3,10 @@
 
 .navbar { background: white; box-shadow: $shadow-sm; position: sticky; top: 0; z-index: $z-sticky; @include dark-mode { background: $dark-bg-secondary; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); } }
 
-.navbar-content { @include flex-between; padding: $spacing-4 0; }
+.navbar-content { @include flex-between; padding: 10px 0; }
 
 .navbar-brand { @include flex-start; gap: $spacing-2; text-decoration: none; font-size: $text-xl; font-weight: $font-bold; color: $gray-900; transition: color $transition-fast; @include dark-mode { color: $dark-text-primary; }
-  &:hover { color: $primary-600; text-decoration: none; }
-  .brand-icon { font-size: $text-2xl; }
+  .navbar-logo { width: 300px; }
 }
 
 .navbar-links { display: none; gap: $spacing-6; @include md { display: flex; }

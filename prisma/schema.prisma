@@ -17,18 +17,13 @@ model User {
   email            String    @unique
   password         String?
   name             String?
-  emailVerified    Boolean   @default(false)
   avatarUrl        String?
   authProvider     String?
   googleId         String?   @unique
   githubId         String?   @unique
   userType         UserType  @default(CUSTOMER)
   tokenVersion     Int       @default(0)
-  failedLogins     Int       @default(0)
-  lockedUntil      DateTime?
   lastLoginAt      DateTime?
-  twoFactorEnabled Boolean   @default(false)
-  twoFactorSecret  String?
   isSuspended      Boolean   @default(false)
   phone            String?
   createdAt        DateTime  @default(now()) @map("created_at")

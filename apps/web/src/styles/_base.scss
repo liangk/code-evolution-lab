@@ -50,7 +50,7 @@ pre { background: $gray-900; color: $gray-100; padding: $spacing-4; border-radiu
 
 .container { width: 100%; max-width: 1280px; margin: 0 auto; padding: 0 $spacing-4; @include md { padding: 0 $spacing-6; } @include lg { padding: 0 $spacing-8; } }
 
-.gradient-text { @include gradient-text($primary-gradient); }
+.highlight-text { @include highlight-text($primary-600); }
 
 .text-center { text-align: center; }
 .text-left { text-align: left; }

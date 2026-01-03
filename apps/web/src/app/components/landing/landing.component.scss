@@ -7,7 +7,7 @@
 // HERO SECTION
 // ============================================
 
-.hero-section { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: $spacing-24 0; position: relative; overflow: hidden;
+.hero-section { background: $primary-600; color: white; padding: $spacing-24 0; position: relative; overflow: hidden;
   &::before { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); opacity: 0.3; }
   .container { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr; gap: $spacing-12; @include lg { grid-template-columns: 1fr 1fr; align-items: center; } }
 }
@@ -19,7 +19,7 @@
 }
 
 .hero-title { font-size: $text-4xl; font-weight: $font-extrabold; line-height: $leading-tight; margin-bottom: $spacing-6; @include md { font-size: $text-5xl; }
-  .gradient-text { display: block; background: linear-gradient(135deg, #ffd700 0%, #ff6b6b 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .highlight-text { display: block; color: #ffd700; }
 }
 
 .hero-subtitle { font-size: $text-lg; line-height: $leading-relaxed; opacity: 0.95; margin-bottom: $spacing-8; max-width: 600px; margin-left: auto; margin-right: auto; @include lg { margin-left: 0; } }
@@ -88,7 +88,7 @@
 .steps-grid { display: grid; grid-template-columns: 1fr; gap: $spacing-8; align-items: center; @include lg { grid-template-columns: 1fr auto 1fr auto 1fr; gap: $spacing-6; } }
 
 .step-card { background: white; border-radius: $radius-lg; padding: $spacing-8; box-shadow: $shadow-md; text-align: center; @include dark-mode { background: $dark-bg-primary; }
-  .step-number { width: 60px; height: 60px; background: $primary-gradient; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: $text-2xl; font-weight: $font-bold; margin: 0 auto $spacing-4; }
+  .step-number { width: 60px; height: 60px; background: $primary-600; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: $text-2xl; font-weight: $font-bold; margin: 0 auto $spacing-4; }
   h3 { font-size: $text-xl; font-weight: $font-semibold; margin-bottom: $spacing-3; color: $gray-900; @include dark-mode { color: $dark-text-primary; } }
   p { font-size: $text-sm; color: $gray-600; line-height: $leading-relaxed; @include dark-mode { color: $dark-text-secondary; } }
 }
@@ -99,7 +99,7 @@
 // CTA SECTION
 // ============================================
 
-.cta-section { padding: $spacing-24 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-align: center; }
+.cta-section { padding: $spacing-24 0; background: $primary-600; color: white; text-align: center; }
 
 .cta-content { max-width: 800px; margin: 0 auto;
   h2 { font-size: $text-4xl; font-weight: $font-bold; margin-bottom: $spacing-4; }

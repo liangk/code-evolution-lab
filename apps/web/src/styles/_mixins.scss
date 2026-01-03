@@ -39,10 +39,10 @@
 @mixin line-clamp($lines) { display: -webkit-box; -webkit-line-clamp: $lines; -webkit-box-orient: vertical; overflow: hidden; }
 
 // ============================================
-// GRADIENT TEXT
+// SOLID HIGHLIGHT TEXT
 // ============================================
 
-@mixin gradient-text($gradient) { background: $gradient; -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+@mixin highlight-text($color) { color: $color; font-weight: $font-bold; }
 
 // ============================================
 // CARD SHADOW HOVER

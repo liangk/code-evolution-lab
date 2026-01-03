@@ -1,5 +1,5 @@
 .dashboard-container { display: flex; flex-direction: column; min-height: 100vh; background: #f5f7fa;
-  .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 2rem; text-align: center;
+  .header { background: #667eea; color: white; padding: 2rem; text-align: center;
     h1 { margin: 0; font-size: 2.5rem; font-weight: 700; }
     p { margin: 0.5rem 0 0; font-size: 1.1rem; opacity: 0.9; }
   }
@@ -38,7 +38,7 @@
     h3 { margin: 0 0 0.5rem; color: #c53030; }
     p { margin: 0; color: #742a2a; }
   }
-  .score-card { text-align: center; padding: 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; margin-bottom: 2rem;
+  .score-card { text-align: center; padding: 2rem; background: #667eea; border-radius: 8px; margin-bottom: 2rem;
     .score-value { font-size: 4rem; font-weight: 700; color: white; }
     .score-label { font-size: 1.2rem; color: rgba(255,255,255,0.9); margin-top: 0.5rem; }
     &.good .score-value { color: #48bb78; }

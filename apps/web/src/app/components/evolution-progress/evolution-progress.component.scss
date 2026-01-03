@@ -1,4 +1,4 @@
-.evolution-progress { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 12px; padding: 20px; margin-bottom: 20px; color: #fff; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+.evolution-progress { background: #1a1a2e; border-radius: 12px; padding: 20px; margin-bottom: 20px; color: #fff; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
     h3 { margin: 0; font-size: 18px; color: #00d9ff; }
     .issue-badge { background: #0f3460; padding: 4px 12px; border-radius: 20px; font-size: 12px; color: #e94560; }
@@ -14,7 +14,7 @@
     .value { color: #fff; font-weight: 500; }
   }
   .progress-bar-container { position: relative; height: 24px; background: #0f3460; border-radius: 12px; margin-bottom: 20px; overflow: hidden;
-    .progress-bar { height: 100%; background: linear-gradient(90deg, #00d9ff 0%, #e94560 100%); border-radius: 12px; transition: width 0.3s ease; }
+    .progress-bar { height: 100%; background: #00d9ff; border-radius: 12px; transition: width 0.3s ease; }
     .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 12px; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
   }
   .fitness-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px;

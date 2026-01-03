@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import prisma from '../prisma';
 
 export async function createUser(
@@ -23,41 +23,17 @@ export async function createUser(
   }
   const passwordHash = await bcrypt.hash(password, 12);
   
-  // Create user and related profile in a transaction
-  return await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
-      data: {
-        email,
-        password: passwordHash,
-        name,
-        userType: role === 'tuner' ? 'TUNER' : 'CUSTOMER',
-      },
-      select: { id: true, email: true, name: true, createdAt: true, userType: true },
-    });
-
-    // Create related profile based on user type
-    if (role === 'tuner') {
-      await tx.tunerProfile.create({
-        data: {
-          userId: user.id,
-          businessName: '',
-          businessDescription: '',
-          certifications: [],
-          specializations: [],
-          servicePostcodes: [],
-          credentialsDocuments: [],
-        },
-      });
-    } else {
-      await tx.customerProfile.create({
-        data: {
-          userId: user.id,
-        },
-      });
-    }
-
-    return user;
+  const user = await prisma.user.create({
+    data: {
+      email,
+      password: passwordHash,
+      name,
+      userType: role === 'tuner' ? 'TUNER' : 'CUSTOMER',
+    },
+    select: { id: true, email: true, name: true, createdAt: true, userType: true },
   });
+
+  return user;
 }
 
 export async function validateUser(email: string, password: string) {
@@ -75,16 +51,8 @@ export async function getUserById(id: string, includePassword = false) {
       id: true,
       email: true,
       name: true,
-      emailVerified: true,
       createdAt: true,
       avatarUrl: true,
-      globalRole: {
-        select: {
-          id: true,
-          name: true,
-          permissions: true,
-        },
-      },
       ...(includePassword && { password: true }),
     },
   });
