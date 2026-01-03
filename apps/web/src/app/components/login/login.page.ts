@@ -59,10 +59,10 @@ export class LoginPage implements OnInit {
   }
 
   onGoogleLogin() {
-    console.log('Google login not yet implemented');
+    this.auth.googleLogin();
   }
 
-  onTwitterLogin() {
-    console.log('Twitter login not yet implemented');
+  onGithubLogin() {
+    this.auth.githubLogin();
   }
 }

@@ -90,12 +90,12 @@ export class RegisterPage implements OnInit {
     this.form.patchValue({ role });
   }
 
-  onGoogleLogin(): void {
-    console.log('Google login not yet implemented');
+  onGoogleLogin() {
+    this.auth.googleLogin();
   }
 
-  onTwitterLogin(): void {
-    console.log('Twitter login not yet implemented');
+  onGithubLogin() {
+    this.auth.githubLogin();
   }
 
   private extractErrorMessage(error: unknown): string | null {

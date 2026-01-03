@@ -1,0 +1,16 @@
+:host { display: flex; flex-direction: column; width: 100%; flex: 1; }
+.register_container { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 64px); background: radial-gradient(circle at top right, #1e293b, #0f172a); width: 100%; }
+.register_content { padding: 60px 100px 40px; background: rgba(3, 7, 18, 0.25); border-radius: 12px; width: 450px; display: flex; flex-direction: column; gap: 16px; font-size: 16px; color: #f9fafb;
+  border: 1px solid rgba(59, 130, 246, 0.2); backdrop-filter: blur(12px); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+  h2 { align-self: center; margin-bottom: 8px; font-weight: 600; }
+  .social_buttons { display: flex; flex-direction: column; gap: 12px; }
+  .social_btn { display: flex; align-items: center; justify-content: center; height: 44px; border-radius: 6px; transition: all 0.2s; border: 1px solid transparent; cursor: pointer; font-weight: 500;
+    svg { margin-right: 10px; }
+    &.google { color: #374151; background: #fff; &:hover { background: #f9fafb; box-shadow: 0 4px 12px rgba(0,0,0,0.1); } }
+    &.github { color: #fff; background: #24292f; border-color: #30363d; &:hover { background: #2c333a; box-shadow: 0 4px 12px rgba(0,0,0,0.2); } }
+  }
+  .desc { align-self: center; font-size: 14px; color: #9ca3af; margin-top: 8px; }
+  button:not(.social_btn) { height: 44px; background: transparent; color: #3b82f6; border: 1px solid #3b82f6; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; transition: all 0.2s;
+    &:hover { background: rgba(59, 130, 246, 0.1); }
+  }
+}

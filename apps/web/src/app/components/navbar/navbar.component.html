@@ -10,12 +10,25 @@
         <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
           Home
         </a>
-        <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
-          Dashboard
-        </a>
-        <a routerLink="/repositories" routerLinkActive="active" class="nav-link">
-          Repositories
-        </a>
+        <ng-container *ngIf="auth.isAuthenticated()">
+          <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
+            Dashboard
+          </a>
+          <a routerLink="/repositories" routerLinkActive="active" class="nav-link">
+            Repositories
+          </a>
+          <a (click)="logout()" class="nav-link logout-btn">
+            Logout
+          </a>
+        </ng-container>
+        <ng-container *ngIf="!auth.isAuthenticated()">
+          <a routerLink="/login" routerLinkActive="active" class="nav-link">
+            Login
+          </a>
+          <a routerLink="/register" routerLinkActive="active" class="nav-link">
+            Register
+          </a>
+        </ng-container>
       </div>
       
       <button class="mobile-menu-toggle" (click)="toggleMobileMenu()" aria-label="Toggle menu">

@@ -88,6 +88,14 @@ export class AuthService {
     );
   }
 
+  googleLogin() {
+    window.location.href = `${this.apiUrl}/google`;
+  }
+
+  githubLogin() {
+    window.location.href = `${this.apiUrl}/github`;
+  }
+
   register(data: RegisterData): Observable<any> {
     return this.http.post<any>(`${this.apiUrl}/register`, data).pipe(
       catchError(error => {

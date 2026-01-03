@@ -21,7 +21,7 @@ model User {
   avatarUrl        String?
   authProvider     String?
   googleId         String?   @unique
-  twitterId        String?   @unique
+  githubId         String?   @unique
   userType         UserType  @default(CUSTOMER)
   tokenVersion     Int       @default(0)
   failedLogins     Int       @default(0)
