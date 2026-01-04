@@ -36,10 +36,8 @@ export class LoginPage implements OnInit {
     this.auth.login(payload).subscribe({
       next: (resp: any) => {
         if (resp && resp.requires2FA) {
-          console.log('2FA required');
           this.router.navigateByUrl('/two-factor');
         } else {
-          console.log('Logged in successfully');
           this.auth.navigateAfterAuth();
         }
       },

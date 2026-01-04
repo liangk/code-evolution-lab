@@ -1,82 +1,149 @@
-# Code Evolution Lab
+<div align="center">
 
-🧬 **An AI-powered evolutionary code optimization platform** that automatically detects performance issues in JavaScript/TypeScript code and generates optimized solutions using genetic algorithms.
+# 🧬 Code Evolution Lab
 
-## Overview
+**AI-Powered Evolutionary Code Optimization Platform**
 
-Code Evolution Lab combines static code analysis with evolutionary algorithms to identify and fix performance bottlenecks in your codebase. It analyzes entire GitHub repositories, detects issues like N+1 queries, memory leaks, and inefficient loops, then uses AI to generate multiple solution approaches ranked by fitness score.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
+[![Angular](https://img.shields.io/badge/Angular-17+-red)](https://angular.io/)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-green)](https://nodejs.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue)](https://www.postgresql.org/)
 
-**Key Capabilities:**
-- 🔍 Analyze entire GitHub repositories automatically
-- 🧬 Generate multiple AI-powered solutions using evolutionary algorithms
-- 📊 Web-based dashboard with real-time analysis
-- 🎯 Fitness-based solution ranking (performance, complexity, maintainability)
-- 🚀 Support for multiple ORMs (Sequelize, Prisma, Mongoose, TypeORM)
+[Features](#-features) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [API Reference](#-api-reference) • [Contributing](#-contributing)
 
-## Features
+</div>
 
-### Phase 1: Core Detection ✅
-- **N+1 Query Detection**: Automatically detects N+1 query patterns in database operations
-- **AST-based Analysis**: Robust code analysis using Babel parser
-- **Multiple ORM Support**: Works with Sequelize, Prisma, Mongoose, and raw SQL
-- **CLI Tool**: Easy-to-use command-line interface for local analysis
-- **Detailed Reports**: Comprehensive issue reports with severity levels and estimated impact
+---
 
-### Phase 2: Advanced Detectors ✅
-- **Inefficient Loop Detection**: Identifies array method chaining, nested loops, and DOM manipulation issues
-- **Memory Leak Detection**: Detects uncleaned event listeners, timers, and closure memory issues
-- **Large Payload Detection**: Finds API endpoints and queries without pagination or field selection
-- **Performance Scoring**: Each issue includes estimated performance impact
+## 📖 Overview
 
-### Phase 3: Solution Generation ✅
-- **AI-Powered Solutions**: Automatically generates multiple solution approaches for each issue
-- **Fitness Scoring**: Solutions ranked by performance gain, complexity, and maintainability
-- **Multiple Strategies**: Provides 3-5 different solutions per issue (eager loading, batch queries, raw SQL, etc.)
-- **Implementation Guidance**: Each solution includes code examples, pros/cons, and estimated time
-- **Evolutionary Algorithm**: Uses genetic operators (selection, crossover, mutation) to evolve optimal solutions
-- **AST Mutation**: Variable renaming, query optimization, ORM method changes, caching strategies
-- **Code Validation**: Syntax checking, undefined variable detection, unreachable code analysis
+**Code Evolution Lab** is an intelligent code analysis platform that combines static code analysis with genetic algorithms to automatically detect performance issues in JavaScript/TypeScript codebases and generate optimized solutions.
 
-### Phase 4: Web Interface ✅
-- **Angular Frontend**: Modern, responsive UI with Angular 17+ and signals
-- **Repository Management**: Add, analyze, and track GitHub repositories
-- **GitHub Integration**: Automatic repository cloning and file discovery
-- **Real-time Analysis**: Analyze entire repositories with progress tracking
-- **Analysis Dashboard**: View issues, solutions, and performance metrics
-- **Example Files**: Built-in examples for testing (N+1 queries, memory leaks, etc.)
+Unlike traditional linters that only identify problems, Code Evolution Lab **evolves** multiple solution candidates using evolutionary algorithms, ranking them by fitness score based on performance gain, code complexity, and maintainability.
 
-## Architecture
+### Why Code Evolution Lab?
 
-### Backend (Node.js + TypeScript)
-- **Express API Server**: RESTful API for code analysis
-- **AST Parser**: Babel-based JavaScript/TypeScript parsing
-- **Detectors**: Modular detector system for different issue types
-- **Solution Generators**: AI-powered solution generation with evolutionary algorithms
-- **GitHub Integration**: Repository cloning and file discovery
-- **SQLite Database**: Stores repositories, analyses, issues, and solutions
+| Traditional Tools | Code Evolution Lab |
+|------------------|-------------------|
+| Identify problems only | Identify AND solve problems |
+| Single solution suggestion | Multiple ranked solutions |
+| Rule-based analysis | AI-powered evolutionary optimization |
+| Manual optimization | Automated code generation |
 
-### Frontend (Angular 17+)
-- **Dashboard**: Main analysis interface with example selection
-- **Repository Manager**: GitHub repository CRUD operations
-- **Analysis Viewer**: Display issues, solutions, and metrics
-- **Signals-based State**: Reactive state management with Angular signals
+### Key Capabilities
 
-### Evolutionary Engine
-- **Population**: Generates multiple solution candidates
-- **Fitness Function**: Evaluates solutions based on performance, complexity, risk
-- **Selection**: Tournament selection for parent solutions
-- **Crossover**: Single-point crossover for solution recombination
-- **Mutation**: AST-based mutations (variable names, query params, ORM methods)
-- **Elitism**: Preserves best solutions across generations
+- 🔍 **Deep Code Analysis** - AST-based detection of N+1 queries, memory leaks, inefficient loops, and large payloads
+- 🧬 **Evolutionary Solutions** - Genetic algorithms generate and evolve multiple solution candidates
+- 📊 **Fitness Scoring** - Solutions ranked by performance, complexity, and maintainability
+- 🌐 **GitHub Integration** - Analyze entire repositories with one click
+- 🔐 **OAuth Authentication** - Secure login with Google and GitHub
+- 🎨 **Modern Web UI** - Angular 17+ dashboard with real-time analysis
 
-## Installation
+---
+
+## ✨ Features
+
+### 🔍 Code Analysis Detectors
+
+| Detector | Description | Severity |
+|----------|-------------|----------|
+| **N+1 Query** | Detects database queries inside loops (Sequelize, Prisma, Mongoose, TypeORM) | HIGH |
+| **Inefficient Loop** | Identifies nested loops, array method chaining, await in loops | MEDIUM-HIGH |
+| **Memory Leak** | Finds uncleaned event listeners, timers, closures, React effects | CRITICAL |
+| **Large Payload** | Detects missing pagination, field selection, unbounded queries | MEDIUM |
+
+### 🧬 Evolutionary Solution Engine
+
+The genetic algorithm evolves optimal solutions through:
+
+- **Population Generation** - Creates diverse solution candidates
+- **Fitness Evaluation** - Scores solutions on performance, complexity, risk
+- **Tournament Selection** - Selects best candidates for breeding
+- **Crossover** - Combines successful solution strategies
+- **Mutation** - AST-based code mutations (variable names, ORM methods, caching)
+- **Elitism** - Preserves top solutions across generations
+
+### 🔐 Authentication & Security
+
+- **OAuth 2.0** - Login with Google or GitHub
+- **JWT Tokens** - Secure access/refresh token pairs
+- **HTTP-Only Cookies** - Protected token storage
+- **Rate Limiting** - API protection against abuse
+- **Session Management** - Track and manage user sessions
+
+### 🎨 Modern Web Interface
+
+- **Angular 17+** with Signals for reactive state management
+- **Real-time Analysis** with Server-Sent Events (SSE)
+- **Repository Dashboard** for GitHub integration
+- **Evolution Progress** visualization
+- **Responsive Design** for all devices
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Code Evolution Lab                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐     │
+│  │  Angular 17+    │    │  Express API    │    │  PostgreSQL     │     │
+│  │  Frontend       │◄──►│  Server         │◄──►│  Database       │     │
+│  │  (Port 8201)    │    │  (Port 3000)    │    │  (Prisma ORM)   │     │
+│  └─────────────────┘    └────────┬────────┘    └─────────────────┘     │
+│                                  │                                      │
+│                    ┌─────────────┴─────────────┐                        │
+│                    │                           │                        │
+│           ┌────────▼────────┐       ┌─────────▼─────────┐              │
+│           │  Code Analyzer  │       │  Auth Service     │              │
+│           │  ┌────────────┐ │       │  • OAuth 2.0      │              │
+│           │  │ Detectors  │ │       │  • JWT Tokens     │              │
+│           │  │ • N+1      │ │       │  • Sessions       │              │
+│           │  │ • Memory   │ │       └───────────────────┘              │
+│           │  │ • Loops    │ │                                          │
+│           │  │ • Payload  │ │                                          │
+│           │  └────────────┘ │                                          │
+│           │        │        │                                          │
+│           │  ┌─────▼──────┐ │                                          │
+│           │  │ Evolution  │ │                                          │
+│           │  │ Engine     │ │                                          │
+│           │  └────────────┘ │                                          │
+│           └─────────────────┘                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| **Frontend** | Angular 17+, TypeScript, Signals, SCSS |
+| **Backend** | Node.js, Express, TypeScript |
+| **Database** | PostgreSQL, Prisma ORM |
+| **Auth** | JWT, OAuth 2.0 (Google, GitHub) |
+| **Parser** | Babel (AST parsing) |
+| **Testing** | Jest, ts-jest |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Node.js** 20+ 
+- **PostgreSQL** 15+
+- **npm** or **yarn**
+
+### Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/code-evolution-lab.git
+git clone https://github.com/liangk/code-evolution-lab.git
 cd code-evolution-lab
 
-# Install dependencies
+# Install backend dependencies
 npm install
 
 # Install frontend dependencies
@@ -84,371 +151,201 @@ cd apps/web
 npm install
 cd ../..
 
-# Set up environment variables
+# Set up environment
 cp .env.example .env
-# Edit .env with your configuration
 ```
 
-## Usage
+### Configure Environment
 
-### Quick Start
+Edit `.env` with your settings:
 
-1. **Start the API Server**
 ```bash
+# Database (PostgreSQL)
+DATABASE_URL="postgresql://user:password@localhost:5432/code_evolution_lab"
+
+# OAuth (Google)
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# OAuth (GitHub)
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+
+# JWT Secrets
+JWT_ACCESS_SECRET=your_secure_access_secret
+JWT_REFRESH_SECRET=your_secure_refresh_secret
+```
+
+### Database Setup
+
+```bash
+# Generate Prisma client
+npm run prisma:generate
+
+# Run migrations
+npm run prisma:migrate
+
+# (Optional) Open Prisma Studio
+npm run prisma:studio
+```
+
+### Start the Application
+
+```bash
+# Terminal 1: Start API Server
 npm run start:api
-# Server runs on http://localhost:3000
-```
+# → http://localhost:3000
 
-2. **Start the Frontend**
-```bash
+# Terminal 2: Start Frontend
 cd apps/web
 npm start
-# Frontend runs on http://localhost:8201
+# → http://localhost:8201
 ```
 
-3. **Open the Dashboard**
-   - Navigate to `http://localhost:8201`
-   - Try the built-in examples or add your own code
+---
+
+## 📖 Documentation
+
+### Web Interface
+
+#### Dashboard
+1. Navigate to `http://localhost:8201`
+2. Login with Google or GitHub
+3. Select an example or paste your code
+4. Click **Analyze Code**
+5. View detected issues and AI-generated solutions
+
+#### Repository Analysis
+1. Go to **Repositories** page
+2. Add a GitHub repository URL
+3. Click **Analyze**
+4. View file-by-file breakdown with issues and solutions
 
 ### CLI Usage
 
-#### Analyze a Single File
 ```bash
+# Build the project first
 npm run build
+
+# Analyze a single file
 npm run analyze examples/n-plus-1-query.js
-```
 
-#### Generate AI Solutions
-```bash
+# Generate AI solutions
 npm run analyze examples/n-plus-1-query.js --solutions
-```
 
-#### Analyze with Evolutionary Algorithm
-```bash
-# Enable in .env
-EVO_ENABLE_ALGORITHM=true
-EVO_POPULATION_SIZE=20
-EVO_MAX_GENERATIONS=10
-
+# Analyze with evolutionary algorithm
 npm run analyze examples/mixed-issues.js --solutions
 ```
 
-### Web Interface Usage
+### Example Files
 
-#### 1. Analyze Code Snippets
-- Go to Dashboard (`http://localhost:8201`)
-- Select an example from dropdown or paste your code
-- Click "Analyze Code"
-- View detected issues and AI-generated solutions
+| File | Issue Type | Severity |
+|------|------------|----------|
+| `examples/n-plus-1-query.js` | N+1 Query (Sequelize) | HIGH |
+| `examples/inefficient-loop.js` | Nested loops, await in loop | MEDIUM |
+| `examples/memory-leak.js` | Event listeners, timers | CRITICAL |
+| `examples/large-payload.js` | Missing pagination | MEDIUM |
+| `examples/mixed-issues.js` | Multiple issues | HIGH |
+| `examples/react-memory-leak.tsx` | React useEffect leaks | HIGH |
 
-#### 2. Analyze GitHub Repositories
-- Go to Repositories (`http://localhost:8201/repositories`)
-- Add a repository:
-  - Name: `My Project`
-  - GitHub URL: `https://github.com/username/repo`
-- Click "Analyze" button
-- Wait for analysis to complete
-- View results with file-by-file breakdown
+---
 
-**Example Repositories to Try:**
-- `https://github.com/stackinsight/stackinsight-auth-lite`
-- Any public JavaScript/TypeScript repository
-
-### Available Examples
-
-1. **N+1 Query** (`examples/n-plus-1-query.js`)
-   - Classic N+1 query problem with Sequelize
-   - Severity: HIGH
-
-2. **Inefficient Loop** (`examples/inefficient-loop.js`)
-   - Nested loops and await in loop
-   - Severity: MEDIUM
-
-3. **Memory Leak** (`examples/memory-leak.js`)
-   - Uncleaned event listeners and timers
-   - Severity: CRITICAL
-
-4. **Large Payload** (`examples/large-payload.js`)
-   - Missing pagination and field selection
-   - Severity: MEDIUM
-
-5. **Mixed Issues** (`examples/mixed-issues.js`)
-   - Combination of multiple problems
-   - Severity: HIGH
-
-6. **React Memory Leak** (`examples/react-memory-leak.tsx`)
-   - React-specific memory issues
-   - Severity: HIGH
-
-### Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
-```
-
-### Development
-
-```bash
-# Build the project
-npm run build
-
-# Development mode with auto-reload
-npm run dev
-
-# Lint code
-npm run lint
-
-# Format code
-npm run format
-```
-
-## Project Structure
-
-```
-code-evolution-lab/
-├── src/
-│   ├── analyzer/
-│   │   ├── parser.ts                    # Core AST parser
-│   │   └── code-analyzer.ts             # Main analyzer orchestrator
-│   ├── detectors/
-│   │   ├── base-detector.ts             # Base class for detectors
-│   │   ├── n1-query-detector.ts         # N+1 query pattern detector
-│   │   ├── inefficient-loop-detector.ts # Loop optimization detector
-│   │   ├── memory-leak-detector.ts      # Memory leak detector
-│   │   └── large-payload-detector.ts    # API payload detector
-│   ├── generators/
-│   │   ├── base-solution-generator.ts   # Base solution generator
-│   │   ├── evolutionary-engine.ts       # Genetic algorithm engine
-│   │   ├── fitness-calculator.ts        # Fitness scoring system
-│   │   ├── mutation-operators.ts        # AST mutation operators
-│   │   └── n1-query-solution-generator.ts # N+1 solution generator
-│   ├── utils/
-│   │   ├── ast-utils.ts                 # AST parsing and manipulation
-│   │   ├── code-validator.ts            # Code validation utilities
-│   │   └── github-utils.ts              # GitHub cloning and file discovery
-│   ├── api/
-│   │   ├── server.ts                    # Express server
-│   │   ├── database.ts                  # SQLite database layer
-│   │   └── routes/
-│   │       ├── analysis.routes.ts       # Analysis endpoints
-│   │       └── repository.routes.ts     # Repository CRUD endpoints
-│   ├── types/
-│   │   └── index.ts                     # TypeScript type definitions
-│   ├── __tests__/                       # Test files
-│   ├── cli.ts                           # CLI tool
-│   └── index.ts                         # Main exports
-├── apps/
-│   └── web/                             # Angular frontend
-│       ├── src/
-│       │   └── app/
-│       │       ├── components/
-│       │       │   ├── dashboard/       # Main analysis dashboard
-│       │       │   └── repository/      # Repository management
-│       │       └── services/
-│       │           └── analysis.service.ts # API client
-│       └── angular.json
-├── examples/
-│   ├── n-plus-1-query.js                # N+1 query example
-│   ├── inefficient-loop.js              # Loop optimization example
-│   ├── memory-leak.js                   # Memory leak example
-│   ├── large-payload.js                 # Large payload example
-│   ├── mixed-issues.js                  # Combined issues example
-│   ├── react-memory-leak.tsx            # React example
-│   └── README.md                        # Example documentation
-├── docs/
-│   └── evolutionary-algorithm-implementation.md # Algorithm docs
-├── database/
-│   └── code-evolution.db                # SQLite database
-├── temp/
-│   └── repos/                           # Cloned repositories (gitignored)
-├── .env.example                         # Environment variables template
-└── package.json
-```
-
-## Example Output
-
-### Basic Analysis
-
-```
-Analyzing: examples/bad-code.js
-
-=== N+1 Query Detector ===
-
-[1] N+1 Query Detected
-Severity: MEDIUM
-Location: examples/bad-code.js:5
-
-Description:
-Found 1 database query (Sequelize.findAll()) inside a for-of loop. 
-This creates an N+1 query problem where each iteration makes a 
-separate database call. Consider using eager loading or batch queries instead.
-
-Estimated Impact:
-  - queriesIfN100: 101
-  - queriesOptimal: 1
-  - performanceGain: 10100x faster
-
-=== Inefficient Loop Detector ===
-
-[1] Nested Array Methods Detected
-Severity: HIGH
-Location: examples/inefficient-loops.js:12
-
-Description:
-Nested array methods create O(n²) or worse complexity...
-
-=== Memory Leak Detector ===
-
-[1] Uncleaned setInterval Detected
-Severity: CRITICAL
-Location: examples/memory-leaks.js:10
-
---------------------------------------------------------------------------------
-
-Total Issues Found: 3
-```
-
-### With Solution Generation
-
-```bash
-npm run analyze examples/bad-code.js --solutions
-```
-
-```
-[1] N+1 Query Detected
-Severity: MEDIUM
-Location: examples/bad-code.js:5
-
-📋 Suggested Solutions:
-
-  Solution 1: EAGER LOADING
-  Fitness Score: 93.5/100
-  Implementation Time: ~15 minutes
-  Risk Level: LOW
-  
-  Use Sequelize include to load related data in a single query. 
-  This is the simplest and most maintainable solution for Sequelize.
-
-  Code Example:
-  // Before: N+1 Query Problem
-  const users = await User.findAll();
-  for (const user of users) {
-    user.orders = await Order.findAll({ where: { userId: user.id } });
-  }
-
-  // After: Eager Loading with Include
-  const users = await User.findAll({
-    include: [{
-      model: Order,
-      as: 'orders'
-    }]
-  });
-
-  Solution 2: BATCH QUERY
-  Fitness Score: 87.0/100
-  Implementation Time: ~30 minutes
-  Risk Level: LOW
-  ...
-
-  Solution 3: RAW JOIN
-  Fitness Score: 82.5/100
-  Implementation Time: ~60 minutes
-  Risk Level: MEDIUM
-  ...
-```
-
-## Development Roadmap
-
-### Phase 1: Foundation (Weeks 1-4) 
-- [x] Project setup with TypeScript, ESLint, Prettier
-- [x] Core AST parser implementation
-- [x] N+1 Query Detector
-- [x] CLI tool
-- [x] Unit tests
-- [x] Database schema
-
-### Phase 2: Additional Detectors (Weeks 5-8) 
-- [x] Inefficient loop detector
-- [x] Memory leak detector
-- [x] Large payload detector
-- [x] Comprehensive test coverage
-- [x] Example files for all detectors
-- [ ] Missing database index detector (optional)
-
-### Phase 3: Solution Generator (Weeks 9-12) 
-- [x] Evolutionary algorithm for solution generation
-- [x] Fitness scoring system
-- [x] N+1 query solution generator
-- [x] Multiple solution strategies (5+ per issue)
-- [x] Solution ranking and optimization
-- [x] CLI integration with --solutions flag
-
-### Phase 4: Web Interface (Weeks 13-16) ✅
-- [x] Angular frontend with signals
-- [x] GitHub repository integration
-- [x] Real-time analysis dashboard
-- [x] Repository management UI
-- [x] Example file selector
-- [x] Analysis results viewer
-- [ ] User authentication (future)
-- [ ] WebSocket progress updates (future)
-- [ ] Private repository support (future)
-
-### Phase 5: Advanced Features (Future)
-- [ ] Incremental analysis (only changed files)
-- [ ] Parallel file analysis
-- [ ] Custom detector plugins
-- [ ] CI/CD integration
-- [ ] VS Code extension
-- [ ] Performance benchmarking
-- [ ] Solution A/B testing
-
-## Configuration
+## 🔧 Configuration
 
 ### Environment Variables
 
-Create a `.env` file based on `.env.example`:
-
 ```bash
-# Database
-DATABASE_PATH=./database/code-evolution.db
-
-# API Server
+# Server
 PORT=3000
+NODE_ENV=development
+FRONTEND_URL=http://localhost:8201
+
+# Database
+DATABASE_URL="postgresql://user:pass@localhost:5432/code_evolution_lab"
+
+# Google OAuth
+GOOGLE_CLIENT_ID=xxx
+GOOGLE_CLIENT_SECRET=xxx
+GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/social/callback
+
+# GitHub OAuth
+GITHUB_CLIENT_ID=xxx
+GITHUB_CLIENT_SECRET=xxx
+GITHUB_REDIRECT_URI=http://localhost:3000/api/auth/social/callback
+
+# JWT
+JWT_ACCESS_SECRET=your_secret
+JWT_REFRESH_SECRET=your_secret
+JWT_ACCESS_EXPIRY=15m
+JWT_REFRESH_EXPIRY=7d
 
 # Evolutionary Algorithm
-EVO_POPULATION_SIZE=20        # Number of solution candidates per generation
-EVO_MAX_GENERATIONS=10        # Maximum evolution iterations
-EVO_MUTATION_RATE=0.3         # Probability of mutation (0-1)
-EVO_CROSSOVER_RATE=0.7        # Probability of crossover (0-1)
-EVO_ELITISM_COUNT=2           # Number of best solutions to preserve
-EVO_CONVERGENCE_THRESHOLD=0.01 # Fitness convergence threshold
-EVO_TOURNAMENT_SIZE=3         # Tournament selection size
-EVO_ENABLE_ALGORITHM=true     # Enable/disable evolutionary algorithm
+EVO_ENABLE_ALGORITHM=true
+EVO_POPULATION_SIZE=20
+EVO_MAX_GENERATIONS=10
+EVO_MUTATION_RATE=0.3
+EVO_CROSSOVER_RATE=0.7
+EVO_ELITISM_COUNT=2
+EVO_MAX_TIME_MS=30000
 ```
 
-### Detector Configuration
+### OAuth Setup
 
-Each detector can be customized in the code:
+#### Google OAuth
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable **Google+ API**
+4. Create OAuth 2.0 credentials
+5. Add authorized redirect URI: `http://localhost:3000/api/auth/social/callback`
+6. Copy Client ID and Secret to `.env`
 
-```typescript
-// src/detectors/n1-query-detector.ts
-export class N1QueryDetector extends BaseDetector {
-  private readonly SEVERITY_THRESHOLD = 10; // Queries threshold
-  private readonly SUPPORTED_ORMS = ['sequelize', 'prisma', 'mongoose'];
+#### GitHub OAuth
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Create a new OAuth App
+3. Set callback URL: `http://localhost:3000/api/auth/social/callback`
+4. Copy Client ID and Secret to `.env`
+
+---
+
+## 📡 API Reference
+
+### Authentication
+
+#### Login with OAuth
+```http
+GET /api/auth/social/google
+GET /api/auth/social/github
+```
+
+#### OAuth Callback
+```http
+POST /api/auth/social/callback
+Content-Type: application/json
+
+{
+  "provider": "google",
+  "code": "oauth_authorization_code"
 }
 ```
 
-## API Reference
+#### Refresh Token
+```http
+POST /api/auth/refresh
+Cookie: refresh_token=xxx
+```
 
-### Analysis Endpoints
+#### Logout
+```http
+POST /api/auth/logout
+```
+
+#### Get Current User
+```http
+GET /api/auth/me
+Authorization: Bearer <access_token>
+```
+
+### Code Analysis
 
 #### Analyze Code Snippet
 ```http
@@ -456,18 +353,8 @@ POST /api/analyze
 Content-Type: application/json
 
 {
-  "code": "const users = await User.findAll();",
+  "code": "const users = await User.findAll();...",
   "filePath": "example.js",
-  "generateSolutions": true
-}
-```
-
-#### Analyze GitHub Repository
-```http
-POST /api/repository/:repoId/analyze-github
-Content-Type: application/json
-
-{
   "generateSolutions": true
 }
 ```
@@ -477,7 +364,7 @@ Content-Type: application/json
 GET /api/analysis/:analysisId
 ```
 
-### Repository Endpoints
+### Repository Management
 
 #### List Repositories
 ```http
@@ -491,9 +378,13 @@ Content-Type: application/json
 
 {
   "name": "My Project",
-  "githubUrl": "https://github.com/username/repo",
-  "ownerId": "user-id"
+  "githubUrl": "https://github.com/username/repo"
 }
+```
+
+#### Analyze Repository
+```http
+POST /api/repositories/:id/analyze-github
 ```
 
 #### Delete Repository
@@ -501,45 +392,102 @@ Content-Type: application/json
 DELETE /api/repositories/:id
 ```
 
-## Troubleshooting
+### Server-Sent Events
 
-### Empty Analysis Results
+#### Evolution Progress
+```http
+GET /api/sse/evolution/:analysisId
+```
 
-**Problem**: Repository analysis returns empty array
+---
 
-**Solution**: 
-- Ensure repository contains `.js`, `.ts`, `.jsx`, or `.tsx` files
-- Check that files are not in ignored directories (`node_modules`, `dist`, etc.)
-- Verify GitHub URL is correct and repository is public
+## 📁 Project Structure
 
-### Windows Permission Errors
+```
+code-evolution-lab/
+├── apps/
+│   └── web/                          # Angular frontend
+│       └── src/app/
+│           ├── components/
+│           │   ├── dashboard/        # Main analysis UI
+│           │   ├── login/            # OAuth login
+│           │   ├── register/         # User registration
+│           │   ├── repository/       # Repo management
+│           │   └── evolution-progress/
+│           ├── services/
+│           │   ├── auth.service.ts   # Authentication
+│           │   └── analysis.service.ts
+│           └── guards/
+│               └── auth.guard.ts     # Route protection
+├── src/
+│   ├── api/
+│   │   ├── server.ts                 # Express app
+│   │   ├── controllers/              # Request handlers
+│   │   ├── routes/                   # API routes
+│   │   ├── middleware/               # Auth, rate limiting
+│   │   ├── services/                 # Business logic
+│   │   └── utils/                    # JWT, helpers
+│   ├── analyzer/
+│   │   ├── parser.ts                 # AST parser
+│   │   └── code-analyzer.ts          # Main orchestrator
+│   ├── detectors/
+│   │   ├── base-detector.ts
+│   │   ├── n1-query-detector.ts
+│   │   ├── inefficient-loop-detector.ts
+│   │   ├── memory-leak-detector.ts
+│   │   └── large-payload-detector.ts
+│   ├── generators/
+│   │   ├── evolutionary-engine.ts    # Genetic algorithm
+│   │   ├── fitness-calculator.ts     # Solution scoring
+│   │   ├── mutation-operators.ts     # AST mutations
+│   │   └── n1-query-solution-generator.ts
+│   └── cli.ts                        # CLI tool
+├── prisma/
+│   └── schema.prisma                 # Database schema
+├── examples/                         # Sample code files
+└── package.json
+```
 
-**Problem**: `EPERM` error when cleaning up cloned repositories
+---
 
-**Solution**: The system now handles this automatically using Windows `rmdir` command. If issues persist:
-- Manually delete `temp/repos/` directory
-- Ensure no processes are locking the files
-- Run with administrator privileges if needed
+## 🧪 Testing
 
-### TypeScript Compilation Errors
-
-**Problem**: `ts-node` fails to compile
-
-**Solution**:
 ```bash
-# Clean build
-rm -rf dist/
+# Run all tests
+npm test
+
+# Watch mode
+npm run test:watch
+
+# With coverage
+npm run test:coverage
+```
+
+---
+
+## 🛠️ Development
+
+```bash
+# Build TypeScript
 npm run build
 
-# Check TypeScript version
-npm list typescript
+# Development mode
+npm run dev
+
+# Lint code
+npm run lint
+npm run lint:fix
+
+# Format code
+npm run format
 ```
+
+---
+
+## 🚧 Troubleshooting
 
 ### Port Already in Use
 
-**Problem**: `EADDRINUSE: address already in use`
-
-**Solution**:
 ```bash
 # Windows
 netstat -ano | findstr :3000
@@ -549,70 +497,76 @@ taskkill /PID <PID> /F
 lsof -ti:3000 | xargs kill -9
 ```
 
-## Performance Tips
+### Database Connection Issues
 
-1. **Large Repositories**: Analysis time scales with file count. Consider:
-   - Using file filters to exclude test files
-   - Analyzing specific directories only
-   - Running analysis during off-peak hours
+```bash
+# Check PostgreSQL is running
+pg_isready
 
-2. **Evolutionary Algorithm**: Adjust parameters for speed vs. quality:
-   - Reduce `EVO_POPULATION_SIZE` for faster results
-   - Reduce `EVO_MAX_GENERATIONS` for quicker convergence
-   - Increase both for better solution quality
+# Reset database
+npm run prisma:migrate reset
+```
 
-3. **Database**: PostgreSQL is used with Prisma ORM. For production:
-   - The current setup is production-ready with PostgreSQL
-   - Add indexes for frequently queried fields in prisma/schema.prisma
-   - Consider connection pooling with PgBouncer for high traffic
-   - Monitor database performance and optimize queries
+### OAuth Redirect Issues
 
-## Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/my-feature`
-3. **Write tests** for new functionality
-4. **Follow code style**: Run `npm run lint` and `npm run format`
-5. **Update documentation** as needed
-6. **Submit a pull request**
-
-### Adding New Detectors
-
-1. Create detector class extending `BaseDetector`
-2. Implement `detect()` method
-3. Add tests in `src/__tests__/`
-4. Register in `code-analyzer.ts`
-5. Create example file in `examples/`
-
-### Adding New Solution Generators
-
-1. Create generator class extending `BaseSolutionGenerator`
-2. Implement `generateSolutions()` method
-3. Define fitness calculation logic
-4. Add mutation operators if needed
-5. Test with evolutionary engine
-
-## License
-
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- **Babel**: AST parsing and code generation
-- **Angular**: Frontend framework
-- **Express**: Backend API framework
-- **SQLite**: Embedded database
-- **TypeScript**: Type-safe development
-
-## Support
-
-For questions or issues:
-- 📧 Email: support@codeevolutionlab.com
-- 🐛 Issues: [GitHub Issues](https://github.com/yourusername/code-evolution-lab/issues)
-- 📖 Docs: [Documentation](https://github.com/yourusername/code-evolution-lab/wiki)
+- Ensure redirect URIs match exactly in OAuth provider settings
+- Check `FRONTEND_URL` matches your Angular app URL
+- Verify cookies are being set (check browser DevTools)
 
 ---
 
-**Built with 🧬 by the Code Evolution Lab team**
+## 🗺️ Roadmap
+
+- [x] Core code analysis detectors
+- [x] Evolutionary solution engine
+- [x] Web interface with Angular
+- [x] OAuth authentication
+- [x] GitHub repository integration
+- [ ] VS Code extension
+- [ ] CI/CD integration (GitHub Actions)
+- [ ] Custom detector plugins
+- [ ] Team collaboration features
+- [ ] Solution A/B testing
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/my-feature`
+3. Write tests for new functionality
+4. Run linting: `npm run lint`
+5. Submit a pull request
+
+### Adding a New Detector
+
+1. Create class extending `BaseDetector` in `src/detectors/`
+2. Implement `detect()` method
+3. Register in `code-analyzer.ts`
+4. Add tests and example file
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## 👤 Author
+
+**Ko-Hsin Liang**
+
+- GitHub: [@liangk](https://github.com/liangk)
+
+---
+
+<div align="center">
+
+**Built with 🧬 by Code Evolution Lab**
+
+[⬆ Back to Top](#-code-evolution-lab)
+
+</div>
