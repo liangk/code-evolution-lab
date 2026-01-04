@@ -1,47 +1,95 @@
 <div class="dashboard-container">
-  <header class="header">
-    <h1>Code Evolution Lab</h1>
-    <p>AI-Powered Code Performance Analysis</p>
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-content">
+      <h1>Code Analysis</h1>
+      <p class="subtitle">Real-time performance insights</p>
+    </div>
+    <button class="btn btn-primary" (click)="clearResults()">
+      + New Analysis
+    </button>
   </header>
 
+  <!-- Stats Cards -->
+  <div class="stats-grid">
+    <div class="stat-card stat-primary">
+      <div class="stat-icon">SC</div>
+      <div class="stat-content">
+        <span class="stat-label">Performance Score</span>
+        <span class="stat-value">{{ result()?.score || '--' }}/100</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon-danger">CR</div>
+      <div class="stat-content">
+        <span class="stat-label">Critical Issues</span>
+        <span class="stat-value">{{ result()?.issuesBySeverity?.critical || 0 }}</span>
+        <span class="stat-meta">{{ result()?.totalIssues || 0 }} total</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon-warning">HI</div>
+      <div class="stat-content">
+        <span class="stat-label">High Priority</span>
+        <span class="stat-value">{{ result()?.issuesBySeverity?.high || 0 }}</span>
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon stat-icon-info">MD</div>
+      <div class="stat-content">
+        <span class="stat-label">Medium Issues</span>
+        <span class="stat-value">{{ result()?.issuesBySeverity?.medium || 0 }}</span>
+      </div>
+    </div>
+  </div>
+
   <div class="main-content">
-    <div class="input-section">
-      <h2>Code Input</h2>
+    <!-- Analysis Input Card -->
+    <div class="input-card">
+      <div class="card-header">
+        <h2>Analyze Code</h2>
+      </div>
       
-      <div class="form-group">
-        <label for="exampleSelect">Load Example Code</label>
-        <select id="exampleSelect" [ngModel]="selectedExample()" (ngModelChange)="loadExample($event)" class="example-selector">
-          <option value="">-- Select an example --</option>
-          @for (example of examples; track example.id) {
-            <option [value]="example.id">
-              {{ example.name }} ({{ example.severity }}) - {{ example.description }}
-            </option>
-          }
-        </select>
+      <div class="tabs">
+        <button class="tab active">Try Example</button>
+        <button class="tab">Paste Code</button>
       </div>
 
-      <div class="form-group">
-        <label for="filePath">File Path</label>
-        <input id="filePath" type="text" [ngModel]="filePath()" (ngModelChange)="filePath.set($event)" placeholder="example.js" />
-      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="exampleSelect">Select Example</label>
+          <select id="exampleSelect" [ngModel]="selectedExample()" (ngModelChange)="loadExample($event)" class="example-selector">
+            <option value="">-- Choose an example --</option>
+            @for (example of examples; track example.id) {
+              <option [value]="example.id">{{ example.name }} - {{ example.severity }}</option>
+            }
+          </select>
+        </div>
 
-      <div class="form-group">
-        <label for="code">Code to Analyze</label>
-        <textarea id="code" [ngModel]="code()" (ngModelChange)="code.set($event)" placeholder="Paste your code here or select an example above..." rows="15"></textarea>
-      </div>
-
-      <div class="form-group checkbox">
-        <input id="generateSolutions" type="checkbox" [ngModel]="generateSolutions()" (ngModelChange)="generateSolutions.set($event)" />
-        <label for="generateSolutions">Generate AI Solutions</label>
-      </div>
- 
-      <div class="actions">
-        <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing()">
-          {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
-        </button>
-        @if (result()) {
-          <button class="btn btn-secondary" (click)="clearResults()">Clear Results</button>
+        @if (selectedExample()) {
+          <div class="example-info">
+            <span class="example-file">{{ filePath() }}</span>
+            <span class="severity-badge" [class]="getSelectedSeverityClass()">
+              {{ getSelectedSeverity() }}
+            </span>
+          </div>
         }
+
+        <div class="form-group">
+          <label for="code">Code</label>
+          <textarea id="code" [ngModel]="code()" (ngModelChange)="code.set($event)" placeholder="Paste your code here or select an example above..." rows="12"></textarea>
+        </div>
+
+        <div class="form-group checkbox">
+          <input id="generateSolutions" type="checkbox" [ngModel]="generateSolutions()" (ngModelChange)="generateSolutions.set($event)" />
+          <label for="generateSolutions">Generate AI Solutions (Evolutionary Algorithm)</label>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary btn-full" (click)="analyzeCode()" [disabled]="analyzing() || !code()">
+            {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
+          </button>
+        </div>
       </div>
     </div>
 

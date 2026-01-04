@@ -1,0 +1,153 @@
+<div class="repository-detail-container">
+  <!-- Breadcrumb -->
+  <nav class="breadcrumb">
+    <a routerLink="/repositories">Repositories</a>
+    <span class="separator">/</span>
+    <span class="current">{{ repository()?.name || 'Loading...' }}</span>
+  </nav>
+
+  <!-- Error Message -->
+  @if (error()) {
+    <div class="error-message">
+      <span class="error-icon">⚠️</span>
+      <p>{{ error() }}</p>
+    </div>
+  }
+
+  <!-- Loading State -->
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading repository...</p>
+    </div>
+  }
+
+  <!-- Repository Content -->
+  @if (!loading() && repository()) {
+    <div class="repository-content">
+    <!-- Repository Header -->
+    <div class="repo-header-card">
+      <div class="repo-icon">📦</div>
+      <div class="repo-info">
+        <h1>{{ repository()?.name }}</h1>
+        <a class="repo-url" [href]="repository()?.githubUrl" target="_blank">{{ repository()?.githubUrl }}</a>
+        <div class="repo-meta">
+          <span class="meta-item">Created: {{ repository()?.createdAt | date:'MMM d, y' }}</span>
+          @if (repository()?.lastAnalyzedAt) {
+            <span class="meta-item">Last Analyzed: {{ repository()?.lastAnalyzedAt | date:'MMM d, y h:mm a' }}</span>
+          }
+        </div>
+      </div>
+      <div class="repo-actions">
+        <button class="btn btn-primary" (click)="runAnalysis()" [disabled]="analyzing()">
+          {{ analyzing() ? 'Analyzing...' : 'Run New Analysis' }}
+        </button>
+        <a class="btn btn-secondary" [href]="repository()?.githubUrl" target="_blank">Open on GitHub</a>
+        <button class="btn btn-ghost btn-danger" (click)="deleteRepository()">Delete</button>
+      </div>
+    </div>
+
+    <!-- Latest Analysis Summary -->
+    @if (getLatestAnalysis()) {
+      <div class="stats-grid">
+      <div class="stat-card stat-primary">
+        <div class="stat-icon">📊</div>
+        <div class="stat-content">
+          <span class="stat-label">Score</span>
+          <span class="stat-value" [class]="getScoreClass(getLatestAnalysis()!.score)">{{ getLatestAnalysis()!.score }}/100</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon">🐛</div>
+        <div class="stat-content">
+          <span class="stat-label">Total Issues</span>
+          <span class="stat-value">{{ getLatestAnalysis()!.totalIssues }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-danger">🔴</div>
+        <div class="stat-content">
+          <span class="stat-label">Critical</span>
+          <span class="stat-value">{{ getLatestAnalysis()!.criticalIssues }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-warning">🟡</div>
+        <div class="stat-content">
+          <span class="stat-label">High</span>
+          <span class="stat-value">{{ getLatestAnalysis()!.highIssues }}</span>
+        </div>
+      </div>
+      </div>
+    }
+
+    <!-- Analysis History -->
+    <div class="history-card">
+      <div class="card-header">
+        <h2>Analysis History</h2>
+      </div>
+      <div class="card-body">
+        <!-- Empty State -->
+        @if (analyses().length === 0) {
+          <div class="empty-state">
+            <div class="empty-icon">📈</div>
+            <h3>No Analyses Yet</h3>
+            <p>Run your first analysis to see performance insights.</p>
+            <button class="btn btn-primary" (click)="runAnalysis()" [disabled]="analyzing()">
+              {{ analyzing() ? 'Analyzing...' : 'Run Analysis' }}
+            </button>
+          </div>
+        }
+
+        <!-- Analysis Table -->
+        @if (analyses().length > 0) {
+          <div class="analysis-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Score</th>
+                  <th>Total</th>
+                  <th>Critical</th>
+                  <th>High</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (analysis of analyses(); track analysis.id) {
+                  <tr>
+                    <td>{{ analysis.analyzedAt | date:'MMM d, y h:mm a' }}</td>
+                    <td>
+                      <span class="score-badge" [class]="getScoreClass(analysis.score)">{{ analysis.score }}</span>
+                    </td>
+                    <td>{{ analysis.totalIssues }}</td>
+                    <td>
+                      @if (analysis.criticalIssues > 0) {
+                        <span class="issue-count critical">{{ analysis.criticalIssues }}</span>
+                      }
+                      @if (analysis.criticalIssues === 0) {
+                        <span>0</span>
+                      }
+                    </td>
+                    <td>
+                      @if (analysis.highIssues > 0) {
+                        <span class="issue-count high">{{ analysis.highIssues }}</span>
+                      }
+                      @if (analysis.highIssues === 0) {
+                        <span>0</span>
+                      }
+                    </td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm" (click)="viewAnalysis(analysis.id)">View Details</button>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </div>
+    </div>
+  }
+</div>

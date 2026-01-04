@@ -22,6 +22,7 @@ export class RepositoryComponent implements OnInit {
   repositories = signal<Repository[]>([]);
   loading = signal(false);
   error = signal<string | null>(null);
+  showAddForm = false;
   
   newRepo = {
     name: '',

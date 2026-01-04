@@ -1,0 +1,157 @@
+<div class="settings-container">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-content">
+      <h1>Settings</h1>
+      <p class="subtitle">Manage your account and preferences</p>
+    </div>
+  </header>
+
+  <!-- Success Message -->
+  @if (successMessage()) {
+    <div class="success-message">
+      <span class="success-icon">✓</span>
+      <p>{{ successMessage() }}</p>
+    </div>
+  }
+
+  <!-- Error Message -->
+  @if (error()) {
+    <div class="error-message">
+      <span class="error-icon">⚠️</span>
+      <p>{{ error() }}</p>
+    </div>
+  }
+
+  <div class="settings-layout">
+    <!-- Sidebar -->
+    <aside class="settings-sidebar">
+      <nav class="sidebar-nav">
+        <button class="nav-item" [class.active]="activeSection() === 'account'" (click)="setActiveSection('account')">
+          <span class="nav-icon">👤</span>
+          Account
+        </button>
+        <button class="nav-item" [class.active]="activeSection() === 'notifications'" (click)="setActiveSection('notifications')">
+          <span class="nav-icon">🔔</span>
+          Notifications
+        </button>
+        <button class="nav-item" [class.active]="activeSection() === 'appearance'" (click)="setActiveSection('appearance')">
+          <span class="nav-icon">🎨</span>
+          Appearance
+        </button>
+        <button class="nav-item" routerLink="/settings/sessions" routerLinkActive="active">
+          <span class="nav-icon">🔒</span>
+          Sessions
+        </button>
+      </nav>
+    </aside>
+
+    <!-- Content -->
+    <main class="settings-content">
+      <!-- Account Section -->
+      @if (activeSection() === 'account') {
+        <div class="settings-section">
+        <div class="section-card">
+          <div class="card-header">
+            <h2>Account Settings</h2>
+          </div>
+          <div class="card-body">
+            <div class="setting-group">
+              <h3>Password</h3>
+              <p class="setting-description">Change your password to keep your account secure.</p>
+              <button class="btn btn-secondary" (click)="changePassword()">Change Password</button>
+            </div>
+
+            <div class="setting-group danger-zone">
+              <h3>Danger Zone</h3>
+              <p class="setting-description">Once you delete your account, there is no going back. Please be certain.</p>
+              <button class="btn btn-danger" (click)="deleteAccount()">Delete Account</button>
+            </div>
+          </div>
+        </div>
+        </div>
+      }
+
+      <!-- Notifications Section -->
+      @if (activeSection() === 'notifications') {
+        <div class="settings-section">
+        <div class="section-card">
+          <div class="card-header">
+            <h2>Email Notifications</h2>
+          </div>
+          <div class="card-body">
+            <div class="toggle-group">
+              <label class="toggle-item">
+                <div class="toggle-info">
+                  <span class="toggle-label">Analysis Completed</span>
+                  <span class="toggle-description">Get notified when your code analysis is complete</span>
+                </div>
+                <input type="checkbox" [(ngModel)]="notifications.analysisCompleted" class="toggle-input" />
+              </label>
+
+              <label class="toggle-item">
+                <div class="toggle-info">
+                  <span class="toggle-label">Weekly Summary</span>
+                  <span class="toggle-description">Receive a weekly summary of your code health</span>
+                </div>
+                <input type="checkbox" [(ngModel)]="notifications.weeklySummary" class="toggle-input" />
+              </label>
+
+              <label class="toggle-item">
+                <div class="toggle-info">
+                  <span class="toggle-label">Marketing Updates</span>
+                  <span class="toggle-description">News about new features and updates</span>
+                </div>
+                <input type="checkbox" [(ngModel)]="notifications.marketingUpdates" class="toggle-input" />
+              </label>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-primary" (click)="saveNotifications()" [disabled]="saving()">
+                {{ saving() ? 'Saving...' : 'Save Preferences' }}
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+      }
+
+      <!-- Appearance Section -->
+      @if (activeSection() === 'appearance') {
+        <div class="settings-section">
+        <div class="section-card">
+          <div class="card-header">
+            <h2>Appearance</h2>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="theme">Theme</label>
+              <select id="theme" [(ngModel)]="appearance.theme">
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+                <option value="system">System Default</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="language">Language</label>
+              <select id="language" [(ngModel)]="appearance.language">
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+              </select>
+            </div>
+
+            <div class="form-actions">
+              <button class="btn btn-primary" (click)="saveAppearance()" [disabled]="saving()">
+                {{ saving() ? 'Saving...' : 'Save Settings' }}
+              </button>
+            </div>
+          </div>
+        </div>
+        </div>
+      }
+    </main>
+  </div>
+</div>

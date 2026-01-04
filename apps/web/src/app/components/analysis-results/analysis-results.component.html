@@ -1,0 +1,158 @@
+<div class="analysis-results-container">
+  <!-- Breadcrumb -->
+  <nav class="breadcrumb">
+    <a routerLink="/repositories">Repositories</a>
+    <span class="separator">/</span>
+    @if (analysis()?.repository) {
+      <a [routerLink]="['/repositories', analysis()?.repository?.id]">{{ analysis()?.repository?.name }}</a>
+      <span class="separator">/</span>
+    }
+    <span class="current">Analysis Results</span>
+  </nav>
+
+  <!-- Error Message -->
+  @if (error()) {
+    <div class="error-message">
+      <span class="error-icon">⚠️</span>
+      <p>{{ error() }}</p>
+    </div>
+  }
+
+  <!-- Loading State -->
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading analysis...</p>
+    </div>
+  }
+
+  <!-- Analysis Content -->
+  @if (!loading() && analysis()) {
+    <div class="analysis-content">
+    <!-- Results Header -->
+    <div class="results-header">
+      <div class="score-ring" [class]="getScoreClass(analysis()!.score)">
+        <span class="score-value">{{ analysis()!.score }}</span>
+        <span class="score-max">/100</span>
+      </div>
+      <div class="header-info">
+        <div class="severity-summary">
+          @if (analysis()!.criticalIssues > 0) {
+            <span class="severity-item critical">Critical: {{ analysis()!.criticalIssues }}</span>
+          }
+          @if (analysis()!.highIssues > 0) {
+            <span class="severity-item high">High: {{ analysis()!.highIssues }}</span>
+          }
+          @if (analysis()!.mediumIssues > 0) {
+            <span class="severity-item medium">Medium: {{ analysis()!.mediumIssues }}</span>
+          }
+        </div>
+        <p class="analysis-date">Analyzed: {{ analysis()!.analyzedAt | date:'MMM d, y h:mm a' }}</p>
+      </div>
+    </div>
+
+    <!-- Issues Section -->
+    <div class="issues-section">
+      <div class="section-header">
+        <h2>Detected Issues ({{ analysis()!.totalIssues }})</h2>
+        <div class="filter-tabs">
+          <button class="filter-tab" [class.active]="severityFilter() === 'all'" (click)="filterBySeverity('all')">All</button>
+          <button class="filter-tab" [class.active]="severityFilter() === 'critical'" (click)="filterBySeverity('critical')">Critical</button>
+          <button class="filter-tab" [class.active]="severityFilter() === 'high'" (click)="filterBySeverity('high')">High</button>
+          <button class="filter-tab" [class.active]="severityFilter() === 'medium'" (click)="filterBySeverity('medium')">Medium</button>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      @if (getFilteredIssues().length === 0) {
+        <div class="empty-issues">
+          <div class="empty-icon">✅</div>
+          <h3>No Issues Found</h3>
+          @if (severityFilter() === 'all') {
+            <p>Your code looks great! No performance issues detected.</p>
+          }
+          @if (severityFilter() !== 'all') {
+            <p>No {{ severityFilter() }} issues found.</p>
+          }
+        </div>
+      }
+
+      <!-- Issues List -->
+      <div class="issues-list">
+        @for (issue of getFilteredIssues(); track issue.id) {
+          <div class="issue-accordion" [class.expanded]="isExpanded(issue.id)">
+          <div class="issue-header" (click)="toggleIssue(issue.id)">
+            <span class="severity-badge" [class]="getSeverityClass(issue.severity)">{{ issue.severity }}</span>
+            <div class="issue-title-section">
+              <h3>{{ issue.title || issue.type }}</h3>
+              @if (issue.filePath) {
+                <span class="issue-location">{{ issue.filePath }}:{{ issue.lineNumber }}</span>
+              }
+            </div>
+            <span class="expand-icon">{{ isExpanded(issue.id) ? '-' : '+' }}</span>
+          </div>
+
+          @if (isExpanded(issue.id)) {
+            <div class="issue-content">
+            <p class="issue-description">{{ issue.description }}</p>
+
+            <!-- Impact Section -->
+            @if (issue.estimatedImpact) {
+              <div class="impact-section">
+                <h4>Impact Analysis</h4>
+                <div class="impact-metrics">
+                  <span class="impact-score">Score: {{ issue.estimatedImpact.severityScore }}/10</span>
+                  <span class="impact-confidence">Confidence: {{ issue.estimatedImpact.confidenceScore }}%</span>
+                </div>
+                <p class="impact-description">{{ issue.estimatedImpact.description }}</p>
+              </div>
+            }
+
+            <!-- Code Before -->
+            @if (issue.codeBefore) {
+              <div class="code-section">
+                <div class="code-header">
+                  <span>Original Code</span>
+                  <button class="btn-copy" (click)="copyCode(issue.codeBefore)">Copy</button>
+                </div>
+                <pre class="code-block">{{ issue.codeBefore }}</pre>
+              </div>
+            }
+
+            <!-- Solutions -->
+            @if (issue.solutions && issue.solutions.length > 0) {
+              <div class="solutions-section">
+                <h4>Suggested Solutions ({{ issue.solutions.length }})</h4>
+                <div class="solution-tabs">
+                  @for (solution of issue.solutions; track solution.id; let i = $index) {
+                    <div class="solution-card">
+                      <div class="solution-header">
+                        <span class="solution-rank">Solution #{{ solution.rank || (i + 1) }}</span>
+                        <span class="fitness-badge">Fitness: {{ solution.fitnessScore | number:'1.1-1' }}</span>
+                        <span class="difficulty-badge" [class]="solution.difficulty ? solution.difficulty.toLowerCase() : 'easy'">{{ solution.difficulty || 'Easy' }}</span>
+                      </div>
+                      <p class="solution-description">{{ solution.description }}</p>
+                      <div class="code-section">
+                        <div class="code-header">
+                          <span>Optimized Code</span>
+                          <button class="btn-copy" (click)="copyCode(solution.codeAfter)">Copy</button>
+                        </div>
+                        <pre class="code-block optimized">{{ solution.codeAfter }}</pre>
+                      </div>
+                      @if (solution.explanation) {
+                        <p class="solution-explanation">{{ solution.explanation }}</p>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+            </div>
+          }
+          </div>
+        }
+      </div>
+    </div>
+    </div>
+  }
+</div>

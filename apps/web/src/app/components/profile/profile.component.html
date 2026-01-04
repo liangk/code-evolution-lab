@@ -1,0 +1,196 @@
+<div class="profile-container">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-content">
+      <h1>Profile</h1>
+      <p class="subtitle">Manage your account information</p>
+    </div>
+  </header>
+
+  <!-- Success Message -->
+  @if (successMessage()) {
+    <div class="success-message">
+      <span class="success-icon">✓</span>
+      <p>{{ successMessage() }}</p>
+    </div>
+  }
+
+  <!-- Error Message -->
+  @if (error()) {
+    <div class="error-message">
+      <span class="error-icon">⚠️</span>
+      <p>{{ error() }}</p>
+    </div>
+  }
+
+  <!-- Loading State -->
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading profile...</p>
+    </div>
+  }
+
+  <!-- Profile Content -->
+  @if (!loading() && user()) {
+    <div class="profile-content">
+    <!-- Profile Header Card -->
+    <div class="profile-header-card">
+      <div class="avatar-section">
+        @if (!user()?.avatarUrl) {
+          <div class="avatar">
+            {{ getInitials() }}
+          </div>
+        }
+        @if (user()?.avatarUrl) {
+          <img class="avatar avatar-img" [src]="user()?.avatarUrl" [alt]="user()?.name || 'User'" />
+        }
+        @if (editing()) {
+          <button class="btn btn-secondary btn-sm">Change Photo</button>
+        }
+      </div>
+      <div class="profile-info">
+        <h2>{{ user()?.name || user()?.email }}</h2>
+        <p class="email">{{ user()?.email }}</p>
+        <div class="meta-info">
+          <span class="badge badge-type">{{ user()?.userType }}</span>
+          <span class="meta-item">Member since {{ user()?.createdAt | date:'MMM y' }}</span>
+        </div>
+      </div>
+      @if (!editing()) {
+        <div class="header-actions">
+          <button class="btn btn-primary" (click)="startEditing()">Edit Profile</button>
+        </div>
+      }
+    </div>
+
+    <!-- Profile Details Card -->
+    <div class="profile-card">
+      <div class="card-header">
+        <h3>Personal Information</h3>
+        @if (!editing()) {
+          <button class="btn btn-ghost btn-sm" (click)="startEditing()">Edit</button>
+        }
+      </div>
+      <div class="card-body">
+        <!-- View Mode -->
+        @if (!editing()) {
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="info-label">Full Name</span>
+              <span class="info-value">{{ user()?.name || 'Not set' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Email Address</span>
+              <span class="info-value">{{ user()?.email }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Phone Number</span>
+              <span class="info-value">{{ user()?.phone || 'Not set' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Last Login</span>
+              <span class="info-value">{{ user()?.lastLoginAt ? (user()?.lastLoginAt | date:'MMM d, y h:mm a') : 'Never' }}</span>
+            </div>
+          </div>
+        }
+
+        <!-- Edit Mode -->
+        @if (editing()) {
+          <div class="edit-form">
+          <div class="form-group">
+            <label for="name">Full Name</label>
+            <input id="name" type="text" [(ngModel)]="editForm.name" placeholder="Your full name" />
+          </div>
+          <div class="form-group">
+            <label for="email">Email Address</label>
+            <input id="email" type="email" [value]="user()?.email" disabled />
+            <span class="form-hint">Email cannot be changed</span>
+          </div>
+          <div class="form-group">
+            <label for="phone">Phone Number</label>
+            <input id="phone" type="tel" [(ngModel)]="editForm.phone" placeholder="+1 234 567 8900" />
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-secondary" (click)="cancelEditing()">Cancel</button>
+            <button class="btn btn-primary" (click)="saveProfile()" [disabled]="saving()">
+              {{ saving() ? 'Saving...' : 'Save Changes' }}
+            </button>
+          </div>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Connected Accounts Card -->
+    <div class="profile-card">
+      <div class="card-header">
+        <h3>Connected Accounts</h3>
+      </div>
+      <div class="card-body">
+        <div class="connected-accounts">
+          <div class="account-item">
+            <div class="account-icon google">🔵</div>
+            <div class="account-info">
+              <span class="account-name">Google</span>
+              @if (user()?.googleId) {
+                <span class="account-status">Connected</span>
+              }
+              @if (!user()?.googleId) {
+                <span class="account-status not-connected">Not connected</span>
+              }
+            </div>
+            @if (user()?.googleId) {
+              <button class="btn btn-ghost btn-sm">Disconnect</button>
+            }
+            @if (!user()?.googleId) {
+              <button class="btn btn-secondary btn-sm">Connect</button>
+            }
+          </div>
+          <div class="account-item">
+            <div class="account-icon github">⚫</div>
+            <div class="account-info">
+              <span class="account-name">GitHub</span>
+              @if (user()?.githubId) {
+                <span class="account-status">Connected</span>
+              }
+              @if (!user()?.githubId) {
+                <span class="account-status not-connected">Not connected</span>
+              }
+            </div>
+            @if (user()?.githubId) {
+              <button class="btn btn-ghost btn-sm">Disconnect</button>
+            }
+            @if (!user()?.githubId) {
+              <button class="btn btn-secondary btn-sm">Connect</button>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity Stats Card -->
+    <div class="profile-card">
+      <div class="card-header">
+        <h3>Activity Summary</h3>
+      </div>
+      <div class="card-body">
+        <div class="stats-grid">
+          <div class="stat-item">
+            <span class="stat-value">{{ stats.repositories }}</span>
+            <span class="stat-label">Repositories</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">{{ stats.analyses }}</span>
+            <span class="stat-label">Analyses</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">{{ stats.issuesFixed }}</span>
+            <span class="stat-label">Issues Fixed</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    </div>
+  }
+</div>

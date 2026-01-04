@@ -1,0 +1,105 @@
+<div class="sessions-container">
+  <!-- Page Header -->
+  <header class="page-header">
+    <div class="header-content">
+      <a routerLink="/settings" class="back-link">Back to Settings</a>
+      <h1>Active Sessions</h1>
+      <p class="subtitle">Manage your login sessions across devices</p>
+    </div>
+    <button class="btn btn-secondary" (click)="revokeAllOtherSessions()" [disabled]="loading() || sessions().length <= 1">
+      Revoke All Other Sessions
+    </button>
+  </header>
+
+  <!-- Success Message -->
+  @if (successMessage()) {
+    <div class="success-message">
+      <span class="success-icon">✓</span>
+      <p>{{ successMessage() }}</p>
+    </div>
+  }
+
+  <!-- Error Message -->
+  @if (error()) {
+    <div class="error-message">
+      <span class="error-icon">⚠️</span>
+      <p>{{ error() }}</p>
+    </div>
+  }
+
+  <!-- Loading State -->
+  @if (loading() && sessions().length === 0) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading sessions...</p>
+    </div>
+  }
+
+  <!-- Sessions List -->
+  @if (!loading() || sessions().length > 0) {
+    <div class="sessions-list">
+    <!-- Current Session -->
+    <div class="session-group">
+      <h2>Current Session</h2>
+      @for (session of sessions(); track session.id) {
+        @if (session.isCurrent) {
+          <div class="session-card current">
+          <div class="session-icon">{{ getDeviceIcon(session.device) }}</div>
+          <div class="session-info">
+            <div class="session-device">
+              <span class="device-name">{{ session.browser }} on {{ session.os }}</span>
+              <span class="current-badge">This Device</span>
+            </div>
+            <div class="session-meta">
+              <span class="meta-item">IP: {{ session.ipAddress }}</span>
+              <span class="meta-item">{{ session.location }}</span>
+            </div>
+            <div class="session-activity">
+              <span class="activity-status active">Active now</span>
+            </div>
+          </div>
+          </div>
+        }
+      }
+    </div>
+
+    <!-- Other Sessions -->
+    @if (getOtherSessions().length > 0) {
+      <div class="session-group">
+      <h2>Other Sessions</h2>
+      @for (session of getOtherSessions(); track session.id) {
+        <div class="session-card">
+          <div class="session-icon">{{ getDeviceIcon(session.device) }}</div>
+          <div class="session-info">
+            <div class="session-device">
+              <span class="device-name">{{ session.browser }} on {{ session.os }}</span>
+            </div>
+            <div class="session-meta">
+              <span class="meta-item">IP: {{ session.ipAddress }}</span>
+              <span class="meta-item">{{ session.location }}</span>
+            </div>
+            <div class="session-activity">
+              <span class="activity-time">Last active: {{ getTimeAgo(session.lastActive) }}</span>
+            </div>
+          </div>
+          <div class="session-actions">
+            <button class="btn btn-ghost btn-sm btn-danger" (click)="revokeSession(session.id)" [disabled]="revoking() === session.id">
+              {{ revoking() === session.id ? 'Revoking...' : 'Revoke' }}
+            </button>
+          </div>
+        </div>
+      }
+      </div>
+    }
+
+    <!-- Empty State for Other Sessions -->
+    @if (sessions().length === 1) {
+      <div class="empty-state">
+        <div class="empty-icon">🔒</div>
+        <h3>No Other Sessions</h3>
+        <p>You are only logged in on this device.</p>
+      </div>
+    }
+    </div>
+  }
+</div>

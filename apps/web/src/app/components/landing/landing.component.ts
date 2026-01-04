@@ -13,32 +13,32 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 export class LandingComponent {
   features = [
     {
-      icon: '🔍',
+      icon: 'DB',
       title: 'N+1 Query Detection',
       description: 'Automatically identifies database query inefficiencies that slow down your application'
     },
     {
-      icon: '🔄',
+      icon: 'LP',
       title: 'Loop Optimization',
       description: 'Detects inefficient loops, nested iterations, and suggests performance improvements'
     },
     {
-      icon: '💾',
+      icon: 'ML',
       title: 'Memory Leak Prevention',
       description: 'Finds event listeners, timers, and closures that cause memory leaks'
     },
     {
-      icon: '📦',
+      icon: 'PL',
       title: 'Payload Optimization',
       description: 'Identifies large API responses and suggests data filtering strategies'
     },
     {
-      icon: '🧬',
+      icon: 'AI',
       title: 'AI-Powered Solutions',
       description: 'Evolutionary algorithm generates multiple optimized solutions ranked by fitness'
     },
     {
-      icon: '⚡',
+      icon: 'RT',
       title: 'Real-time Analysis',
       description: 'Get instant feedback with live progress tracking and generation-by-generation improvements'
     }

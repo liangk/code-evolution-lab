@@ -411,4 +411,13 @@ export default UserList;`
     this.result.set(null);
     this.error.set(null);
   }
+
+  getSelectedSeverity(): string {
+    const example = this.examples.find(e => e.id === this.selectedExample());
+    return example?.severity || '';
+  }
+
+  getSelectedSeverityClass(): string {
+    return this.getSelectedSeverity().toLowerCase();
+  }
 }
