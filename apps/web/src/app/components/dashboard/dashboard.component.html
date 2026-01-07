@@ -5,9 +5,6 @@
       <h1>Code Analysis</h1>
       <p class="subtitle">Real-time performance insights</p>
     </div>
-    <button class="btn btn-primary" (click)="clearResults()">
-      + New Analysis
-    </button>
   </header>
 
   <!-- Stats Cards -->
@@ -86,8 +83,11 @@
         </div>
 
         <div class="actions">
-          <button class="btn btn-primary btn-full" (click)="analyzeCode()" [disabled]="analyzing() || !code()">
+          <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing() || !code()">
             {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
+          </button>
+          <button class="btn btn-secondary" (click)="clearResults()">
+            Clear Results
           </button>
         </div>
       </div>

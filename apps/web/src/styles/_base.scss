@@ -20,7 +20,7 @@
 html { font-size: 16px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 
 body { font-family: $font-primary; font-size: $text-base; line-height: $leading-normal; color: $gray-900; background: $gray-50; @include dark-mode { background: $dark-bg-primary; color: $dark-text-primary; } }
-
+body { height: 100vh; }
 // ============================================
 // TYPOGRAPHY
 // ============================================

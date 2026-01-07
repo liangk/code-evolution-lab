@@ -10,6 +10,10 @@ import { AuthCallbackComponent } from './components/auth-callback/auth-callback.
 import { ProfileComponent } from './components/profile/profile.component';
 import { SettingsComponent } from './components/settings/settings.component';
 import { SessionsComponent } from './components/sessions/sessions.component';
+import { TermsComponent } from './pages/terms.component';
+import { PrivacyComponent } from './pages/privacy.component';
+import { AboutComponent } from './pages/about.component';
+import { ContactComponent } from './pages/contact.component';
 import { authGuard, guestGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
@@ -24,5 +28,9 @@ export const routes: Routes = [
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
   { path: 'settings/sessions', component: SessionsComponent, canActivate: [authGuard] },
+  { path: 'terms', component: TermsComponent },
+  { path: 'privacy', component: PrivacyComponent },
+  { path: 'about', component: AboutComponent },
+  { path: 'contact', component: ContactComponent },
   { path: '**', redirectTo: '' }
 ];

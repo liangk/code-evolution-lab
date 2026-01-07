@@ -117,3 +117,38 @@
 .cta-buttons { display: flex; flex-direction: column; gap: $spacing-3; justify-content: center; @include sm { flex-direction: row; }
   .btn-ghost { background: transparent; color: white; border: 2px solid rgba(255,255,255,0.4); &:hover { background: rgba(255,255,255,0.1); border-color: white; } }
 }
+
+// ============================================
+// FOOTER SECTION
+// ============================================
+
+.footer { background: $gray-900; color: $gray-300; padding: $spacing-16 0 $spacing-6;
+  .container { max-width: 1200px; }
+}
+
+.footer-content { display: grid; grid-template-columns: 1fr; gap: $spacing-10; margin-bottom: $spacing-10; @include sm { grid-template-columns: repeat(2, 1fr); } @include md { grid-template-columns: repeat(3, 1fr); } @include lg { grid-template-columns: 2fr 1fr 1fr 1fr 1fr; } }
+
+.footer-section { h3 { font-size: $text-lg; font-weight: $font-bold; color: white; margin: 0 0 $spacing-3; }
+  h4 { font-size: $text-sm; font-weight: $font-semibold; color: white; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 $spacing-4; }
+  p { font-size: $text-sm; line-height: $leading-relaxed; margin: 0 0 $spacing-4; color: $gray-400; }
+  ul { list-style: none; padding: 0; margin: 0;
+    li { margin-bottom: $spacing-2;
+      a { color: $gray-400; text-decoration: none; font-size: $text-sm; transition: color 0.2s; cursor: pointer; &:hover { color: white; } }
+    }
+  }
+}
+
+.footer-brand { max-width: 280px; }
+
+.footer-social { display: flex; gap: $spacing-3; margin-top: $spacing-4;
+  a { width: 40px; height: 40px; background: rgba(255,255,255,0.1); border-radius: $radius-md; display: flex; align-items: center; justify-content: center; color: $gray-400; transition: all 0.2s; &:hover { background: rgba(255,255,255,0.15); color: white; } }
+}
+
+.footer-bottom { padding-top: $spacing-6; border-top: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: $spacing-3; align-items: center; @include md { flex-direction: row; justify-content: space-between; }
+  p { margin: 0; font-size: $text-sm; color: $gray-500; }
+}
+
+.footer-bottom-links { display: flex; align-items: center; gap: $spacing-3;
+  a { color: $gray-500; text-decoration: none; font-size: $text-sm; transition: color 0.2s; &:hover { color: white; } }
+  .separator { color: $gray-600; }
+}

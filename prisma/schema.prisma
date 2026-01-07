@@ -50,25 +50,6 @@ model Session {
   @@index([userId])
 }
 
-model PasswordlessToken {
-  id        String    @id @default(uuid())
-  email     String
-  token     String    @unique
-  type      String
-  code      String?
-  expiresAt DateTime  @map("expires_at")
-  used      Boolean   @default(false)
-  usedAt    DateTime? @map("used_at")
-  ipAddress String?   @map("ip_address")
-  userAgent String?   @map("user_agent")
-  createdAt DateTime  @default(now()) @map("created_at")
-
-  @@map("passwordless_tokens")
-  @@index([email])
-  @@index([token])
-  @@index([code])
-  @@index([expiresAt])
-}
 
 model Repository {
   id            String     @id @default(uuid())

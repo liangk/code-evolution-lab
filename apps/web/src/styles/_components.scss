@@ -75,7 +75,7 @@
 // INPUT COMPONENT
 // ============================================
 
-.form-group { margin-bottom: $spacing-4;
+.form-group {
   label { display: block; font-size: $text-sm; font-weight: $font-medium; color: $gray-700; margin-bottom: $spacing-2; @include dark-mode { color: $dark-text-secondary; } }
   input, textarea, select { width: 100%; padding: $spacing-3; border: 1px solid $gray-300; border-radius: $radius-md; font-size: $text-sm; font-family: $font-primary; transition: all $transition-fast; @include dark-mode { background: $dark-bg-tertiary; border-color: $dark-bg-tertiary; color: $dark-text-primary; }
     &:focus { outline: none; border-color: $primary-600; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); }

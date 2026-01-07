@@ -6,9 +6,6 @@
       </a>
       
       <div class="navbar-links" [class.mobile-open]="mobileMenuOpen">
-        <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
-          Home
-        </a>
         @if (auth.isAuthenticated()) {
           <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
             Dashboard
@@ -16,8 +13,10 @@
           <a routerLink="/repositories" routerLinkActive="active" class="nav-link">
             Repositories
           </a>
-        }
-        @if (!auth.isAuthenticated()) {
+        } @else {
+          <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
+            Home
+          </a>
           <a routerLink="/login" routerLinkActive="active" class="nav-link">
             Login
           </a>
