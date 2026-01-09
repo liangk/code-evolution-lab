@@ -220,7 +220,11 @@ export class AuthService {
 
   sessionExpired() {
     this.clearAuth();
-    this.router.navigate(['/login']);
+    const path = this.router.url.split('?')[0];
+    const publicPaths = ['/', '/home', '/about', '/contact', '/login', '/register', '/code-analysis', '/terms', '/privacy'];
+    if (!publicPaths.includes(path)) {
+      this.router.navigate(['/login']);
+    }
   }
 
   get currentUser(): User | null {

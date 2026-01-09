@@ -10,12 +10,18 @@
           <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">
             Dashboard
           </a>
+          <a routerLink="/code-analysis" routerLinkActive="active" class="nav-link">
+            Code Analysis
+          </a>
           <a routerLink="/repositories" routerLinkActive="active" class="nav-link">
             Repositories
           </a>
         } @else {
           <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}" class="nav-link">
             Home
+          </a>
+          <a routerLink="/code-analysis" routerLinkActive="active" class="nav-link">
+            Code Analysis
           </a>
           <a routerLink="/login" routerLinkActive="active" class="nav-link">
             Login

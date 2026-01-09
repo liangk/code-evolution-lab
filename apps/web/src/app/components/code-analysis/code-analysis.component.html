@@ -1,0 +1,193 @@
+<!-- Page Header -->
+<header class="page-header">
+  <div class="header-content">
+    <h1>Code Analysis</h1>
+    <p class="subtitle">Real-time performance insights</p>
+  </div>
+</header>
+<div class="code-analysis-container">
+  <div class="analysis-content">
+    <!-- Analysis Input Panel -->
+    <div class="input-panel">
+      <div class="panel-header">
+        <h2>Analyze Code</h2>
+        <div class="actions">
+          <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing() || isDisabled">
+            {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
+          </button>
+          <button class="btn btn-secondary" (click)="clearResults()" aria-label="Clear Results">
+<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 -960 960 960" width="24px" fill="#1f1f1f"><path d="M600-240v-80h160v80H600Zm0-320v-80h280v80H600Zm0 160v-80h240v80H600ZM120-640H80v-80h160v-60h160v60h160v80h-40v360q0 33-23.5 56.5T440-200H200q-33 0-56.5-23.5T120-280v-360Zm80 0v360h240v-360H200Zm0 0v360-360Z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="panel-body">
+        @if (selectedExample()) {
+          <div class="example-info">
+            <span class="example-file">{{ filePath() }}</span>
+            <span class="severity-badge" [class]="getSelectedSeverityClass()">
+              {{ getSelectedSeverity() }}
+            </span>
+          </div>
+        }
+        <lite-select [control]="selectExample"></lite-select>
+        <lite-checkbox [control]="needSolutions"></lite-checkbox>
+        <lite-textarea [control]="codeField"></lite-textarea>
+      </div>
+    </div>
+
+    <!-- Evolution Progress Display -->
+    @if (showEvolutionProgress() && analyzing()) {
+      <app-evolution-progress></app-evolution-progress>
+    }
+
+    @if (result() || error()) {
+      <div class="result-panel">
+        <div class="panel-header">
+          <h2>Analysis Results</h2>
+        </div>
+        @if (error(); as err) {
+          <div class="error-message">
+            <h3>Error</h3>
+            <p>{{ err }}</p>
+          </div>
+        }
+
+        @if (result(); as res) {
+          <div class="panel-body">
+          @if (result(); as res) {
+            <div class="stats">
+              <div class="score-circle">
+                <svg width="80" height="80" viewBox="0 0 80 80">
+                  <circle cx="40" cy="40" r="36" fill="none" stroke="#e5e5e5" stroke-width="6"/>
+                  <circle cx="40" cy="40" r="36" fill="none" 
+                    [attr.stroke]="res.score >= 80 ? '#10b981' : res.score >= 50 ? '#f59e0b' : '#ef4444'"
+                    stroke-width="6" stroke-linecap="round"
+                    [attr.stroke-dasharray]="226.19"
+                    [attr.stroke-dashoffset]="226.19 * (1 - res.score / 100)"
+                    transform="rotate(-90 40 40)"/>
+                </svg>
+                <div class="score-content">
+                  <div class="score-value">{{ res.score }}</div>
+                  <div class="score-label">Score</div>
+                </div>
+              </div>
+              <div class="issue-circle">
+                <div class="issue-value">{{ res.totalIssues }}</div>
+                <div class="issue-label">Issues</div>
+              </div>
+              <div class="detectors">
+                @for (detector of res.results; track detector.detectorName) {
+                  <div class="detector">
+                    <div class="detector-name">{{ detector.detectorName }}</div>
+                    <div class="detector-score">{{ detector.issues.length }}</div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+
+
+            <!-- <div class="issues-summary">
+              <h3>Issues Found: {{ res.totalIssues }}</h3>
+              <div class="severity-badges">
+                @if (res.issuesBySeverity.critical > 0) {
+                  <span class="badge critical">
+                    Critical: {{ res.issuesBySeverity.critical }}
+                  </span>
+                }
+                @if (res.issuesBySeverity.high > 0) {
+                  <span class="badge high">
+                    High: {{ res.issuesBySeverity.high }}
+                  </span>
+                }
+                @if (res.issuesBySeverity.medium > 0) {
+                  <span class="badge medium">
+                    Medium: {{ res.issuesBySeverity.medium }}
+                  </span>
+                }
+                @if (res.issuesBySeverity.low > 0) {
+                  <span class="badge low">
+                    Low: {{ res.issuesBySeverity.low }}
+                  </span>
+                }
+              </div>
+            </div> -->
+
+
+            <div class="detectors-results">
+              @for (detector of res.results; track detector.detectorName) {
+                <div class="detector-result">
+                  @if (detector.issues.length > 0) {
+                    <div class="detector-header">
+                      <h3>{{ detector.detectorName }}</h3>
+                      @if (detector.issues.length === 0) {
+                        <p class="no-issues">✓ No issues found</p>
+                      }
+                    </div>
+                    <div class="issues-list">
+                      @for (issue of detector.issues; track issue.id) {
+                        <div class="issue-panel">
+                          <div class="issue-header">
+                            <span class="severity-badge" [class]="issue.severity.toLowerCase()">{{ issue.severity }}</span>
+                          </div>
+                          <div class="issue-body">
+                            <p class="issue-description">{{ issue.description }}</p>
+                            @if (issue.estimatedImpact; as impact) {
+                              <div class="impact-section">
+                                <div class="impact-header">
+                                  <span class="impact-title">Impact Analysis</span>
+                                  <span class="impact-score">Score: {{ impact.severityScore }}/10</span>
+                                  <span class="impact-confidence" title="Confidence Score">({{ impact.confidenceScore }}%)</span>
+                                </div>
+                                <p class="impact-description">{{ impact.description }}</p>
+                                @if (impact.metrics) {
+                                  <div class="metrics-grid">
+                                    @for (metric of impact.metrics | keyvalue; track metric.key) {
+                                      <div class="metric-item">
+                                        <span class="metric-label">{{ metric.key }}:</span>
+                                        <span class="metric-value">{{ metric.value }}</span>
+                                      </div>
+                                    }
+                                  </div>
+                                }
+                              </div>
+                            }
+                            @if (issue.codeBefore) {
+                              <div class="code-block">
+                                <strong>Code:</strong>
+                                <pre>{{ issue.codeBefore }}</pre>
+                              </div>
+                            }
+                            @if (issue.solutions?.length > 0) {
+                              <div class="solutions">
+                                <h4>Suggested Solutions ({{ issue.solutions.length }})</h4>
+                                @for (solution of issue.solutions; track solution.id) {
+                                  <div class="solution-panel">
+                                    <div class="solution-header">
+                                      <span class="solution-rank">Rank #{{ solution.rank }}</span>
+                                      <span class="fitness-score">Fitness: {{ solution.fitnessScore }}</span>
+                                    </div>
+                                    <p class="solution-description">{{ solution.reasoning || solution.description }}</p>
+                                    <div class="code-block">
+                                      <pre>{{ solution.code || solution.codeAfter }}</pre>
+                                    </div>
+                                  </div>
+                                }
+                              </div>
+                            }
+                          </div>
+                        </div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

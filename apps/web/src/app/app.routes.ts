@@ -15,6 +15,7 @@ import { PrivacyComponent } from './pages/privacy.component';
 import { AboutComponent } from './pages/about.component';
 import { ContactComponent } from './pages/contact.component';
 import { authGuard, guestGuard } from './guards/auth.guard';
+import { CodeAnalysisComponent } from './components/code-analysis/code-analysis.component';
 
 export const routes: Routes = [
   { path: '', component: LandingComponent },
@@ -28,6 +29,7 @@ export const routes: Routes = [
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard] },
   { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
   { path: 'settings/sessions', component: SessionsComponent, canActivate: [authGuard] },
+  { path: 'code-analysis', component: CodeAnalysisComponent },
   { path: 'terms', component: TermsComponent },
   { path: 'privacy', component: PrivacyComponent },
   { path: 'about', component: AboutComponent },
