@@ -1,15 +1,14 @@
+<!-- Page Header -->
+<header class="page-header">
+  <div class="header-content">
+    <h1>Repositories</h1>
+    <p class="subtitle">Manage your connected GitHub repositories</p>
+  </div>
+  <button class="btn btn-primary" (click)="showAddForm = !showAddForm">
+    + Add Repository
+  </button>
+</header>
 <div class="repository-container">
-  <!-- Page Header -->
-  <header class="page-header">
-    <div class="header-content">
-      <h1>Repositories</h1>
-      <p class="subtitle">Manage your connected GitHub repositories</p>
-    </div>
-    <button class="btn btn-primary" (click)="showAddForm = !showAddForm">
-      + Add Repository
-    </button>
-  </header>
-
   <!-- Add Repository Form (Collapsible) -->
   @if (showAddForm) {
     <div class="add-repo-card">
@@ -18,17 +17,10 @@
         <button class="btn-close" (click)="showAddForm = false">x</button>
       </div>
       <div class="card-body">
-        <div class="form-row">
-          <div class="form-group">
-            <label for="repoName">Repository Name</label>
-            <input id="repoName" type="text" [(ngModel)]="newRepo.name" placeholder="my-awesome-project" />
-          </div>
-          <div class="form-group">
-            <label for="githubUrl">GitHub URL</label>
-            <input id="githubUrl" type="text" [(ngModel)]="newRepo.githubUrl" placeholder="https://github.com/username/repo" />
-          </div>
-        </div>
-        <div class="form-actions">
+        <lite-input [control]="nameField"></lite-input>
+        <lite-input [control]="githubUrlField"></lite-input>
+
+        <div class="actions">
           <button class="btn btn-secondary" (click)="showAddForm = false">Cancel</button>
           <button class="btn btn-primary" (click)="addRepository()" [disabled]="loading()">
             {{ loading() ? 'Adding...' : 'Add Repository' }}
@@ -44,75 +36,20 @@
       <span class="error-icon">⚠️</span>
       <p>{{ error() }}</p>
     </div>
-  }
-
-  <!-- Loading State -->
-  @if (loading() && repositories().length === 0) {
-    <div class="loading-state">
-      <div class="spinner"></div>
-      <p>Loading repositories...</p>
-    </div>
-  }
-
-  <!-- Empty State -->
-  @if (!loading() && repositories().length === 0) {
-    <div class="empty-state">
-      <div class="empty-icon">📁</div>
-      <h3>No Repositories Yet</h3>
-      <p>Add your first GitHub repository to start analyzing performance issues.</p>
-      <button class="btn btn-primary" (click)="showAddForm = true">+ Add Repository</button>
-    </div>
-  }
-
-  <!-- Repository Grid -->
-  @if (repositories().length > 0) {
-    <div class="repo-grid">
-      @for (repo of repositories(); track repo.id) {
-        <div class="repo-card">
-          <div class="repo-card-header">
-            <div class="repo-icon">📦</div>
-            <div class="repo-info">
-              <h3>{{ repo.name }}</h3>
-              <a class="repo-url" [href]="repo.githubUrl" target="_blank">{{ repo.githubUrl }}</a>
-            </div>
-          </div>
-          
-          <div class="repo-card-body">
-            <div class="repo-stats">
-              <div class="stat-item">
-                <span class="stat-label">Created</span>
-                <span class="stat-value">{{ repo.createdAt | date:'MMM d, y' }}</span>
-              </div>
-              @if (repo.lastAnalyzedAt) {
-                <div class="stat-item">
-                  <span class="stat-label">Last Analyzed</span>
-                  <span class="stat-value">{{ repo.lastAnalyzedAt | date:'MMM d, y' }}</span>
-                </div>
-              }
-              @if (!repo.lastAnalyzedAt) {
-                <div class="stat-item">
-                  <span class="stat-label">Status</span>
-                  <span class="stat-value status-pending">Not analyzed</span>
-                </div>
-              }
-            </div>
-          </div>
-
-          <div class="repo-card-footer">
-            <button class="btn btn-primary btn-sm" (click)="analyzeRepository(repo.id)" [disabled]="loading()">
-              {{ loading() ? 'Analyzing...' : 'Analyze' }}
-            </button>
-            <button class="btn btn-secondary btn-sm" (click)="viewAnalyses(repo.id)">History</button>
-            <button class="btn btn-ghost btn-sm btn-danger" (click)="deleteRepository(repo.id)">Delete</button>
-          </div>
-        </div>
-      }
-
-      <!-- Add New Card -->
-      <div class="repo-card repo-card-add" (click)="showAddForm = true">
-        <div class="add-icon">➕</div>
-        <p>Add Repository</p>
+  } @else {
+    @if (loading()) {
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading repositories...</p>
       </div>
-    </div>
+    } @else {
+      <div class="table-container">
+        <lite-table 
+          [table]="tableConfig()"
+          (menuAction)="onMenuAction($event)"
+          (rowClick)="onRowClick($event)"
+        ></lite-table>
+      </div>
+    }    
   }
 </div>

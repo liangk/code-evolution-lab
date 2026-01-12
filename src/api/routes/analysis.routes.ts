@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { CodeAnalyzer } from '../../analyzer/code-analyzer';
 import { db } from '../database';
 import { sendProgressUpdate } from './sse.routes';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -106,16 +107,16 @@ router.get('/analysis/:analysisId', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/repository/:repoId/analyses', async (req: Request, res: Response) => {
+router.get('/repository/:repoId/analyses', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { repoId } = req.params;
 
-    const repository = await db.getRepository(repoId);
+    const repository = await db.getRepository(repoId, req.user!.id);
     if (!repository) {
       return res.status(404).json({ error: 'Repository not found' });
     }
 
-    const analyses = await db.getAnalysesByRepository(repoId);
+    const analyses = await db.getAnalysesByRepository(repoId, req.user!.id);
 
     res.json({
       success: true,
@@ -131,14 +132,14 @@ router.get('/repository/:repoId/analyses', async (req: Request, res: Response) =
 });
 
 // Analyze entire GitHub repository
-router.post('/repository/:repoId/analyze-github', async (req: Request, res: Response) => {
+router.post('/repository/:repoId/analyze-github', authenticateToken, async (req: AuthRequest, res: Response) => {
   const { cloneRepository, readCodeFiles, cleanupRepository } = await import('../../utils/github-utils');
   
   try {
     const { repoId } = req.params;
     const { generateSolutions = false, sessionId } = req.body;
 
-    const repository = await db.getRepository(repoId);
+    const repository = await db.getRepository(repoId, req.user!.id);
     if (!repository) {
       return res.status(404).json({ error: 'Repository not found' });
     }

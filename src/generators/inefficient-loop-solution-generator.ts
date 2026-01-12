@@ -558,7 +558,7 @@ for (const file of files) {
       1,
       'single_reduce',
       `// Before: Multiple array iterations
-const result = items
+const total = items
   .filter(item => item.active)
   .map(item => item.value)
   .reduce((sum, value) => sum + value, 0);
@@ -589,7 +589,7 @@ const result = items.reduce((sum, item) => {
       1,
       'flatten_with_map',
       `// Before: Nested array methods (O(n²))
-const result = users.map(user => {
+const userOrders = users.map(user => {
   return orders.filter(order => order.userId === user.id);
 });
 
@@ -683,10 +683,10 @@ ul.innerHTML = html;
       1,
       'functional_approach',
       `// Before: Imperative loop
-const results = [];
+const output = [];
 for (const item of items) {
   if (item.active) {
-    results.push(item.value * 2);
+    output.push(item.value * 2);
   }
 }
 

@@ -7,12 +7,15 @@ export class DatabaseService {
     });
   }
 
-  async getRepository(id: string) {
-    return prisma.repository.findUnique({ where: { id } });
+  async getRepository(id: string, ownerId: string) {
+    return prisma.repository.findUnique({ 
+      where: { id, ownerId } 
+    });
   }
 
-  async getAllRepositories() {
+  async getAllRepositories(ownerId: string) {
     return prisma.repository.findMany({
+      where: { ownerId },
       orderBy: { createdAt: 'desc' },
       include: {
         analyses: {
@@ -23,8 +26,10 @@ export class DatabaseService {
     });
   }
 
-  async deleteRepository(id: string) {
-    return prisma.repository.delete({ where: { id } });
+  async deleteRepository(id: string, ownerId: string) {
+    return prisma.repository.delete({ 
+      where: { id, ownerId } 
+    });
   }
 
   async createAnalysis(repositoryId: string, score: number, issuesCounts: any) {
@@ -44,9 +49,12 @@ export class DatabaseService {
     return prisma.analysis.findUnique({ where: { id } });
   }
 
-  async getAnalysesByRepository(repositoryId: string) {
+  async getAnalysesByRepository(repositoryId: string, ownerId: string) {
     return prisma.analysis.findMany({
-      where: { repositoryId },
+      where: { 
+        repositoryId,
+        repository: { ownerId }
+      },
       orderBy: { analyzedAt: 'desc' },
     });
   }

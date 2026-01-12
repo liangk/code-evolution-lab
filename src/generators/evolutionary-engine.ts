@@ -2,7 +2,7 @@ import { Issue, Solution, AnalysisContext } from '../types';
 import { BaseSolutionGenerator } from './base-generator';
 import { FitnessCalculator } from './fitness-calculator';
 import { parseCode, generateCode, cloneAST, getStatements, isValidSyntax } from '../utils/ast-utils';
-import { validateGeneratedCode } from '../utils/code-validator';
+import { validateGeneratedCode, fixDuplicateDeclarations } from '../utils/code-validator';
 import { applyRandomMutation } from './mutation-operators';
 import * as t from '@babel/types';
 import { EventEmitter } from 'events';
@@ -188,23 +188,27 @@ export class EvolutionaryEngine extends EventEmitter {
       
       // 2. Create base candidates from templates
       for (const template of templates) {
+        // Auto-fix duplicate declarations if any
+        const fixResult = fixDuplicateDeclarations(template.code);
+        const codeToUse = fixResult.fixed ? fixResult.code : template.code;
+        
         // Validate template before using it
-        const validation = validateGeneratedCode(template.code);
+        const validation = validateGeneratedCode(codeToUse);
         if (!validation.valid) {
           console.warn(`Skipping invalid template: ${validation.errors.join(', ')}`);
           continue;
         }
         
         try {
-          const ast = parseCode(template.code);
+          const ast = parseCode(codeToUse);
           candidates.push({
             id: this.generateId(),
             ast,
-            code: template.code,
+            code: codeToUse,
             fitness: 0,
             generation: 0,
             parentIds: [],
-            mutations: []
+            mutations: fixResult.fixed ? [{ operator: 'auto-fix', generation: 0, description: 'Fixed duplicate declarations' }] : []
           });
         } catch (error) {
           console.warn(`Failed to parse template: ${error}`);
@@ -219,25 +223,29 @@ export class EvolutionaryEngine extends EventEmitter {
           const mutationResult = applyRandomMutation(template.code);
           
           if (mutationResult.success) {
+            // Auto-fix duplicate declarations if any
+            const fixResult = fixDuplicateDeclarations(mutationResult.code);
+            const codeToUse = fixResult.fixed ? fixResult.code : mutationResult.code;
+            
             // Validate code before adding to population
-            const validation = validateGeneratedCode(mutationResult.code);
+            const validation = validateGeneratedCode(codeToUse);
             if (!validation.valid) {
               continue;
             }
             
             try {
-              const ast = parseCode(mutationResult.code);
+              const ast = parseCode(codeToUse);
               candidates.push({
                 id: this.generateId(),
                 ast,
-                code: mutationResult.code,
+                code: codeToUse,
                 fitness: 0,
                 generation: 0,
                 parentIds: [],
                 mutations: [{
                   operator: 'initial',
                   generation: 0,
-                  description: mutationResult.description
+                  description: mutationResult.description + (fixResult.fixed ? ' (auto-fixed duplicates)' : '')
                 }]
               });
             } catch (error) {
@@ -253,25 +261,29 @@ export class EvolutionaryEngine extends EventEmitter {
         const mutationResult = applyRandomMutation(randomTemplate.code);
         
         if (mutationResult.success) {
+          // Auto-fix duplicate declarations if any
+          const fixResult = fixDuplicateDeclarations(mutationResult.code);
+          const codeToUse = fixResult.fixed ? fixResult.code : mutationResult.code;
+          
           // Validate code before adding to population
-          const validation = validateGeneratedCode(mutationResult.code);
+          const validation = validateGeneratedCode(codeToUse);
           if (!validation.valid) {
             continue;
           }
           
           try {
-            const ast = parseCode(mutationResult.code);
+            const ast = parseCode(codeToUse);
             candidates.push({
               id: this.generateId(),
               ast,
-              code: mutationResult.code,
+              code: codeToUse,
               fitness: 0,
               generation: 0,
               parentIds: [],
               mutations: [{
                 operator: 'initial',
                 generation: 0,
-                description: mutationResult.description
+                description: mutationResult.description + (fixResult.fixed ? ' (auto-fixed duplicates)' : '')
               }]
             });
           } catch (error) {
@@ -392,7 +404,13 @@ export class EvolutionaryEngine extends EventEmitter {
       const childAst = cloneAST(parent1.ast) as t.File;
       childAst.program.body = childStatements;
       
-      const childCode = generateCode(childAst);
+      let childCode = generateCode(childAst);
+      
+      // Auto-fix duplicate declarations from crossover
+      const fixResult = fixDuplicateDeclarations(childCode);
+      if (fixResult.fixed) {
+        childCode = fixResult.code;
+      }
       
       // Validate
       if (!isValidSyntax(childCode)) {
@@ -401,12 +419,12 @@ export class EvolutionaryEngine extends EventEmitter {
       
       return {
         id: this.generateId(),
-        ast: childAst,
+        ast: parseCode(childCode),
         code: childCode,
         fitness: 0,
         generation: parent1.generation + 1,
         parentIds: [parent1.id, parent2.id],
-        mutations: []
+        mutations: fixResult.fixed ? [{ operator: 'crossover-fix', generation: parent1.generation + 1, description: 'Fixed duplicate declarations after crossover' }] : []
       };
     } catch (error) {
       return { ...parent1 };
@@ -424,25 +442,29 @@ export class EvolutionaryEngine extends EventEmitter {
         const mutationResult = applyRandomMutation(candidate.code);
         
         if (mutationResult.success) {
+          // Auto-fix duplicate declarations if any
+          const fixResult = fixDuplicateDeclarations(mutationResult.code);
+          const codeToUse = fixResult.fixed ? fixResult.code : mutationResult.code;
+          
           // Validate mutated code before accepting it
-          const validation = validateGeneratedCode(mutationResult.code);
+          const validation = validateGeneratedCode(codeToUse);
           if (!validation.valid) {
             mutated.push(candidate);
             continue;
           }
           
           try {
-            const ast = parseCode(mutationResult.code);
+            const ast = parseCode(codeToUse);
             mutated.push({
               ...candidate,
-              code: mutationResult.code,
+              code: codeToUse,
               ast,
               mutations: [
                 ...candidate.mutations,
                 {
                   operator: 'mutation',
                   generation,
-                  description: mutationResult.description
+                  description: mutationResult.description + (fixResult.fixed ? ' (auto-fixed duplicates)' : '')
                 }
               ]
             });

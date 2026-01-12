@@ -1,4 +1,4 @@
-import { parseCode, validateCode as astValidate } from './ast-utils';
+import { parseCode, validateCode as astValidate, generateCode } from './ast-utils';
 import * as t from '@babel/types';
 
 /**
@@ -13,23 +13,81 @@ export interface ValidationResult {
 }
 
 /**
+ * Text-based pre-fix for duplicate declarations (handles unparseable code)
+ */
+function textBasedDuplicateFix(code: string): { code: string; fixed: boolean } {
+  const lines = code.split('\n');
+  const declarations = new Map<string, number>();
+  let fixed = false;
+  let globalCounter = 0;
+  
+  const fixedLines = lines.map(line => {
+    // Match variable declarations: const/let/var identifier =
+    // This regex handles whitespace and ensures word boundaries
+    const matches = Array.from(line.matchAll(/\b(const|let|var)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=/g));
+    
+    if (matches.length === 0) {
+      return line;
+    }
+    
+    let modifiedLine = line;
+    // Process matches in reverse order to maintain correct positions
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      const keyword = match[1];
+      const varName = match[2];
+      const matchIndex = match.index!;
+      
+      const count = declarations.get(varName) || 0;
+      
+      if (count > 0) {
+        // Rename duplicate
+        const newName = `${varName}_${globalCounter++}`;
+        declarations.set(newName, 1);
+        fixed = true;
+        
+        // Replace this specific occurrence
+        const before = modifiedLine.substring(0, matchIndex);
+        const after = modifiedLine.substring(matchIndex + match[0].length);
+        modifiedLine = before + `${keyword} ${newName} =` + after;
+      } else {
+        declarations.set(varName, count + 1);
+      }
+    }
+    
+    return modifiedLine;
+  });
+  
+  return { code: fixedLines.join('\n'), fixed };
+}
+
+/**
  * Comprehensive code validation
+ * Auto-fixes duplicate declarations before validation
  */
 export function validateGeneratedCode(code: string): ValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
+  // 0. Pre-fix duplicates before parsing (handles unparseable code)
+  const fixResult = textBasedDuplicateFix(code);
+  const codeToValidate = fixResult.code;
+  
+  if (fixResult.fixed) {
+    warnings.push('Auto-fixed duplicate variable declarations');
+  }
+
   // 1. Syntax validation
-  const syntaxCheck = astValidate(code);
+  const syntaxCheck = astValidate(codeToValidate);
   if (!syntaxCheck.valid) {
     errors.push(`Syntax error: ${syntaxCheck.error}`);
     return { valid: false, errors, warnings };
   }
 
   try {
-    const ast = parseCode(code);
+    const ast = parseCode(codeToValidate);
 
-    // 2. Check for duplicate declarations (critical for evolutionary algorithm)
+    // 2. Check for duplicate declarations (should be fixed by now, but double-check)
     const duplicates = checkDuplicateDeclarations(ast);
     if (duplicates.length > 0) {
       errors.push(`Duplicate declarations: ${duplicates.join(', ')}`);
@@ -70,70 +128,69 @@ export function validateGeneratedCode(code: string): ValidationResult {
  */
 function checkDuplicateDeclarations(ast: t.File): string[] {
   const duplicates: string[] = [];
-  const scopes: Map<any, Set<string>>[] = [new Map()];
   
-  const traverse = (node: any, scopeLevel = 0) => {
+  const traverse = (node: any, scopeDeclarations: Set<string>) => {
     if (!node || typeof node !== 'object') return;
 
-    // Create new scope for functions and blocks
-    if (t.isFunctionDeclaration(node) || t.isFunctionExpression(node) || t.isArrowFunctionExpression(node)) {
-      scopes[scopeLevel + 1] = new Map();
+    // Track declarations in current scope
+    const currentScopeDeclarations = new Set(scopeDeclarations);
+    let isNewScope = false;
+
+    // Check if this creates a new scope
+    if (t.isFunctionDeclaration(node) || t.isFunctionExpression(node) || 
+        t.isArrowFunctionExpression(node) || t.isBlockStatement(node)) {
+      isNewScope = true;
+      // For new scopes, start fresh (but inherit from parent for lookups)
+      currentScopeDeclarations.clear();
     }
 
-    // Check declarations
-    if (t.isVariableDeclarator(node) && t.isIdentifier(node.id)) {
-      const currentScope = scopes[scopeLevel] || new Map();
-      const declared = currentScope.get(node) || new Set<string>();
-      
-      if (declared.has(node.id.name)) {
-        duplicates.push(node.id.name);
-      } else {
-        declared.add(node.id.name);
-        currentScope.set(node, declared);
+    // Check variable declarations
+    if (t.isVariableDeclaration(node)) {
+      for (const declarator of node.declarations) {
+        if (t.isIdentifier(declarator.id)) {
+          const varName = declarator.id.name;
+          if (currentScopeDeclarations.has(varName)) {
+            duplicates.push(varName);
+          } else {
+            currentScopeDeclarations.add(varName);
+          }
+        }
       }
     }
 
+    // Check function declarations
     if (t.isFunctionDeclaration(node) && node.id) {
-      const currentScope = scopes[scopeLevel] || new Map();
-      const declared = currentScope.get(node) || new Set<string>();
-      
-      if (declared.has(node.id.name)) {
-        duplicates.push(node.id.name);
+      const funcName = node.id.name;
+      if (scopeDeclarations.has(funcName)) {
+        duplicates.push(funcName);
       } else {
-        declared.add(node.id.name);
-        currentScope.set(node, declared);
+        scopeDeclarations.add(funcName);
       }
     }
 
+    // Check class declarations
     if (t.isClassDeclaration(node) && node.id) {
-      const currentScope = scopes[scopeLevel] || new Map();
-      const declared = currentScope.get(node) || new Set<string>();
-      
-      if (declared.has(node.id.name)) {
-        duplicates.push(node.id.name);
+      const className = node.id.name;
+      if (scopeDeclarations.has(className)) {
+        duplicates.push(className);
       } else {
-        declared.add(node.id.name);
-        currentScope.set(node, declared);
+        scopeDeclarations.add(className);
       }
     }
 
-    // Traverse children
-    const nextLevel = (t.isFunctionDeclaration(node) || t.isFunctionExpression(node) || t.isArrowFunctionExpression(node)) 
-      ? scopeLevel + 1 
-      : scopeLevel;
-
+    // Traverse children with appropriate scope
     for (const key in node) {
-      if (key === 'loc' || key === 'start' || key === 'end') continue;
+      if (key === 'loc' || key === 'start' || key === 'end' || key === 'type') continue;
       const child = node[key];
       if (Array.isArray(child)) {
-        child.forEach(c => traverse(c, nextLevel));
+        child.forEach(c => traverse(c, isNewScope ? currentScopeDeclarations : scopeDeclarations));
       } else if (child && typeof child === 'object') {
-        traverse(child, nextLevel);
+        traverse(child, isNewScope ? currentScopeDeclarations : scopeDeclarations);
       }
     }
   };
 
-  traverse(ast);
+  traverse(ast, new Set());
   return [...new Set(duplicates)];
 }
 
@@ -283,5 +340,79 @@ export function canCompile(code: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Auto-fix duplicate variable declarations by renaming them
+ * Uses text-based approach first, then AST-based for validation
+ */
+export function fixDuplicateDeclarations(code: string): { code: string; fixed: boolean } {
+  // First try text-based fix (works even if code is unparseable)
+  const textFix = textBasedDuplicateFix(code);
+  
+  try {
+    // Try to parse the result
+    const ast = parseCode(textFix.code);
+    let counter = 0;
+    let astFixed = false;
+    
+    const renameDuplicates = (node: any, scopeDeclarations: Map<string, number>) => {
+      if (!node || typeof node !== 'object') return;
+
+      // Track declarations in current scope
+      const currentScopeDeclarations = new Map(scopeDeclarations);
+      let isNewScope = false;
+
+      // Check if this creates a new scope
+      if (t.isFunctionDeclaration(node) || t.isFunctionExpression(node) || 
+          t.isArrowFunctionExpression(node) || t.isBlockStatement(node)) {
+        isNewScope = true;
+        currentScopeDeclarations.clear();
+      }
+
+      // Fix variable declarations
+      if (t.isVariableDeclaration(node)) {
+        for (const declarator of node.declarations) {
+          if (t.isIdentifier(declarator.id)) {
+            const varName = declarator.id.name;
+            const count = currentScopeDeclarations.get(varName) || 0;
+            
+            if (count > 0) {
+              // Rename duplicate
+              const newName = `${varName}_${counter++}`;
+              declarator.id.name = newName;
+              currentScopeDeclarations.set(newName, 1);
+              astFixed = true;
+            } else {
+              currentScopeDeclarations.set(varName, 1);
+            }
+          }
+        }
+      }
+
+      // Traverse children with appropriate scope
+      for (const key in node) {
+        if (key === 'loc' || key === 'start' || key === 'end' || key === 'type') continue;
+        const child = node[key];
+        if (Array.isArray(child)) {
+          child.forEach(c => renameDuplicates(c, isNewScope ? currentScopeDeclarations : scopeDeclarations));
+        } else if (child && typeof child === 'object') {
+          renameDuplicates(child, isNewScope ? currentScopeDeclarations : scopeDeclarations);
+        }
+      }
+    };
+
+    renameDuplicates(ast, new Map());
+    
+    if (astFixed) {
+      const fixedCode = generateCode(ast);
+      return { code: fixedCode, fixed: true };
+    }
+    
+    return textFix;
+  } catch (error) {
+    // If AST approach fails, return text-based fix
+    return textFix;
   }
 }

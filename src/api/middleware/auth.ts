@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+import { verifyAccessToken } from '../utils/jwt';
+import { ACCESS_TOKEN_COOKIE } from '../utils/constants';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -11,43 +10,32 @@ export interface AuthRequest extends Request {
 }
 
 export const authenticateToken = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  // Check for token in cookie (primary method)
+  const token = req.cookies?.[ACCESS_TOKEN_COOKIE];
 
   if (!token) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
-    req.user = user as { id: string; email: string };
-    next();
-    return;
-  });
-
-  return;
+  try {
+    const payload = verifyAccessToken(token);
+    req.user = { id: payload.sub, email: '' }; // Email not stored in JWT payload
+    return next();
+  } catch (err) {
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
 };
 
 export const optionalAuth = (req: AuthRequest, _res: Response, next: NextFunction) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = req.cookies?.[ACCESS_TOKEN_COOKIE];
 
   if (token) {
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-      if (!err) {
-        req.user = user as { id: string; email: string };
-      }
-      next();
-      return;
-    });
-    return;
+    try {
+      const payload = verifyAccessToken(token);
+      req.user = { id: payload.sub, email: '' };
+    } catch {
+      // Token invalid, continue without user
+    }
   }
   next();
-  return;
-};
-
-export const generateToken = (userId: string, email: string): string => {
-  return jwt.sign({ id: userId, email }, JWT_SECRET, { expiresIn: '7d' });
 };

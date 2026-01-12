@@ -65,7 +65,7 @@ export class AnalysisService {
     return this.http.get(`${this.apiUrl}/repositories`);
   }
 
-  createRepository(data: { name: string; githubUrl: string; ownerId: string }): Observable<any> {
+  createRepository(data: { name: string; githubUrl: string }): Observable<any> {
     return this.http.post(`${this.apiUrl}/repositories`, data);
   }
 
