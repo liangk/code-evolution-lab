@@ -24,6 +24,8 @@ export class CodeAnalysisComponent {
   error = signal<string | null>(null);
   selectedExample = signal<string>('');
   showEvolutionProgress = signal(false);
+  inputPanelCollapsed = signal(false);
+  expandedIssues = signal<Set<string>>(new Set());
   examples = exampleFiles;
   codeField: FieldDto = { 
     label: 'Paste your code here or select an example above...', 
@@ -124,5 +126,23 @@ export class CodeAnalysisComponent {
 
   getSelectedSeverityClass(): string {
     return this.getSelectedSeverity().toLowerCase();
+  }
+
+  toggleInputPanel() {
+    this.inputPanelCollapsed.set(!this.inputPanelCollapsed());
+  }
+
+  toggleIssue(issueId: string) {
+    const expanded = new Set(this.expandedIssues());
+    if (expanded.has(issueId)) {
+      expanded.delete(issueId);
+    } else {
+      expanded.add(issueId);
+    }
+    this.expandedIssues.set(expanded);
+  }
+
+  isIssueExpanded(issueId: string): boolean {
+    return this.expandedIssues().has(issueId);
   }
 }
