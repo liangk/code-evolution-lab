@@ -35,7 +35,7 @@
 
 .session-group { h2 { margin: 0 0 1rem; font-size: 0.875rem; font-weight: 600; color: #737373; text-transform: uppercase; letter-spacing: 0.025em; } }
 
-.session-card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 1.25rem; display: flex; gap: 1rem; align-items: flex-start;
+.session-card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 1.25rem; display: flex; gap: 1rem; align-items: flex-start; margin-bottom: 1rem;
   &.current { border: 2px solid #667eea; }
   .session-icon { width: 48px; height: 48px; background: #f5f5f5; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.875rem; color: #525252; flex-shrink: 0; }
   .session-info { flex: 1; min-width: 0; }

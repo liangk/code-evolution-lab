@@ -68,8 +68,8 @@ export class AnalysisResultsComponent implements OnInit {
   loadAnalysis(analysisId: string) {
     this.loading.set(true);
     this.analysisService.getAnalysis(analysisId).subscribe({
-      next: (data: AnalysisDetail) => {
-        this.analysis.set(data);
+      next: (response: any) => {
+        this.analysis.set(response.analysis || response);
         this.loading.set(false);
       },
       error: (err: any) => {
@@ -85,7 +85,7 @@ export class AnalysisResultsComponent implements OnInit {
 
   getFilteredIssues(): Issue[] {
     const data = this.analysis();
-    if (!data) return [];
+    if (!data || !data.issues) return [];
     
     const filter = this.severityFilter();
     if (filter === 'all') return data.issues;

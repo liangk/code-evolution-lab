@@ -117,6 +117,43 @@ export class DatabaseService {
       orderBy: { rank: 'asc' },
     });
   }
+
+  async createSession(userId: string, ipAddress: string | null, userAgent: string | null) {
+    return prisma.session.create({
+      data: { userId, ipAddress, userAgent },
+    });
+  }
+
+  async getSessionsByUser(userId: string) {
+    return prisma.session.findMany({
+      where: { userId },
+      orderBy: { lastActive: 'desc' },
+    });
+  }
+
+  async getSession(id: string, userId: string) {
+    return prisma.session.findFirst({
+      where: { id, userId },
+    });
+  }
+
+  async revokeSession(id: string, userId: string) {
+    return prisma.session.updateMany({
+      where: { id, userId },
+      data: { isActive: false },
+    });
+  }
+
+  async revokeAllOtherSessions(currentSessionId: string, userId: string) {
+    return prisma.session.updateMany({
+      where: {
+        userId,
+        id: { not: currentSessionId },
+        isActive: true,
+      },
+      data: { isActive: false },
+    });
+  }
 }
 
 export const db = new DatabaseService();

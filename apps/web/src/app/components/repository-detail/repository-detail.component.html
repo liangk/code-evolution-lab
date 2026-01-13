@@ -32,9 +32,9 @@
         <h1>{{ repository()?.name }}</h1>
         <a class="repo-url" [href]="repository()?.githubUrl" target="_blank">{{ repository()?.githubUrl }}</a>
         <div class="repo-meta">
-          <span class="meta-item">Created: {{ repository()?.createdAt | date:'MMM d, y' }}</span>
+          <span class="meta-item">Created: {{ repository()?.createdAt | date:'MMM d, y hh:mm' }}</span>
           @if (repository()?.lastAnalyzedAt) {
-            <span class="meta-item">Last Analyzed: {{ repository()?.lastAnalyzedAt | date:'MMM d, y h:mm a' }}</span>
+            <span class="meta-item">Last Analyzed: {{ repository()?.lastAnalyzedAt | date:'MMM d, y hh:mm' }}</span>
           }
         </div>
       </div>
@@ -43,7 +43,7 @@
           {{ analyzing() ? 'Analyzing...' : 'Run New Analysis' }}
         </button>
         <a class="btn btn-secondary" [href]="repository()?.githubUrl" target="_blank">Open on GitHub</a>
-        <button class="btn btn-ghost btn-danger" (click)="deleteRepository()">Delete</button>
+        <button class="btn btn-danger" (click)="deleteRepository()">Delete</button>
       </div>
     </div>
 
@@ -90,7 +90,6 @@
         <!-- Empty State -->
         @if (analyses().length === 0) {
           <div class="empty-state">
-            <div class="empty-icon">📈</div>
             <h3>No Analyses Yet</h3>
             <p>Run your first analysis to see performance insights.</p>
             <button class="btn btn-primary" (click)="runAnalysis()" [disabled]="analyzing()">
@@ -150,4 +149,20 @@
     </div>
     </div>
   }
+
+  <!-- Delete Confirmation Panel -->
+  @if (deletePanelOpen()) {
+    <lite-panel
+      [title]="'Delete Repository'"
+      [content]="deleteConfirmTemplate"
+      [actions]="deleteActions"
+      width="480px"
+      (closed)="onDeletePanelClosed($event)"
+    ></lite-panel>
+  }
+
+  <ng-template #deleteConfirmTemplate>
+    <p>Are you sure you want to delete <strong>{{ repository()?.name }}</strong>?</p>
+    <p style="color: #6b7280; margin-top: 0.5rem;">This action cannot be undone. All analysis history will be permanently lost.</p>
+  </ng-template>
 </div>

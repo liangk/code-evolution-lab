@@ -1,6 +1,7 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { SessionService } from '../../services/session.service';
 
 interface Session {
   id: string;
@@ -10,6 +11,8 @@ interface Session {
   ipAddress: string;
   location: string;
   lastActive: Date;
+  createdAt: Date;
+  isActive: boolean;
   isCurrent: boolean;
 }
 
@@ -27,71 +30,64 @@ export class SessionsComponent implements OnInit {
   successMessage = signal<string | null>(null);
   error = signal<string | null>(null);
 
+  constructor(private sessionService: SessionService) {}
+
   ngOnInit() {
     this.loadSessions();
   }
 
   loadSessions() {
     this.loading.set(true);
-    // Simulated session data - replace with actual API call
-    setTimeout(() => {
-      this.sessions.set([
-        {
-          id: '1',
-          device: 'Desktop',
-          browser: 'Chrome',
-          os: 'Windows 11',
-          ipAddress: '192.168.1.100',
-          location: 'Sydney, Australia',
-          lastActive: new Date(),
-          isCurrent: true
-        },
-        {
-          id: '2',
-          device: 'Desktop',
-          browser: 'Safari',
-          os: 'macOS Sonoma',
-          ipAddress: '10.0.0.50',
-          location: 'Melbourne, Australia',
-          lastActive: new Date(Date.now() - 2 * 60 * 60 * 1000),
-          isCurrent: false
-        },
-        {
-          id: '3',
-          device: 'Mobile',
-          browser: 'Safari',
-          os: 'iOS 17',
-          ipAddress: '172.16.0.25',
-          location: 'Brisbane, Australia',
-          lastActive: new Date(Date.now() - 24 * 60 * 60 * 1000),
-          isCurrent: false
-        }
-      ]);
-      this.loading.set(false);
-    }, 500);
+    this.sessionService.getSessions().subscribe({
+      next: (response: any) => {
+        const sessions = (response.sessions || []).map((s: any) => ({
+          ...s,
+          lastActive: new Date(s.lastActive),
+          createdAt: new Date(s.createdAt)
+        }));
+        this.sessions.set(sessions);
+        this.loading.set(false);
+      },
+      error: (err) => {
+        this.error.set(err.error?.message || 'Failed to load sessions');
+        this.loading.set(false);
+      }
+    });
   }
 
   revokeSession(sessionId: string) {
     if (confirm('Are you sure you want to revoke this session?')) {
       this.revoking.set(sessionId);
-      setTimeout(() => {
-        this.sessions.update(sessions => sessions.filter(s => s.id !== sessionId));
-        this.revoking.set(null);
-        this.successMessage.set('Session revoked successfully');
-        setTimeout(() => this.successMessage.set(null), 3000);
-      }, 500);
+      this.sessionService.revokeSession(sessionId).subscribe({
+        next: () => {
+          this.sessions.update(sessions => sessions.filter(s => s.id !== sessionId));
+          this.revoking.set(null);
+          this.successMessage.set('Session revoked successfully');
+          setTimeout(() => this.successMessage.set(null), 3000);
+        },
+        error: (err) => {
+          this.error.set(err.error?.message || 'Failed to revoke session');
+          this.revoking.set(null);
+        }
+      });
     }
   }
 
   revokeAllOtherSessions() {
     if (confirm('Are you sure you want to revoke all other sessions? You will remain logged in on this device only.')) {
       this.loading.set(true);
-      setTimeout(() => {
-        this.sessions.update(sessions => sessions.filter(s => s.isCurrent));
-        this.loading.set(false);
-        this.successMessage.set('All other sessions have been revoked');
-        setTimeout(() => this.successMessage.set(null), 3000);
-      }, 500);
+      this.sessionService.revokeAllOtherSessions().subscribe({
+        next: () => {
+          this.sessions.update(sessions => sessions.filter(s => s.isCurrent));
+          this.loading.set(false);
+          this.successMessage.set('All other sessions have been revoked');
+          setTimeout(() => this.successMessage.set(null), 3000);
+        },
+        error: (err) => {
+          this.error.set(err.error?.message || 'Failed to revoke sessions');
+          this.loading.set(false);
+        }
+      });
     }
   }
 

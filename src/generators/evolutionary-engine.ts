@@ -62,10 +62,12 @@ export class EvolutionaryEngine extends EventEmitter {
 
   private tournamentSize = parseInt(process.env.EVO_TOURNAMENT_SIZE || '3', 10);
   private enableAlgorithm = process.env.EVO_ENABLE_ALGORITHM === 'true';
-  private fitnessCalculator = new FitnessCalculator();
+  private fitnessCalculator: FitnessCalculator;
 
   constructor() {
     super();
+    const weightPreset = (process.env.FITNESS_WEIGHT_PRESET || 'balanced') as any;
+    this.fitnessCalculator = new FitnessCalculator(weightPreset);
   }
 
   /**
@@ -308,7 +310,8 @@ export class EvolutionaryEngine extends EventEmitter {
     context: AnalysisContext
   ): Promise<SolutionCandidate[]> {
     return candidates.map(candidate => {
-      // Convert candidate to Solution format for fitness calculation
+      const implementationTime = this.fitnessCalculator.estimateImplementationTime(candidate.code, issue.type);
+      
       const solution: Solution = {
         id: candidate.id,
         issueId: issue.id || '',
@@ -317,11 +320,10 @@ export class EvolutionaryEngine extends EventEmitter {
         code: candidate.code,
         fitnessScore: 0,
         reasoning: '',
-        implementationTime: 0,
+        implementationTime,
         riskLevel: 'medium'
       };
       
-      // Calculate fitness using existing FitnessCalculator
       const fitness = this.fitnessCalculator.calculateFitness(solution, issue, context);
       
       return {
@@ -539,7 +541,7 @@ export class EvolutionaryEngine extends EventEmitter {
       code: candidate.code,
       fitnessScore: candidate.fitness,
       reasoning: `Evolved solution (Generation ${candidate.generation}, ${candidate.mutations.length} mutations applied)`,
-      implementationTime: 5,
+      implementationTime: this.fitnessCalculator.estimateImplementationTime(candidate.code, 'evolved'),
       riskLevel: 'medium'
     }));
   }

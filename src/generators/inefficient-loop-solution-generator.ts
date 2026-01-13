@@ -4,6 +4,10 @@ import { Issue, Solution, AnalysisContext } from '../types';
 export class InefficientLoopSolutionGenerator extends BaseSolutionGenerator {
   name = 'Inefficient Loop Solution Generator';
 
+  constructor() {
+    super();
+  }
+
   async generateSolutions(issue: Issue, _context?: AnalysisContext): Promise<Solution[]> {
     const solutions: Solution[] = [];
     const issueType = issue.type;

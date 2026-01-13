@@ -6,6 +6,50 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
+function calculateScore(results: any[], generateSolutions: boolean): number {
+  if (generateSolutions) {
+    const issueScores: { fitness: number; weight: number }[] = [];
+    const severityWeights = { critical: 1.0, high: 0.8, medium: 0.5, low: 0.3 };
+
+    results.forEach((result) => {
+      result.issues.forEach((issue: any) => {
+        if (issue.solutions && issue.solutions.length > 0) {
+          let bestFitness = 0;
+          issue.solutions.forEach((sol: any) => {
+            if (sol.fitnessScore && sol.fitnessScore > bestFitness) {
+              bestFitness = sol.fitnessScore;
+            }
+          });
+          
+          const severity = issue.severity.toLowerCase();
+          const weight = severityWeights[severity as keyof typeof severityWeights] || 0.5;
+          issueScores.push({ fitness: bestFitness, weight });
+        }
+      });
+    });
+
+    if (issueScores.length > 0) {
+      const totalWeight = issueScores.reduce((sum, item) => sum + item.weight, 0);
+      const weightedSum = issueScores.reduce((sum, item) => sum + item.fitness * item.weight, 0);
+      return Math.round((weightedSum / totalWeight) * 10) / 10;
+    }
+  }
+
+  const severityPenalties = { critical: 25, high: 15, medium: 8, low: 3 };
+  let penalty = 0;
+
+  results.forEach((result) => {
+    result.issues.forEach((issue: any) => {
+      const severity = issue.severity.toLowerCase();
+      if (severity in severityPenalties) {
+        penalty += severityPenalties[severity as keyof typeof severityPenalties];
+      }
+    });
+  });
+
+  return Math.max(0, 100 - penalty);
+}
+
 router.post('/analyze', async (req: Request, res: Response) => {
   try {
     const { code, filePath, generateSolutions = false, sessionId } = req.body;
@@ -51,7 +95,7 @@ router.post('/analyze', async (req: Request, res: Response) => {
       });
     });
 
-    const score = Math.max(0, 100 - totalIssues * 5);
+    const score = calculateScore(results, generateSolutions);
 
     // Normalize solution fields for frontend (generator uses code/reasoning, frontend expects codeAfter/description)
     const normalizedResults = results.map((detector) => ({
@@ -221,7 +265,7 @@ router.post('/repository/:repoId/analyze-github', authenticateToken, async (req:
         }
       }
 
-      const score = Math.max(0, 100 - totalIssues * 5);
+      const score = calculateScore(allResults, generateSolutions);
 
       // Save analysis to database
       const analysis = await db.createAnalysis(repoId, score, {

@@ -1,7 +1,14 @@
 import { Issue, Solution } from '../types';
+import { FitnessCalculator, WeightPreset } from './fitness-calculator';
 
 export abstract class BaseSolutionGenerator {
   abstract name: string;
+  protected fitnessCalculator: FitnessCalculator;
+
+  constructor() {
+    const weightPreset = (process.env.FITNESS_WEIGHT_PRESET || 'balanced') as WeightPreset;
+    this.fitnessCalculator = new FitnessCalculator(weightPreset);
+  }
 
   abstract generateSolutions(issue: Issue, context: any): Promise<Solution[]>;
 
@@ -12,9 +19,11 @@ export abstract class BaseSolutionGenerator {
     code: string,
     fitnessScore: number,
     reasoning: string,
-    implementationTime: number,
+    _implementationTime: number,
     riskLevel: 'low' | 'medium' | 'high'
   ): Solution {
+    const calculatedTime = this.fitnessCalculator.estimateImplementationTime(code, type);
+    
     return {
       id: this.generateId(),
       issueId,
@@ -23,7 +32,7 @@ export abstract class BaseSolutionGenerator {
       code,
       fitnessScore,
       reasoning,
-      implementationTime,
+      implementationTime: calculatedTime,
       riskLevel,
     };
   }

@@ -31,39 +31,28 @@ export class RepositoryComponent implements OnInit {
 
   tableConfig = signal(new TableFieldDto<Repository>(
     [
-      { key: 'name', label: 'Repository Name', sortable: true, flex: '1' },
+      { key: 'name', label: 'Repository Name', sortable: true, flex: '0 0 200px' },
       { 
         key: 'githubUrl', 
         label: 'GitHub URL', 
-        flex: '2',
+        flex: '1 0 560px',
         cellTemplate: (url: string) => `<a href="${url}" target="_blank" style="color: #667eea; text-decoration: none;">${url}</a>`
       },
       { 
         key: 'createdAt', 
         label: 'Created', 
         sortable: true,
-        flex: '0 0 120px',
-        cellTemplate: (date: Date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        flex: '0 0 200px',
+        cellTemplate: (date: Date) => new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
       },
       { 
         key: 'analyses', 
         label: 'Last Analyzed',
-        flex: '0 0 140px',
+        flex: '0 0 200px',
         cellTemplate: (analyses: any[]) => 
           analyses?.[0]?.analyzedAt 
-            ? new Date(analyses[0].analyzedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? new Date(analyses[0].analyzedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
             : '<span style="color: #999;">Not analyzed</span>'
-      },
-      {
-        key: 'actions',
-        label: '',
-        type: 'menu',
-        flex: '0 0 100px',
-        menuItems: [
-          { label: 'Analyze', value: 'analyze' },
-          { label: 'History', value: 'history' },
-          { label: 'Delete', value: 'delete', variant: 'danger' }
-        ]
       }
     ],
     this.repositories(),
@@ -133,7 +122,7 @@ export class RepositoryComponent implements OnInit {
         this.repositories.update(repos => [repo, ...repos]);
         this.tableConfig.set(new TableFieldDto<Repository>(
           this.tableConfig().columns,
-          [repo],
+          [...this.repositories()],
           false
         ));
         this.nameField.formControl.setValue('');

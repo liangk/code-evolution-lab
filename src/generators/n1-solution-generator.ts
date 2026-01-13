@@ -4,6 +4,10 @@ import { Issue, Solution } from '../types';
 export class N1SolutionGenerator extends BaseSolutionGenerator {
   name = 'N+1 Query Solution Generator';
 
+  constructor() {
+    super();
+  }
+
   async generateSolutions(issue: Issue): Promise<Solution[]> {
     const solutions: Solution[] = [];
 

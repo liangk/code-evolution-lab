@@ -1,6 +1,6 @@
-.analysis-results-container { min-height: 100vh; background: #f8fafc; padding: 2rem; max-width: 1000px; margin: 0 auto; }
+.analysis-results-container { background: #f8fafc; max-width: 1200px; margin: 20px auto; width: 100%; }
 
-.breadcrumb { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; flex-wrap: wrap;
+.breadcrumb { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1.5rem; font-size: 0.875rem;
   a { color: #667eea; text-decoration: none; &:hover { text-decoration: underline; } }
   .separator { color: #a3a3a3; }
   .current { color: #525252; font-weight: 500; }
@@ -63,62 +63,74 @@
 
 .issues-list { padding: 0.5rem; }
 
-.issue-accordion { background: #fafafa; border-radius: 8px; margin-bottom: 0.5rem; overflow: hidden;
-  &.expanded { background: white; border: 1px solid #e5e5e5; }
+.issue-accordion { background: white; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 0.75rem; overflow: hidden; transition: all 0.2s;
+  &:hover { box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+  &.expanded { background: white; border-color: #667eea; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
 }
 
 .issue-header { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; cursor: pointer; transition: background 0.2s;
-  &:hover { background: rgba(0,0,0,0.02); }
-  .severity-badge { padding: 0.25rem 0.625rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; flex-shrink: 0;
-    &.critical { background: rgba(239,68,68,0.1); color: #ef4444; }
-    &.high { background: rgba(245,158,11,0.1); color: #f59e0b; }
-    &.medium { background: rgba(59,130,246,0.1); color: #3b82f6; }
-    &.low { background: rgba(107,114,128,0.1); color: #6b7280; }
+  &:hover { background: #f9fafb; }
+  .severity-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; flex-shrink: 0; letter-spacing: 0.5px;
+    &.critical { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    &.high { background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
+    &.medium { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    &.low { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
   }
   .issue-title-section { flex: 1; min-width: 0;
-    h3 { margin: 0; font-size: 0.938rem; font-weight: 600; color: #171717; }
-    .issue-location { display: block; font-size: 0.75rem; color: #737373; font-family: monospace; margin-top: 0.25rem; }
+    h3 { margin: 0; font-size: 0.938rem; font-weight: 600; color: #111827; line-height: 1.4; }
+    .issue-location { display: block; font-size: 0.75rem; color: #6b7280; font-family: 'Fira Code', monospace; margin-top: 0.375rem; }
   }
-  .expand-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; color: #a3a3a3; flex-shrink: 0; }
+  .expand-icon { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; color: #9ca3af; flex-shrink: 0; font-weight: 300; }
 }
 
-.issue-content { padding: 0 1.25rem 1.25rem; border-top: 1px solid #f5f5f5;
-  .issue-description { margin: 1rem 0; font-size: 0.875rem; color: #525252; line-height: 1.6; }
+.issue-content { padding: 0 1.25rem 1.5rem; border-top: 1px solid #f3f4f6; background: #fafbfc;
+  .issue-description { margin: 1.25rem 0; font-size: 0.938rem; color: #374155; line-height: 1.7; }
 }
 
-.impact-section { background: #f8fafc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;
-  h4 { margin: 0 0 0.75rem; font-size: 0.875rem; font-weight: 600; color: #171717; }
-  .impact-metrics { display: flex; gap: 1rem; margin-bottom: 0.5rem;
-    .impact-score, .impact-confidence { font-size: 0.813rem; color: #667eea; font-weight: 600; }
-  }
-  .impact-description { margin: 0; font-size: 0.813rem; color: #525252; }
-}
-
-.code-section { margin-bottom: 1rem;
-  .code-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;
-    span { font-size: 0.75rem; font-weight: 600; color: #737373; text-transform: uppercase; }
-  }
-  .btn-copy { padding: 0.25rem 0.5rem; background: #e5e5e5; border: none; border-radius: 4px; font-size: 0.688rem; font-weight: 600; color: #525252; cursor: pointer; &:hover { background: #d4d4d4; } }
-}
-
-.code-block { background: #1e293b; color: #e2e8f0; padding: 1rem; border-radius: 8px; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.813rem; line-height: 1.6; margin: 0; white-space: pre-wrap;
-  &.optimized { background: #0f3d19; border-left: 3px solid #10b981; }
-}
-
-.solutions-section { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #e5e5e5;
-  h4 { margin: 0 0 1rem; font-size: 0.938rem; font-weight: 600; color: #171717; }
-}
-
-.solution-card { background: #fafafa; border: 1px solid #e5e5e5; border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem;
-  .solution-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap;
-    .solution-rank { font-size: 0.875rem; font-weight: 600; color: #667eea; }
-    .fitness-badge { font-size: 0.75rem; color: #10b981; font-weight: 600; }
-    .difficulty-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.688rem; font-weight: 600; text-transform: uppercase;
-      &.easy { background: rgba(16,185,129,0.1); color: #10b981; }
-      &.medium { background: rgba(245,158,11,0.1); color: #f59e0b; }
-      &.hard { background: rgba(239,68,68,0.1); color: #ef4444; }
+.impact-section { background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; border: 1px solid #bae6fd;
+  h4 { margin: 0 0 1rem; font-size: 0.813rem; font-weight: 700; color: #0c4a6e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .impact-metrics { display: flex; gap: 2rem; margin-bottom: 0.75rem;
+    .impact-score, .impact-confidence { display: flex; flex-direction: column; gap: 0.25rem;
+      font-size: 0.75rem; color: #0369a1; font-weight: 600;
     }
   }
-  .solution-description { margin: 0 0 1rem; font-size: 0.875rem; color: #525252; line-height: 1.5; }
-  .solution-explanation { margin: 1rem 0 0; font-size: 0.813rem; color: #737373; font-style: italic; }
+  .impact-description { margin: 0; font-size: 0.875rem; color: #0c4a6e; line-height: 1.5; }
+}
+
+.code-section { margin-bottom: 1.5rem; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb;
+  .code-header { display: flex; justify-content: space-between; align-items: center; background: #f9fafb; padding: 0.625rem 1rem; border-bottom: 1px solid #e5e7eb;
+    span { font-size: 0.688rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.75px; }
+  }
+  .btn-copy { padding: 4px 10px; background: white; border: 1px solid #d1d5db; border-radius: 4px; font-size: 0.688rem; font-weight: 600; color: #374155; cursor: pointer; transition: all 0.2s;
+    &:hover { background: #f3f4f6; border-color: #9ca3af; }
+  }
+}
+
+.code-block { background: #1e293b; color: #e2e8f0; padding: 1.25rem; overflow-x: auto; font-family: 'Fira Code', monospace; font-size: 0.813rem; line-height: 1.7; margin: 0; white-space: pre-wrap;
+  &.optimized { background: #022c22; }
+}
+
+.solutions-section { margin-top: 2rem; padding-top: 1.5rem; border-top: 2px solid #e5e7eb;
+  h4 { margin: 0 0 1.25rem; font-size: 1rem; font-weight: 700; color: #111827; display: flex; align-items: center; gap: 0.5rem;
+    &::before { content: '💡'; font-size: 1.125rem; }
+  }
+}
+
+.solution-card { background: white; border: 2px solid #e5e7eb; border-radius: 10px; padding: 1.5rem; margin-bottom: 1.25rem; transition: all 0.2s;
+  &:hover { border-color: #6366f1; box-shadow: 0 4px 6px -1px rgba(99,102,241,0.1); }
+  .solution-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;
+    .solution-rank { font-size: 0.938rem; font-weight: 700; color: #6366f1; display: flex; align-items: center; gap: 0.375rem;
+      &::before { content: '🏆'; font-size: 1rem; }
+    }
+    .fitness-badge { font-size: 0.813rem; background: #ecfdf5; color: #059669; padding: 4px 10px; border-radius: 6px; font-weight: 700; border: 1px solid #a7f3d0; }
+    .difficulty-badge { padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+      &.easy { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+      &.medium { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+      &.hard { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+    }
+  }
+  .solution-description { margin: 0 0 1.25rem; font-size: 0.938rem; color: #374155; line-height: 1.6; font-weight: 500; }
+  .solution-explanation { margin: 1.25rem 0 0; font-size: 0.875rem; background: #fffbeb; padding: 1rem; border-radius: 6px; border-left: 4px solid #f59e0b; color: #78350f; line-height: 1.6;
+    &::before { content: '💡 '; font-size: 1rem; }
+  }
 }

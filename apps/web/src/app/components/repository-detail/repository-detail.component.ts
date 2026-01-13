@@ -2,6 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AnalysisService } from '../../services/analysis.service';
+import { LitePanel } from 'ngx-lite-form';
 
 interface Repository {
   id: string;
@@ -24,7 +25,7 @@ interface Analysis {
 @Component({
   selector: 'app-repository-detail',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, LitePanel],
   templateUrl: './repository-detail.component.html',
   styleUrls: ['./repository-detail.component.scss']
 })
@@ -34,6 +35,11 @@ export class RepositoryDetailComponent implements OnInit {
   loading = signal(false);
   analyzing = signal(false);
   error = signal<string | null>(null);
+  deletePanelOpen = signal(false);
+  deleteActions = [
+    { label: 'Delete', value: 'delete', variant: 'danger' as const },
+    { label: 'Cancel', value: null, variant: 'secondary' as const }
+  ];
 
   constructor(
     private route: ActivatedRoute,
@@ -104,10 +110,15 @@ export class RepositoryDetailComponent implements OnInit {
   }
 
   deleteRepository() {
-    const repo = this.repository();
-    if (!repo) return;
+    this.deletePanelOpen.set(true);
+  }
 
-    if (confirm('Are you sure you want to delete this repository? All analysis history will be lost.')) {
+  onDeletePanelClosed(result: unknown) {
+    this.deletePanelOpen.set(false);
+    if (result === 'delete') {
+      const repo = this.repository();
+      if (!repo) return;
+
       this.analysisService.deleteRepository(repo.id).subscribe({
         next: () => {
           this.router.navigate(['/repositories']);
