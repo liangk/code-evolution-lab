@@ -67,7 +67,8 @@ model Analysis {
   id             String     @id @default(uuid())
   repositoryId   String     @map("repository_id")
   repository     Repository @relation(fields: [repositoryId], references: [id])
-  score          Int
+  score          Float
+  filesAnalyzed  Int        @default(1) @map("files_analyzed")
   totalIssues    Int        @map("total_issues")
   criticalIssues Int        @map("critical_issues")
   highIssues     Int        @map("high_issues")
@@ -84,6 +85,7 @@ model Issue {
   analysis        Analysis   @relation(fields: [analysisId], references: [id])
   type            String
   severity        String
+  score           Float
   filePath        String     @map("file_path")
   lineNumber      Int?       @map("line_number")
   title           String

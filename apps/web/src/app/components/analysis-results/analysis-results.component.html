@@ -32,10 +32,15 @@
     <!-- Results Header -->
     <div class="results-header">
       <div class="score-ring" [class]="getScoreClass(analysis()!.score)">
-        <span class="score-value">{{ analysis()!.score }}</span>
+        <span class="score-value">{{ analysis()!.score | number:'1.1-1' }}</span>
         <span class="score-max">/100</span>
       </div>
       <div class="header-info">
+        @if (analysis()?.repository) {
+          <h1>{{ analysis()?.repository?.name }}</h1>
+          <a class="repo-url" [href]="analysis()?.repository?.githubUrl" target="_blank">{{ analysis()?.repository?.githubUrl }}</a>
+          <p class="files-analyzed">{{ analysis()!.filesAnalyzed }} file(s) analyzed</p>
+        }
         <div class="severity-summary">
           @if (analysis()!.criticalIssues > 0) {
             <span class="severity-item critical">Critical: {{ analysis()!.criticalIssues }}</span>
@@ -82,7 +87,12 @@
         @for (issue of getFilteredIssues(); track issue.id) {
           <div class="issue-accordion" [class.expanded]="isExpanded(issue.id)">
           <div class="issue-header" (click)="toggleIssue(issue.id)">
-            <span class="severity-badge" [class]="getSeverityClass(issue.severity)">{{ issue.severity }}</span>
+            <div class="issue-header-left">
+              <span class="severity-badge" [class]="getSeverityClass(issue.severity)">{{ issue.severity }}</span>
+              <div class="issue-score-ring" [class]="getScoreClass(issue.score)">
+                <span class="issue-score-value">{{ issue.score | number:'1.1-1' }}</span>
+              </div>
+            </div>
             <div class="issue-title-section">
               <h3>{{ issue.title || issue.type }}</h3>
               @if (issue.filePath) {

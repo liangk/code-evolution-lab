@@ -32,6 +32,8 @@
 }
 
 .header-info { flex: 1;
+  h1 { margin: 0 0 0.375rem; font-size: 1.5rem; font-weight: 700; color: #171717; }
+  .repo-url { display: block; font-size: 0.875rem; color: #667eea; text-decoration: none; margin-bottom: 0.75rem; &:hover { text-decoration: underline; } }
   .severity-summary { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem;
     .severity-item { padding: 0.375rem 0.75rem; border-radius: 6px; font-size: 0.813rem; font-weight: 600;
       &.critical { background: rgba(239,68,68,0.1); color: #ef4444; }
@@ -70,11 +72,18 @@
 
 .issue-header { display: flex; align-items: center; gap: 1rem; padding: 1rem 1.25rem; cursor: pointer; transition: background 0.2s;
   &:hover { background: #f9fafb; }
+  .issue-header-left { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
   .severity-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; flex-shrink: 0; letter-spacing: 0.5px;
     &.critical { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
     &.high { background: #ffedd5; color: #9a3412; border: 1px solid #fed7aa; }
     &.medium { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
     &.low { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+  }
+  .issue-score-ring { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    &.good { background: rgba(16,185,129,0.1); border: 2px solid #10b981; .issue-score-value { color: #10b981; } }
+    &.warning { background: rgba(245,158,11,0.1); border: 2px solid #f59e0b; .issue-score-value { color: #f59e0b; } }
+    &.bad { background: rgba(239,68,68,0.1); border: 2px solid #ef4444; .issue-score-value { color: #ef4444; } }
+    .issue-score-value { font-size: 0.75rem; font-weight: 700; line-height: 1; }
   }
   .issue-title-section { flex: 1; min-width: 0;
     h3 { margin: 0; font-size: 0.938rem; font-weight: 600; color: #111827; line-height: 1.4; }

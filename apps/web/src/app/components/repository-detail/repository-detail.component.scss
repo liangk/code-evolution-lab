@@ -25,6 +25,8 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.progress-section { margin-bottom: 2rem; }
+
 .repository-content { display: flex; flex-direction: column; gap: 1.5rem; }
 
 .repo-header-card { background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 1.5rem; display: flex; gap: 1.5rem; align-items: flex-start; flex-wrap: wrap;

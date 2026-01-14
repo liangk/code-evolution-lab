@@ -57,6 +57,10 @@ export class AnalysisService {
     return this.http.get(`${this.apiUrl}/analysis/${analysisId}`);
   }
 
+  deleteAnalysis(analysisId: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/analysis/${analysisId}`);
+  }
+
   getRepositoryAnalyses(repoId: string): Observable<any> {
     return this.http.get(`${this.apiUrl}/repositories/${repoId}/analyses`);
   }
@@ -122,6 +126,19 @@ export class AnalysisService {
     
     const result$ = this.http.post<AnalysisResult>(`${this.apiUrl}/analyze`, {
       ...request,
+      sessionId
+    });
+
+    return { sessionId, result$ };
+  }
+
+  // Analyze GitHub repository with evolution progress tracking
+  analyzeGithubRepositoryWithProgress(repoId: string, generateSolutions = false): { sessionId: string; result$: Observable<any> } {
+    const sessionId = this.generateSessionId();
+    this.connectToEvolutionProgress(sessionId);
+
+    const result$ = this.http.post(`${this.apiUrl}/repository/${repoId}/analyze-github`, {
+      generateSolutions,
       sessionId
     });
 

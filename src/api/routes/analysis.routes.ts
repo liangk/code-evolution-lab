@@ -6,48 +6,53 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
-function calculateScore(results: any[], generateSolutions: boolean): number {
-  if (generateSolutions) {
-    const issueScores: { fitness: number; weight: number }[] = [];
-    const severityWeights = { critical: 1.0, high: 0.8, medium: 0.5, low: 0.3 };
+// Calculate individual issue score based on severity and fitness
+function calculateIssueScore(issue: any, generateSolutions: boolean): number {
+  const severityScores = { critical: 25, high: 15, medium: 8, low: 3 };
+  const basePenalty = severityScores[issue.severity.toLowerCase() as keyof typeof severityScores] || 8;
 
-    results.forEach((result) => {
-      result.issues.forEach((issue: any) => {
-        if (issue.solutions && issue.solutions.length > 0) {
-          let bestFitness = 0;
-          issue.solutions.forEach((sol: any) => {
-            if (sol.fitnessScore && sol.fitnessScore > bestFitness) {
-              bestFitness = sol.fitnessScore;
-            }
-          });
-          
-          const severity = issue.severity.toLowerCase();
-          const weight = severityWeights[severity as keyof typeof severityWeights] || 0.5;
-          issueScores.push({ fitness: bestFitness, weight });
-        }
-      });
+  if (generateSolutions && issue.solutions && issue.solutions.length > 0) {
+    let bestFitness = 0;
+    issue.solutions.forEach((sol: any) => {
+      if (sol.fitnessScore && sol.fitnessScore > bestFitness) {
+        bestFitness = sol.fitnessScore;
+      }
     });
-
-    if (issueScores.length > 0) {
-      const totalWeight = issueScores.reduce((sum, item) => sum + item.weight, 0);
-      const weightedSum = issueScores.reduce((sum, item) => sum + item.fitness * item.weight, 0);
-      return Math.round((weightedSum / totalWeight) * 10) / 10;
-    }
+    // If we have a good solution (high fitness), reduce the penalty
+    return Math.round((100 - basePenalty * (1 - bestFitness / 100)) * 10) / 10;
   }
 
-  const severityPenalties = { critical: 25, high: 15, medium: 8, low: 3 };
-  let penalty = 0;
+  // Without solutions, use penalty-based score
+  return Math.round((100 - basePenalty) * 10) / 10;
+}
 
+// Calculate overall analysis score from all issue scores using average
+function calculateScore(results: any[], generateSolutions: boolean): number {
+  const allIssues: any[] = [];
   results.forEach((result) => {
     result.issues.forEach((issue: any) => {
-      const severity = issue.severity.toLowerCase();
-      if (severity in severityPenalties) {
-        penalty += severityPenalties[severity as keyof typeof severityPenalties];
-      }
+      allIssues.push(issue);
     });
   });
 
-  return Math.max(0, 100 - penalty);
+  if (allIssues.length === 0) {
+    return 100;
+  }
+
+  // Calculate individual scores and average them
+  const issueScores = allIssues.map(issue => calculateIssueScore(issue, generateSolutions));
+  const averageScore = issueScores.reduce((sum, score) => sum + score, 0) / issueScores.length;
+  
+  return Math.round(averageScore * 10) / 10;
+}
+
+// Add individual scores to issues
+function addIssueScores(results: any[], generateSolutions: boolean): void {
+  results.forEach((result) => {
+    result.issues.forEach((issue: any) => {
+      issue.score = calculateIssueScore(issue, generateSolutions);
+    });
+  });
 }
 
 router.post('/analyze', async (req: Request, res: Response) => {
@@ -81,6 +86,9 @@ router.post('/analyze', async (req: Request, res: Response) => {
     }
 
     const results = await analyzer.analyzeCode(code, filePath || 'unknown.js', generateSolutions);
+
+    // Add individual scores to each issue
+    addIssueScores(results, generateSolutions);
 
     let totalIssues = 0;
     const issuesBySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
@@ -121,6 +129,24 @@ router.post('/analyze', async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Analysis error:', error);
     res.status(500).json({ error: 'Analysis failed', message: (error as Error).message });
+    return;
+  }
+});
+
+router.delete('/analysis/:analysisId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { analysisId } = req.params;
+
+    const deleted = await db.deleteAnalysis(analysisId, req.user!.id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Analysis not found' });
+    }
+
+    res.status(204).send();
+    return;
+  } catch (error) {
+    console.error('Delete analysis error:', error);
+    res.status(500).json({ error: 'Failed to delete analysis', message: (error as Error).message });
     return;
   }
 });
@@ -265,13 +291,16 @@ router.post('/repository/:repoId/analyze-github', authenticateToken, async (req:
         }
       }
 
+      // Add individual scores to each issue
+      addIssueScores(allResults, generateSolutions);
+
       const score = calculateScore(allResults, generateSolutions);
 
-      // Save analysis to database
+      // Save analysis to database with filesAnalyzed count
       const analysis = await db.createAnalysis(repoId, score, {
         total: totalIssues,
         ...issuesBySeverity,
-      });
+      }, files.length);
 
       // Save issues to database
       for (const result of allResults) {
@@ -279,6 +308,7 @@ router.post('/repository/:repoId/analyze-github', authenticateToken, async (req:
           const dbIssue = await db.createIssue(analysis.id, {
             type: result.detectorName,
             severity: issue.severity,
+            score: issue.score,
             filePath: issue.filePath,
             lineNumber: issue.lineNumber,
             title: issue.title,

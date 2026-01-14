@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AnalysisService } from '../../services/analysis.service';
-import { FieldDto, LiteInput, LiteTable, TableFieldDto } from 'ngx-lite-form';
+import { FieldDto, LiteInput, LiteTable, TableFieldDto, LitePanel } from 'ngx-lite-form';
 import { FormControl } from '@angular/forms';
 
 interface Repository {
@@ -17,7 +17,7 @@ interface Repository {
 @Component({
   selector: 'app-repository',
   standalone: true,
-  imports: [CommonModule, FormsModule, LiteInput, LiteTable],
+  imports: [CommonModule, FormsModule, LiteInput, LiteTable, LitePanel],
   templateUrl: './repository.component.html',
   styleUrls: ['./repository.component.scss']
 })
@@ -26,16 +26,23 @@ export class RepositoryComponent implements OnInit {
   loading = signal(false);
   error = signal<string | null>(null);
   showAddForm = false;
+  deletePanelOpen = signal(false);
+  deleteRepositoryId = signal<string | null>(null);
+  deleteActions = [
+    { label: 'Delete', value: 'delete', variant: 'danger' as const },
+    { label: 'Cancel', value: null, variant: 'secondary' as const }
+  ];
+
   nameField: FieldDto = { label: 'Repository Name', formControl: new FormControl('') };
   githubUrlField: FieldDto = { label: 'GitHub URL', formControl: new FormControl('') };
 
   tableConfig = signal(new TableFieldDto<Repository>(
     [
-      { key: 'name', label: 'Repository Name', sortable: true, flex: '0 0 200px' },
+      { key: 'name', label: 'Repository Name', sortable: true, flex: '1' },
       { 
         key: 'githubUrl', 
         label: 'GitHub URL', 
-        flex: '1 0 560px',
+        flex: '2',
         cellTemplate: (url: string) => `<a href="${url}" target="_blank" style="color: #667eea; text-decoration: none;">${url}</a>`
       },
       { 
@@ -53,6 +60,17 @@ export class RepositoryComponent implements OnInit {
           analyses?.[0]?.analyzedAt 
             ? new Date(analyses[0].analyzedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
             : '<span style="color: #999;">Not analyzed</span>'
+      },
+      {
+        label: 'Actions',
+        key: 'actions',
+        type: 'menu',
+        flex: '0 0 80px',
+        menuItems: [
+          { label: 'Analyze', value: 'analyze' },
+          { label: 'History', value: 'history' },
+          { label: 'Delete', value: 'delete', variant: 'danger' }
+        ]
       }
     ],
     this.repositories(),
@@ -138,10 +156,24 @@ export class RepositoryComponent implements OnInit {
   }
 
   deleteRepository(id: string) {
-    if (confirm('Are you sure you want to delete this repository?')) {
+    this.deleteRepositoryId.set(id);
+    this.deletePanelOpen.set(true);
+  }
+
+  onDeletePanelClosed(result: unknown) {
+    const id = this.deleteRepositoryId();
+    this.deletePanelOpen.set(false);
+    this.deleteRepositoryId.set(null);
+
+    if (result === 'delete' && id) {
       this.analysisService.deleteRepository(id).subscribe({
         next: () => {
           this.repositories.update(repos => repos.filter(r => r.id !== id));
+          this.tableConfig.set(new TableFieldDto<Repository>(
+            this.tableConfig().columns,
+            this.repositories(),
+            false
+          ));
         },
         error: (err) => {
           this.error.set(err.error?.message || 'Failed to delete repository');

@@ -7,6 +7,7 @@ interface Issue {
   id: string;
   type: string;
   severity: string;
+  score: number;
   title: string;
   description: string;
   filePath: string;
@@ -30,12 +31,13 @@ interface Solution {
 interface AnalysisDetail {
   id: string;
   score: number;
+  filesAnalyzed: number;
   totalIssues: number;
   criticalIssues: number;
   highIssues: number;
   mediumIssues: number;
   analyzedAt: Date;
-  repository?: { id: string; name: string };
+  repository?: { id: string; name: string; githubUrl: string };
   issues: Issue[];
 }
 

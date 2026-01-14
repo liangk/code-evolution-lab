@@ -52,4 +52,20 @@
       </div>
     }    
   }
+  
+  <!-- Delete Confirmation Panel -->
+  @if (deletePanelOpen()) {
+    <lite-panel
+      [title]="'Delete Repository'"
+      [content]="deleteConfirmTemplate"
+      [actions]="deleteActions"
+      width="480px"
+      (closed)="onDeletePanelClosed($event)"
+    ></lite-panel>
+  }
+
+  <ng-template #deleteConfirmTemplate>
+    <p>Are you sure you want to delete this repository?</p>
+    <p style="color: #6b7280; margin-top: 0.5rem;">This action cannot be undone. All analysis history will be permanently lost.</p>
+  </ng-template>
 </div>
