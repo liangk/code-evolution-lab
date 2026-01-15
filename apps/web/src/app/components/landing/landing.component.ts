@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { Router } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { icons } from './icons';
 
 @Component({
   selector: 'app-landing',
@@ -14,41 +15,41 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 export class LandingComponent {
   features = [
     {
-      icon: 'DB',
+      icon: 'database',
       title: 'N+1 Query Detection',
       description: 'Automatically identifies database query inefficiencies that slow down your application'
     },
     {
-      icon: 'LP',
+      icon: 'loop',
       title: 'Loop Optimization',
       description: 'Detects inefficient loops, nested iterations, and suggests performance improvements'
     },
     {
-      icon: 'ML',
+      icon: 'memory',
       title: 'Memory Leak Prevention',
       description: 'Finds event listeners, timers, and closures that cause memory leaks'
     },
     {
-      icon: 'PL',
+      icon: 'compress',
       title: 'Payload Optimization',
       description: 'Identifies large API responses and suggests data filtering strategies'
     },
     {
-      icon: 'AI',
+      icon: 'ai',
       title: 'AI-Powered Solutions',
       description: 'Evolutionary algorithm generates multiple optimized solutions ranked by fitness'
     },
     {
-      icon: 'RT',
+      icon: 'speed',
       title: 'Real-time Analysis',
       description: 'Get instant feedback with live progress tracking and generation-by-generation improvements'
     }
   ];
 
   stats = [
-    { value: '4+', label: 'Detectors' },
-    { value: '85%', label: 'Faster Fixes' },
-    { value: '$14K', label: 'Cost Savings' }
+    { value: '4', label: 'Detectors' },
+    { value: '4', label: 'Solution Generators' },
+    { value: '12', label: 'Loop Patterns' }
   ];
 
   constructor(private router: Router, private sanitizer: DomSanitizer) {
@@ -75,5 +76,10 @@ export class LandingComponent {
 
   analyzeRepo(): void {
     this.router.navigate(['/repositories']);
+  }
+
+  getIconSvg(iconName: string): SafeHtml {
+    const icon = icons.find(i => i.name === iconName);
+    return icon ? this.sanitizer.bypassSecurityTrustHtml(icon.svg) : '';
   }
 }
