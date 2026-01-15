@@ -57,12 +57,6 @@
           },
           "defaultConfiguration": "production"
         },
-        "prerender": {
-          "builder": "@angular/build:prerender",
-          "options": {
-            "routes": ["/"]
-          }
-        },
         "serve": {
           "builder": "@angular/build:dev-server",
           "configurations": {
