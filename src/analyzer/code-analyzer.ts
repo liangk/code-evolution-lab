@@ -162,9 +162,9 @@ export class CodeAnalyzer extends EventEmitter {
           this.evolutionaryEngine.on('progress', progressHandler);
 
           try {
-            // Run evolution with timeout
+            // Run evolution with timeout, passing quick solutions to avoid regeneration
             const evolvedSolutions = await Promise.race([
-              this.evolutionaryEngine.evolve(issue, context, generator),
+              this.evolutionaryEngine.evolve(issue, context, generator, rankedQuickSolutions),
               this.createTimeout(MAX_TIME_PER_ISSUE)
             ]);
 

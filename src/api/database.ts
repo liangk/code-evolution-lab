@@ -216,6 +216,68 @@ export class DatabaseService {
       data: { isActive: false },
     });
   }
+
+  async getDashboardStats(userId: string) {
+    const [repositories, analyses, issues, solutions, sessions] = await Promise.all([
+      prisma.repository.count({ where: { ownerId: userId } }),
+      prisma.analysis.count({ where: { repository: { ownerId: userId } } }),
+      prisma.issue.count({ where: { analysis: { repository: { ownerId: userId } } } }),
+      prisma.solution.count({ where: { issue: { analysis: { repository: { ownerId: userId } } } } }),
+      prisma.session.count({ where: { userId, isActive: true } }),
+    ]);
+
+    const avgScore = await prisma.analysis.aggregate({
+      where: { repository: { ownerId: userId } },
+      _avg: { score: true },
+    });
+
+    const severityCounts = await prisma.issue.groupBy({
+      by: ['severity'],
+      where: { analysis: { repository: { ownerId: userId } } },
+      _count: true,
+    });
+
+    return {
+      totalRepositories: repositories,
+      totalAnalyses: analyses,
+      totalIssues: issues,
+      totalSolutions: solutions,
+      activeSessions: sessions,
+      averageScore: avgScore._avg.score || 0,
+      issuesBySeverity: severityCounts.reduce((acc, item) => {
+        acc[item.severity.toLowerCase()] = item._count;
+        return acc;
+      }, {} as Record<string, number>),
+    };
+  }
+
+  async getRecentAnalyses(userId: string, limit: number = 5) {
+    return prisma.analysis.findMany({
+      where: { repository: { ownerId: userId } },
+      orderBy: { analyzedAt: 'desc' },
+      take: limit,
+      include: {
+        repository: { select: { id: true, name: true, githubUrl: true } },
+      },
+    });
+  }
+
+  async getRecentIssues(userId: string, limit: number = 10) {
+    return prisma.issue.findMany({
+      where: { analysis: { repository: { ownerId: userId } } },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        analysis: {
+          select: {
+            id: true,
+            repository: { select: { id: true, name: true } },
+          },
+        },
+        solutions: { orderBy: { rank: 'asc' }, take: 1 },
+      },
+    });
+  }
 }
 
 export const db = new DatabaseService();

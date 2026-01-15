@@ -8,21 +8,23 @@ import * as t from '@babel/types';
 import { EventEmitter } from 'events';
 
 /**
- * PLACEHOLDER: Evolutionary Algorithm Engine
+ * Evolutionary Algorithm Engine
  * 
- * This file is a placeholder for future implementation of a true evolutionary algorithm
- * for solution generation. Currently, solutions are generated from static templates.
+ * ARCHITECTURAL FIX: This engine now evolves transformation-based solutions
+ * that are derived from the ORIGINAL problematic code, not generic templates.
  * 
- * The evolutionary approach will:
- * 1. Generate an initial population of solution candidates
- * 2. Evaluate fitness for each candidate
- * 3. Select parents based on fitness
- * 4. Apply crossover operators to create offspring
- * 5. Apply mutation operators to introduce variations
+ * The evolutionary approach:
+ * 1. Generate initial population from transformation-based solutions (from original code)
+ * 2. Evaluate fitness for each candidate based on:
+ *    - Performance improvement potential
+ *    - Preservation of original code structure/variables
+ *    - Syntax validity
+ *    - Semantic correctness
+ * 3. Select parents based on fitness (tournament selection)
+ * 4. Apply crossover: combine transformation strategies from different solutions
+ * 5. Apply mutation: vary transformation parameters, not random code changes
  * 6. Evolve over multiple generations
- * 7. Return the top N solutions
- * 
- * See: temp/phase3-implementation-plan.md for detailed implementation plan
+ * 7. Return top N solutions that preserve original code context
  */
 
 interface SolutionCandidate {
@@ -33,6 +35,9 @@ interface SolutionCandidate {
   generation: number;
   parentIds: string[];
   mutations: MutationHistory[];
+  originalCodeRef: string; // Reference to the original problematic code
+  preservedElements: string[]; // Variables/structures preserved from original
+  transformationType: string; // Type of transformation applied
 }
 
 interface MutationHistory {
@@ -52,11 +57,11 @@ interface EvolutionConfig {
 
 export class EvolutionaryEngine extends EventEmitter {
   private config: EvolutionConfig = {
-    populationSize: parseInt(process.env.EVO_POPULATION_SIZE || '20', 10),
-    maxGenerations: parseInt(process.env.EVO_MAX_GENERATIONS || '10', 10),
+    populationSize: parseInt(process.env.EVO_POPULATION_SIZE || '5', 10), // Reduced from 20 for faster testing
+    maxGenerations: parseInt(process.env.EVO_MAX_GENERATIONS || '3', 10), // Reduced from 10 for faster testing
     mutationRate: parseFloat(process.env.EVO_MUTATION_RATE || '0.3'),
     crossoverRate: parseFloat(process.env.EVO_CROSSOVER_RATE || '0.7'),
-    elitismCount: parseInt(process.env.EVO_ELITISM_COUNT || '2', 10),
+    elitismCount: parseInt(process.env.EVO_ELITISM_COUNT || '1', 10), // Reduced from 2
     convergenceThreshold: parseFloat(process.env.EVO_CONVERGENCE_THRESHOLD || '0.01'),
   };
 
@@ -79,25 +84,28 @@ export class EvolutionaryEngine extends EventEmitter {
 
   /**
    * Main evolution loop - Implements complete evolutionary algorithm
+   * @param initialSolutions - Optional pre-generated solutions to use as initial population (avoids redundant generation)
    */
   async evolve(
     issue: Issue,
     context: AnalysisContext,
-    baseGenerator: BaseSolutionGenerator
+    baseGenerator: BaseSolutionGenerator,
+    initialSolutions?: Solution[]
   ): Promise<Solution[]> {
     // Check if algorithm is enabled
     if (!this.enableAlgorithm) {
       console.log('⚠️  Evolutionary algorithm disabled. Using template-based generation.');
-      return baseGenerator.generateSolutions(issue, context);
+      return initialSolutions || baseGenerator.generateSolutions(issue, context);
     }
 
-    console.log('🧬 Starting evolutionary algorithm...');
+    console.log(`🧬 Starting evolutionary algorithm for issue: ${issue.title || issue.type}`);
     console.log(`📊 Config: Population=${this.config.populationSize}, Generations=${this.config.maxGenerations}`);
     
     try {
-      // Step 1: Generate initial population
-      let population = await this.generateInitialPopulation(issue, context, baseGenerator);
-      console.log(`✅ Initial population: ${population.length} candidates`);
+      // Step 1: Generate initial population (use pre-generated solutions if available)
+      console.log('  ⏳ Generating initial population from transformations...');
+      let population = await this.generateInitialPopulation(issue, context, baseGenerator, initialSolutions);
+      console.log(`  ✅ Initial population: ${population.length} candidates`);
       
       if (population.length === 0) {
         console.warn('⚠️  No initial population generated. Falling back to templates.');
@@ -170,25 +178,40 @@ export class EvolutionaryEngine extends EventEmitter {
   }
 
   /**
-   * Generate initial population from template solutions
+   * Generate initial population from transformation-based solutions
+   * Solutions are derived from the ORIGINAL problematic code, not templates
    */
   private async generateInitialPopulation(
     issue: Issue,
     context: AnalysisContext,
-    baseGenerator: BaseSolutionGenerator
+    baseGenerator: BaseSolutionGenerator,
+    initialSolutions?: Solution[]
   ): Promise<SolutionCandidate[]> {
     try {
-      // 1. Get template solutions from base generator
-      const templates = await baseGenerator.generateSolutions(issue, context);
+      const originalCode = issue.codeBefore || '';
+      
+      // 1. Use pre-generated solutions if available, otherwise generate new ones
+      console.log(`  📋 Initial solutions provided: ${initialSolutions ? initialSolutions.length : 0}`);
+      
+      let templates: Solution[];
+      if (initialSolutions && initialSolutions.length > 0) {
+        console.log(`  ✅ Using ${initialSolutions.length} pre-generated solutions`);
+        templates = initialSolutions;
+      } else {
+        console.log(`  ⚠️  No initial solutions provided, generating new ones...`);
+        templates = await baseGenerator.generateSolutions(issue, context);
+      }
       
       if (templates.length === 0) {
-        console.warn('No template solutions generated');
+        console.warn('No transformation-based solutions generated');
         return [];
       }
 
       const candidates: SolutionCandidate[] = [];
       
-      // 2. Create base candidates from templates
+      console.log(`  🔨 Creating base candidates from ${templates.length} templates...`);
+      
+      // 2. Create base candidates from transformation results
       for (const template of templates) {
         // Auto-fix duplicate declarations if any
         const fixResult = fixDuplicateDeclarations(template.code);
@@ -197,12 +220,16 @@ export class EvolutionaryEngine extends EventEmitter {
         // Validate template before using it
         const validation = validateGeneratedCode(codeToUse);
         if (!validation.valid) {
-          console.warn(`Skipping invalid template: ${validation.errors.join(', ')}`);
+          console.warn(`Skipping invalid solution: ${validation.errors.join(', ')}`);
           continue;
         }
         
         try {
           const ast = parseCode(codeToUse);
+          // Extract preserved elements from the solution reasoning
+          const preservedMatch = template.reasoning?.match(/Preserved:\s*(.+)/);
+          const preservedElements = preservedMatch ? preservedMatch[1].split(',').map(s => s.trim()) : [];
+          
           candidates.push({
             id: this.generateId(),
             ast,
@@ -210,18 +237,30 @@ export class EvolutionaryEngine extends EventEmitter {
             fitness: 0,
             generation: 0,
             parentIds: [],
-            mutations: fixResult.fixed ? [{ operator: 'auto-fix', generation: 0, description: 'Fixed duplicate declarations' }] : []
+            mutations: fixResult.fixed ? [{ operator: 'auto-fix', generation: 0, description: 'Fixed duplicate declarations' }] : [],
+            originalCodeRef: originalCode,
+            preservedElements,
+            transformationType: template.type || 'unknown'
           });
         } catch (error) {
-          console.warn(`Failed to parse template: ${error}`);
+          console.warn(`Failed to parse solution: ${error}`);
         }
       }
       
+      console.log(`  ✅ Created ${candidates.length} base candidates`);
+      
       // 3. Create variations with mutations
-      const variationsPerTemplate = Math.floor((this.config.populationSize - templates.length) / templates.length);
+      const variationsPerTemplate = Math.max(0, Math.floor((this.config.populationSize - templates.length) / templates.length));
+      const maxVariationsPerTemplate = Math.min(variationsPerTemplate, 3); // Cap at 3 to avoid excessive mutations
+      console.log(`  🧬 Creating up to ${maxVariationsPerTemplate} variations per template...`);
       
       for (const template of templates) {
-        for (let i = 0; i < variationsPerTemplate; i++) {
+        let successfulMutations = 0;
+        let mutationAttempts = 0;
+        const maxAttempts = maxVariationsPerTemplate * 5; // Allow 5 attempts per desired variation
+        
+        while (successfulMutations < maxVariationsPerTemplate && mutationAttempts < maxAttempts) {
+          mutationAttempts++;
           const mutationResult = applyRandomMutation(template.code);
           
           if (mutationResult.success) {
@@ -248,8 +287,12 @@ export class EvolutionaryEngine extends EventEmitter {
                   operator: 'initial',
                   generation: 0,
                   description: mutationResult.description + (fixResult.fixed ? ' (auto-fixed duplicates)' : '')
-                }]
+                }],
+                originalCodeRef: originalCode,
+                preservedElements: template.reasoning?.match(/Preserved:\s*(.+)/)?.[1]?.split(',').map((s: string) => s.trim()) || [],
+                transformationType: template.type || 'mutation'
               });
+              successfulMutations++;
             } catch (error) {
               // Skip invalid mutations
             }
@@ -257,8 +300,18 @@ export class EvolutionaryEngine extends EventEmitter {
         }
       }
       
-      // 4. Fill remaining slots if needed
-      while (candidates.length < this.config.populationSize && templates.length > 0) {
+      console.log(`  ✅ After mutations: ${candidates.length} candidates`);
+      
+      // 4. Fill remaining slots if needed (with safeguard against infinite loop)
+      let fillAttempts = 0;
+      const maxFillAttempts = this.config.populationSize * 3; // Try up to 3x population size
+      
+      if (candidates.length < this.config.populationSize) {
+        console.log(`  🔄 Filling remaining slots (need ${this.config.populationSize - candidates.length} more)...`);
+      }
+      
+      while (candidates.length < this.config.populationSize && templates.length > 0 && fillAttempts < maxFillAttempts) {
+        fillAttempts++;
         const randomTemplate = templates[Math.floor(Math.random() * templates.length)];
         const mutationResult = applyRandomMutation(randomTemplate.code);
         
@@ -286,7 +339,10 @@ export class EvolutionaryEngine extends EventEmitter {
                 operator: 'initial',
                 generation: 0,
                 description: mutationResult.description + (fixResult.fixed ? ' (auto-fixed duplicates)' : '')
-              }]
+              }],
+              originalCodeRef: originalCode,
+              preservedElements: randomTemplate.reasoning?.match(/Preserved:\s*(.+)/)?.[1]?.split(',').map((s: string) => s.trim()) || [],
+              transformationType: randomTemplate.type || 'mutation'
             });
           } catch (error) {
             // Skip invalid mutations
@@ -294,9 +350,13 @@ export class EvolutionaryEngine extends EventEmitter {
         }
       }
       
-      return candidates.slice(0, this.config.populationSize);
+      console.log(`  ✅ Fill complete. Total candidates: ${candidates.length}`);
+      const finalPopulation = candidates.slice(0, this.config.populationSize);
+      console.log(`  🎯 Returning ${finalPopulation.length} candidates for initial population`);
+      
+      return finalPopulation;
     } catch (error) {
-      console.error('Error generating initial population:', error);
+      console.error('❌ Error generating initial population:', error);
       return [];
     }
   }
@@ -419,6 +479,9 @@ export class EvolutionaryEngine extends EventEmitter {
         return { ...parent1 };
       }
       
+      // Merge preserved elements from both parents
+      const mergedPreserved = [...new Set([...parent1.preservedElements, ...parent2.preservedElements])];
+      
       return {
         id: this.generateId(),
         ast: parseCode(childCode),
@@ -426,7 +489,10 @@ export class EvolutionaryEngine extends EventEmitter {
         fitness: 0,
         generation: parent1.generation + 1,
         parentIds: [parent1.id, parent2.id],
-        mutations: fixResult.fixed ? [{ operator: 'crossover-fix', generation: parent1.generation + 1, description: 'Fixed duplicate declarations after crossover' }] : []
+        mutations: fixResult.fixed ? [{ operator: 'crossover-fix', generation: parent1.generation + 1, description: 'Fixed duplicate declarations after crossover' }] : [],
+        originalCodeRef: parent1.originalCodeRef,
+        preservedElements: mergedPreserved,
+        transformationType: `${parent1.transformationType}+${parent2.transformationType}`
       };
     } catch (error) {
       return { ...parent1 };
@@ -531,19 +597,26 @@ export class EvolutionaryEngine extends EventEmitter {
 
   /**
    * Convert candidates to Solution objects
+   * Includes context about the transformation and preserved elements
    */
   private convertToSolutions(candidates: SolutionCandidate[]): Solution[] {
-    return candidates.map((candidate, index) => ({
-      id: candidate.id,
-      issueId: '',
-      rank: index + 1,
-      type: 'evolved',
-      code: candidate.code,
-      fitnessScore: candidate.fitness,
-      reasoning: `Evolved solution (Generation ${candidate.generation}, ${candidate.mutations.length} mutations applied)`,
-      implementationTime: this.fitnessCalculator.estimateImplementationTime(candidate.code, 'evolved'),
-      riskLevel: 'medium'
-    }));
+    return candidates.map((candidate, index) => {
+      const preservedInfo = candidate.preservedElements.length > 0
+        ? `\nPreserved: ${candidate.preservedElements.join(', ')}`
+        : '';
+      
+      return {
+        id: candidate.id,
+        issueId: '',
+        rank: index + 1,
+        type: candidate.transformationType || 'evolved',
+        code: candidate.code,
+        fitnessScore: candidate.fitness,
+        reasoning: `Evolved from original code (Gen ${candidate.generation}, ${candidate.mutations.length} mutations)\nTransformation: ${candidate.transformationType}${preservedInfo}`,
+        implementationTime: this.fitnessCalculator.estimateImplementationTime(candidate.code, candidate.transformationType),
+        riskLevel: candidate.preservedElements.length >= 3 ? 'low' : 'medium'
+      };
+    });
   }
 
   /**

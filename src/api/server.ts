@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import analysisRoutes from './routes/analysis.routes';
 import authRoutes from './routes/auth.routes';
 import repositoryRoutes from './routes/repository.routes';
+import dashboardRoutes from './routes/dashboard.routes';
 import sseRoutes from './routes/sse.routes';
 import socialAuthRoutes from './routes/socialAuth.routes';
 import sessionRoutes from './routes/session.routes';
@@ -31,6 +32,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/auth/social', socialAuthRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/repositories', repositoryRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/sse', sseRoutes);
 app.use('/api', analysisLimiter, analysisRoutes);
 

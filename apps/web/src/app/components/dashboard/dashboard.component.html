@@ -2,220 +2,205 @@
   <!-- Page Header -->
   <header class="page-header">
     <div class="header-content">
-      <h1>Code Analysis</h1>
-      <p class="subtitle">Real-time performance insights</p>
+      <h1>Dashboard</h1>
+      <p class="subtitle">Overview of your code analysis</p>
+    </div>
+    <div class="header-actions">
+      <a routerLink="/code-analysis" class="btn btn-primary">Analyze Code</a>
+      <a routerLink="/repositories" class="btn btn-secondary">View Repositories</a>
     </div>
   </header>
 
-  <!-- Stats Cards -->
-  <div class="stats-grid">
-    <div class="stat-card stat-primary">
-      <div class="stat-icon">SC</div>
-      <div class="stat-content">
-        <span class="stat-label">Performance Score</span>
-        <span class="stat-value">{{ result()?.score || '--' }}/100</span>
-      </div>
+  <!-- Loading State -->
+  @if (loading()) {
+    <div class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading dashboard...</p>
     </div>
-    <div class="stat-card">
-      <div class="stat-icon stat-icon-danger">CR</div>
-      <div class="stat-content">
-        <span class="stat-label">Critical Issues</span>
-        <span class="stat-value">{{ result()?.issuesBySeverity?.critical || 0 }}</span>
-        <span class="stat-meta">{{ result()?.totalIssues || 0 }} total</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon stat-icon-warning">HI</div>
-      <div class="stat-content">
-        <span class="stat-label">High Priority</span>
-        <span class="stat-value">{{ result()?.issuesBySeverity?.high || 0 }}</span>
-      </div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon stat-icon-info">MD</div>
-      <div class="stat-content">
-        <span class="stat-label">Medium Issues</span>
-        <span class="stat-value">{{ result()?.issuesBySeverity?.medium || 0 }}</span>
-      </div>
-    </div>
-  </div>
+  }
 
-  <div class="main-content">
-    <!-- Analysis Input Card -->
-    <div class="input-card">
-      <div class="card-header">
-        <h2>Analyze Code</h2>
-      </div>
-      
-      <div class="tabs">
-        <button class="tab active">Try Example</button>
-        <button class="tab">Paste Code</button>
-      </div>
+  <!-- Error State -->
+  @if (error()) {
+    <div class="error-message">
+      <span class="error-icon">!</span>
+      <p>{{ error() }}</p>
+      <button class="btn btn-secondary" (click)="loadDashboardData()">Retry</button>
+    </div>
+  }
 
-      <div class="card-body">
-        <div class="form-group">
-          <label for="exampleSelect">Select Example</label>
-          <select id="exampleSelect" [ngModel]="selectedExample()" (ngModelChange)="loadExample($event)" class="example-selector">
-            <option value="">-- Choose an example --</option>
-            @for (example of examples; track example.id) {
-              <option [value]="example.id">{{ example.name }} - {{ example.severity }}</option>
-            }
-          </select>
+  @if (!loading() && stats()) {
+    <!-- Stats Cards -->
+    <div class="stats-grid">
+      <div class="stat-card stat-primary">
+        <div class="stat-icon">SC</div>
+        <div class="stat-content">
+          <span class="stat-label">Avg Score</span>
+          <span class="stat-value" [class]="getScoreClass(stats()!.averageScore)">{{ stats()!.averageScore | number:'1.1-1' }}</span>
         </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-repo">RP</div>
+        <div class="stat-content">
+          <span class="stat-label">Repositories</span>
+          <span class="stat-value">{{ stats()!.totalRepositories }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-analysis">AN</div>
+        <div class="stat-content">
+          <span class="stat-label">Analyses</span>
+          <span class="stat-value">{{ stats()!.totalAnalyses }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-danger">IS</div>
+        <div class="stat-content">
+          <span class="stat-label">Total Issues</span>
+          <span class="stat-value">{{ stats()!.totalIssues }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-success">SL</div>
+        <div class="stat-content">
+          <span class="stat-label">Solutions</span>
+          <span class="stat-value">{{ stats()!.totalSolutions }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon stat-icon-info">SS</div>
+        <div class="stat-content">
+          <span class="stat-label">Active Sessions</span>
+          <span class="stat-value">{{ stats()!.activeSessions }}</span>
+        </div>
+      </div>
+    </div>
 
-        @if (selectedExample()) {
-          <div class="example-info">
-            <span class="example-file">{{ filePath() }}</span>
-            <span class="severity-badge" [class]="getSelectedSeverityClass()">
-              {{ getSelectedSeverity() }}
-            </span>
+    <!-- Issues by Severity -->
+    @if (stats()!.issuesBySeverity) {
+      <div class="severity-summary-card">
+        <h3>Issues by Severity</h3>
+        <div class="severity-bars">
+          <div class="severity-bar critical">
+            <span class="label">Critical</span>
+            <div class="bar"><div class="fill" [style.width.%]="(stats()!.issuesBySeverity['critical'] || 0) / (stats()!.totalIssues || 1) * 100"></div></div>
+            <span class="count">{{ stats()!.issuesBySeverity['critical'] || 0 }}</span>
           </div>
-        }
-
-        <div class="form-group">
-          <label for="code">Code</label>
-          <textarea id="code" [ngModel]="code()" (ngModelChange)="code.set($event)" placeholder="Paste your code here or select an example above..." rows="12"></textarea>
-        </div>
-
-        <div class="form-group checkbox">
-          <input id="generateSolutions" type="checkbox" [ngModel]="generateSolutions()" (ngModelChange)="generateSolutions.set($event)" />
-          <label for="generateSolutions">Generate AI Solutions (Evolutionary Algorithm)</label>
-        </div>
-
-        <div class="actions">
-          <button class="btn btn-primary" (click)="analyzeCode()" [disabled]="analyzing() || !code()">
-            {{ analyzing() ? 'Analyzing...' : 'Analyze Code' }}
-          </button>
-          <button class="btn btn-secondary" (click)="clearResults()">
-            Clear Results
-          </button>
+          <div class="severity-bar high">
+            <span class="label">High</span>
+            <div class="bar"><div class="fill" [style.width.%]="(stats()!.issuesBySeverity['high'] || 0) / (stats()!.totalIssues || 1) * 100"></div></div>
+            <span class="count">{{ stats()!.issuesBySeverity['high'] || 0 }}</span>
+          </div>
+          <div class="severity-bar medium">
+            <span class="label">Medium</span>
+            <div class="bar"><div class="fill" [style.width.%]="(stats()!.issuesBySeverity['medium'] || 0) / (stats()!.totalIssues || 1) * 100"></div></div>
+            <span class="count">{{ stats()!.issuesBySeverity['medium'] || 0 }}</span>
+          </div>
+          <div class="severity-bar low">
+            <span class="label">Low</span>
+            <div class="bar"><div class="fill" [style.width.%]="(stats()!.issuesBySeverity['low'] || 0) / (stats()!.totalIssues || 1) * 100"></div></div>
+            <span class="count">{{ stats()!.issuesBySeverity['low'] || 0 }}</span>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- Evolution Progress Display -->
-    @if (showEvolutionProgress() && analyzing()) {
-      <app-evolution-progress></app-evolution-progress>
     }
 
-    @if (result() || error()) {
-      <div class="results-section">
-        @if (error(); as err) {
-          <div class="error-message">
-            <h3>Error</h3>
-            <p>{{ err }}</p>
-          </div>
-        }
-
-        @if (result(); as res) {
-          <div class="analysis-results">
-            <h2>Analysis Results</h2>
-            
-            <div class="score-card">
-              <div class="score-value" [class.good]="res.score >= 80" [class.warning]="res.score >= 50 && res.score < 80" [class.bad]="res.score < 50">
-                {{ res.score }}
-              </div>
-              <div class="score-label">Performance Score</div>
+    <div class="dashboard-grid">
+      <!-- Repositories Section -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <h2>Repositories</h2>
+          <a routerLink="/repositories" class="view-all">View All</a>
+        </div>
+        <div class="card-body">
+          @if (repositories().length === 0) {
+            <div class="empty-state">
+              <p>No repositories yet</p>
+              <a routerLink="/repositories" class="btn btn-sm btn-primary">Add Repository</a>
             </div>
-
-            <div class="issues-summary">
-              <h3>Issues Found: {{ res.totalIssues }}</h3>
-              <div class="severity-badges">
-                @if (res.issuesBySeverity.critical > 0) {
-                  <span class="badge critical">
-                    Critical: {{ res.issuesBySeverity.critical }}
-                  </span>
-                }
-                @if (res.issuesBySeverity.high > 0) {
-                  <span class="badge high">
-                    High: {{ res.issuesBySeverity.high }}
-                  </span>
-                }
-                @if (res.issuesBySeverity.medium > 0) {
-                  <span class="badge medium">
-                    Medium: {{ res.issuesBySeverity.medium }}
-                  </span>
-                }
-                @if (res.issuesBySeverity.low > 0) {
-                  <span class="badge low">
-                    Low: {{ res.issuesBySeverity.low }}
-                  </span>
-                }
-              </div>
-            </div>
-
-            <div class="detectors-results">
-              @for (detector of res.results; track detector.detectorName) {
-                <div class="detector-result">
-                  <h3>{{ detector.detectorName }}</h3>
-                  @if (detector.issues.length === 0) {
-                    <p class="no-issues">✓ No issues found</p>
-                  }
-                  
-                  @if (detector.issues.length > 0) {
-                    <div class="issues-list">
-                      @for (issue of detector.issues; track issue.id) {
-                        <div class="issue-card">
-                          <div class="issue-header">
-                            <span class="severity-badge" [class]="issue.severity.toLowerCase()">{{ issue.severity }}</span>
-                            <span class="issue-id">{{ issue.id }}</span>
-                          </div>
-                          <div class="issue-body">
-                            <p class="issue-description">{{ issue.description }}</p>
-                            @if (issue.estimatedImpact; as impact) {
-                              <div class="impact-section">
-                                <div class="impact-header">
-                                  <span class="impact-title">Impact Analysis</span>
-                                  <span class="impact-score">Score: {{ impact.severityScore }}/10</span>
-                                  <span class="impact-confidence" title="Confidence Score">({{ impact.confidenceScore }}%)</span>
-                                </div>
-                                <p class="impact-description">{{ impact.description }}</p>
-                                @if (impact.metrics) {
-                                  <div class="metrics-grid">
-                                    @for (metric of impact.metrics | keyvalue; track metric.key) {
-                                      <div class="metric-item">
-                                        <span class="metric-label">{{ metric.key }}:</span>
-                                        <span class="metric-value">{{ metric.value }}</span>
-                                      </div>
-                                    }
-                                  </div>
-                                }
-                              </div>
-                            }
-                            @if (issue.codeBefore) {
-                              <div class="code-block">
-                                <strong>Code:</strong>
-                                <pre>{{ issue.codeBefore }}</pre>
-                              </div>
-                            }
-                            @if (issue.solutions?.length > 0) {
-                              <div class="solutions">
-                                <h4>Suggested Solutions ({{ issue.solutions.length }})</h4>
-                                @for (solution of issue.solutions; track solution.id) {
-                                  <div class="solution-card">
-                                    <div class="solution-header">
-                                      <span class="solution-rank">Rank #{{ solution.rank }}</span>
-                                      <span class="fitness-score">Fitness: {{ solution.fitnessScore }}</span>
-                                    </div>
-                                    <p class="solution-description">{{ solution.reasoning || solution.description }}</p>
-                                    <div class="code-block">
-                                      <pre>{{ solution.code || solution.codeAfter }}</pre>
-                                    </div>
-                                  </div>
-                                }
-                              </div>
-                            }
-                          </div>
-                        </div>
-                      }
+          } @else {
+            <div class="repo-list">
+              @for (repo of repositories().slice(0, 5); track repo.id) {
+                <a [routerLink]="['/repositories', repo.id]" class="repo-item">
+                  <div class="repo-info">
+                    <span class="repo-name">{{ repo.name }}</span>
+                    <span class="repo-date">Last analyzed: {{ formatDate(repo.lastAnalyzedAt) }}</span>
+                  </div>
+                  @if (getRepoScore(repo) !== null) {
+                    <div class="repo-score" [class]="getScoreClass(getRepoScore(repo)!)">
+                      {{ getRepoScore(repo)! | number:'1.1-1' }}
                     </div>
+                  } @else {
+                    <div class="repo-score pending">--</div>
                   }
-                </div>
+                </a>
               }
             </div>
-          </div>
-        }
+          }
+        </div>
       </div>
-    }
-  </div>
+
+      <!-- Recent Analyses Section -->
+      <div class="dashboard-card">
+        <div class="card-header">
+          <h2>Recent Analyses</h2>
+        </div>
+        <div class="card-body">
+          @if (recentAnalyses().length === 0) {
+            <div class="empty-state">
+              <p>No analyses yet</p>
+              <a routerLink="/code-analysis" class="btn btn-sm btn-primary">Run Analysis</a>
+            </div>
+          } @else {
+            <div class="analysis-list">
+              @for (analysis of recentAnalyses(); track analysis.id) {
+                <a [routerLink]="['/analysis', analysis.id]" class="analysis-item">
+                  <div class="analysis-info">
+                    <span class="analysis-repo">{{ analysis.repository.name }}</span>
+                    <span class="analysis-meta">{{ analysis.filesAnalyzed }} files · {{ analysis.totalIssues }} issues · {{ formatDateTime(analysis.analyzedAt) }}</span>
+                  </div>
+                  <div class="analysis-score" [class]="getScoreClass(analysis.score)">
+                    {{ analysis.score | number:'1.1-1' }}
+                  </div>
+                </a>
+              }
+            </div>
+          }
+        </div>
+      </div>
+
+      <!-- Recent Issues Section -->
+      <div class="dashboard-card issues-card">
+        <div class="card-header">
+          <h2>Recent Issues</h2>
+        </div>
+        <div class="card-body">
+          @if (recentIssues().length === 0) {
+            <div class="empty-state">
+              <p>No issues found</p>
+            </div>
+          } @else {
+            <div class="issue-list">
+              @for (issue of recentIssues(); track issue.id) {
+                <a [routerLink]="['/analysis', issue.analysis.id]" class="issue-item">
+                  <div class="issue-left">
+                    <span class="severity-badge" [class]="getSeverityClass(issue.severity)">{{ issue.severity }}</span>
+                    <div class="issue-score-ring" [class]="getScoreClass(issue.score)">
+                      <span>{{ issue.score | number:'1.1-1' }}</span>
+                    </div>
+                  </div>
+                  <div class="issue-info">
+                    <span class="issue-title">{{ issue.title }}</span>
+                    <span class="issue-meta">{{ issue.analysis.repository.name }} · {{ issue.filePath }}:{{ issue.lineNumber }}</span>
+                  </div>
+                  @if (issue.solutions.length > 0) {
+                    <span class="solution-badge">{{ issue.solutions.length }} solution(s)</span>
+                  }
+                </a>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
 </div>
