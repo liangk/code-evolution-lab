@@ -51,6 +51,8 @@ export class AuthService {
   private authInitializedSubject = new BehaviorSubject<boolean>(false);
   public authInitialized$ = this.authInitializedSubject.asObservable();
 
+  private justLoggedIn = signal(false);
+
   constructor() {
     this.initializeAuth();
   }
@@ -110,6 +112,8 @@ export class AuthService {
       tap(response => {
         if (response && response.user) {
           this.setUser(response.user);
+          this.justLoggedIn.set(true);
+          setTimeout(() => this.justLoggedIn.set(false), 5000);
         }
       }),
       catchError(error => {

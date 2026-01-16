@@ -1,9 +1,9 @@
 import prisma from './prisma';
 
 export class DatabaseService {
-  async createRepository(githubUrl: string, name: string, ownerId: string) {
+  async createRepository(githubUrl: string, name: string, ownerId: string, isPrivate: boolean = false) {
     return prisma.repository.create({
-      data: { githubUrl, name, ownerId },
+      data: { githubUrl, name, ownerId, isPrivate },
     });
   }
 
@@ -27,9 +27,22 @@ export class DatabaseService {
   }
 
   async deleteRepository(id: string, ownerId: string) {
-    return prisma.repository.delete({ 
-      where: { id, ownerId } 
+    // Ensure repository belongs to owner
+    const repo = await prisma.repository.findFirst({
+      where: { id, ownerId },
+      select: { id: true },
     });
+
+    if (!repo) return null;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.solution.deleteMany({ where: { issue: { analysis: { repositoryId: id } } } });
+      await tx.issue.deleteMany({ where: { analysis: { repositoryId: id } } });
+      await tx.analysis.deleteMany({ where: { repositoryId: id } });
+      await tx.repository.delete({ where: { id } });
+    });
+
+    return repo;
   }
 
   async createAnalysis(repositoryId: string, score: number, issuesCounts: any, filesAnalyzed: number = 1) {

@@ -7,7 +7,7 @@ export const authGuard: CanActivateFn = () => {
   const authService = inject(AuthService);
   const router = inject(Router);
 
-  // Wait for auth initialization to complete before checking login status
+  // ALWAYS wait for auth initialization before making any decision
   return authService.authInitialized$.pipe(
     filter(initialized => initialized),
     take(1),
@@ -18,6 +18,11 @@ export const authGuard: CanActivateFn = () => {
       return router.createUrlTree(['/login']);
     })
   );
+};
+
+// Allow access to auth callback without any checks
+export const authCallbackGuard: CanActivateFn = () => {
+  return true;
 };
 
 export const guestGuard: CanActivateFn = () => {

@@ -10,6 +10,7 @@ interface Repository {
   id: string;
   name: string;
   githubUrl: string;
+  isPrivate: boolean;
   createdAt: Date;
   analyses?: Array<{ analyzedAt: Date }>;
 }
@@ -51,6 +52,12 @@ export class RepositoryComponent implements OnInit {
         sortable: true,
         flex: '0 0 200px',
         cellTemplate: (date: Date) => new Date(date).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      },
+      {
+        key: 'isPrivate',
+        label: 'Visibility',
+        flex: '0 0 120px',
+        cellTemplate: (isPrivate: boolean) => isPrivate ? 'Private' : 'Public'
       },
       { 
         key: 'analyses', 

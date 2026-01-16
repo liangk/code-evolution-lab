@@ -14,14 +14,14 @@ import { TermsComponent } from './pages/terms.component';
 import { PrivacyComponent } from './pages/privacy.component';
 import { AboutComponent } from './pages/about.component';
 import { ContactComponent } from './pages/contact.component';
-import { authGuard, guestGuard } from './guards/auth.guard';
+import { authGuard, guestGuard, authCallbackGuard } from './guards/auth.guard';
 import { CodeAnalysisComponent } from './components/code-analysis/code-analysis.component';
 
 export const routes: Routes = [
   { path: '', component: LandingComponent },
   { path: 'login', component: LoginPage, canActivate: [guestGuard] },
   { path: 'register', component: RegisterPage, canActivate: [guestGuard] },
-  { path: 'auth/callback', component: AuthCallbackComponent },
+  { path: 'auth/callback', component: AuthCallbackComponent, canActivate: [authCallbackGuard] },
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'repositories', component: RepositoryComponent, canActivate: [authGuard] },
   { path: 'repositories/:id', component: RepositoryDetailComponent, canActivate: [authGuard] },

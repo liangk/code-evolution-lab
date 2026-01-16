@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../database';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { getRepoVisibility } from '../../utils/github-utils';
 
 const router = Router();
 
@@ -38,10 +39,13 @@ router.post('/', authenticateToken, async (req: AuthRequest, res) => {
       return res.status(400).json({ error: 'Name and GitHub URL are required' });
     }
 
+    const isPrivate = await getRepoVisibility(githubUrl);
+
     const repository = await db.createRepository(
       githubUrl,
       name,
-      req.user!.id
+      req.user!.id,
+      isPrivate
     );
 
     return res.status(201).json(repository);

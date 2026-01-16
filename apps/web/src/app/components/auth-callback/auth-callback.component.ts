@@ -34,21 +34,19 @@ export class AuthCallbackComponent implements OnInit {
       const code = params['code'];
       const state = params['state'];
 
-      console.log('[AuthCallback] Received params:', { code: code ? 'present' : 'missing', state });
-
       if (code && state) {
         this.auth.handleSocialCallback(code, state).subscribe({
           next: (response) => {
-            console.log('[AuthCallback] Social login successful, navigating to dashboard');
-            this.router.navigate(['/dashboard']);
+            // Wait 100ms for browser to process cookies before redirecting
+            setTimeout(() => {
+              window.location.href = '/dashboard';
+            }, 100);
           },
           error: (err) => {
-            console.error('[AuthCallback] Social login error:', err);
             this.router.navigate(['/login'], { queryParams: { error: 'social_auth_failed' } });
           }
         });
       } else {
-        console.error('[AuthCallback] Missing code or state');
         this.router.navigate(['/login']);
       }
     });

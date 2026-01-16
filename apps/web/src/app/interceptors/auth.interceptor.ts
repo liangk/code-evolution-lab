@@ -39,7 +39,9 @@ function handle401Error(req: HttpRequest<unknown>, next: HttpHandlerFn, authServ
       catchError((err) => {
         isRefreshing = false;
         refreshTokenSubject.next(false);
-        authService.sessionExpired();
+        if (authService.isLoggedIn) {
+          authService.sessionExpired();
+        }
         return throwError(() => err);
       })
     );

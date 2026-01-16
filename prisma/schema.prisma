@@ -21,6 +21,7 @@ model User {
   authProvider     String?
   googleId         String?   @unique
   githubId         String?   @unique
+  githubToken      String?   @map("github_token")
   userType         UserType  @default(CUSTOMER)
   tokenVersion     Int       @default(0)
   lastLoginAt      DateTime?
@@ -56,6 +57,7 @@ model Repository {
   githubUrl     String     @map("github_url")
   name          String
   ownerId       String     @map("owner_id")
+  isPrivate     Boolean    @default(false) @map("is_private")
   lastAnalyzedAt DateTime? @map("last_analyzed_at")
   createdAt     DateTime   @default(now()) @map("created_at")
   analyses      Analysis[]

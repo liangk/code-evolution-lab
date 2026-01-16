@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 import { glob } from 'glob';
+import https from 'https';
 
 const execAsync = promisify(exec);
 
@@ -19,9 +20,66 @@ export interface FileInfo {
 }
 
 /**
+ * Determine if a GitHub repository is private using the GitHub REST API.
+ * Falls back to public if the request fails.
+ */
+export async function getRepoVisibility(githubUrl: string): Promise<boolean> {
+  try {
+    const parts = githubUrl.replace(/\.git$/, '').split('/').filter(Boolean);
+    const owner = parts[parts.length - 2];
+    const repo = parts[parts.length - 1];
+
+    if (!owner || !repo) {
+      console.warn(`Unable to parse owner/repo from URL: ${githubUrl}`);
+      return false;
+    }
+
+    const token = process.env.GITHUB_TOKEN || process.env.GH_PAT;
+    const options: https.RequestOptions = {
+      hostname: 'api.github.com',
+      path: `/repos/${owner}/${repo}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'code-evolution-lab',
+        Accept: 'application/vnd.github+json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    };
+
+    const response = await new Promise<{ status: number; body: any }>((resolve, reject) => {
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => data += chunk);
+        res.on('end', () => {
+          try {
+            const parsed = data ? JSON.parse(data) : {};
+            resolve({ status: res.statusCode || 500, body: parsed });
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+
+      req.on('error', reject);
+      req.end();
+    });
+
+    if (response.status === 200 && typeof response.body?.private === 'boolean') {
+      return Boolean(response.body.private);
+    }
+
+    console.warn(`GitHub visibility lookup failed (status ${response.status}). Defaulting to public.`);
+    return false;
+  } catch (error) {
+    console.error('Error determining repository visibility:', error);
+    return false;
+  }
+}
+
+/**
  * Clone a GitHub repository to a temporary directory
  */
-export async function cloneRepository(githubUrl: string): Promise<CloneResult> {
+export async function cloneRepository(githubUrl: string, tokenOverride?: string): Promise<CloneResult> {
   try {
     // Create temp directory for cloned repos
     const tempDir = path.join(process.cwd(), 'temp', 'repos');
@@ -34,9 +92,15 @@ export async function cloneRepository(githubUrl: string): Promise<CloneResult> {
     const timestamp = Date.now();
     const localPath = path.join(tempDir, `${repoName}-${timestamp}`);
 
+    // Support private repos via token when provided
+    const token = tokenOverride || process.env.GITHUB_TOKEN || process.env.GH_PAT;
+    const authedUrl = token
+      ? githubUrl.replace('https://', `https://x-access-token:${token}@`)
+      : githubUrl;
+
     // Clone the repository
     console.log(`Cloning ${githubUrl} to ${localPath}...`);
-    await execAsync(`git clone --depth 1 ${githubUrl} "${localPath}"`);
+    await execAsync(`git clone --depth 1 ${authedUrl} "${localPath}"`);
 
     return {
       success: true,
