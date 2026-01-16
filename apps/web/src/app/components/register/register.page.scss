@@ -1,6 +1,8 @@
 :host { display: flex; flex-direction: column; width: 100%; flex: 1; }
 
-.register_container { display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 64px); background: #f8fafc; width: 100%; padding: 2rem; }
+.register_container { display: flex; align-items: center; justify-content: center; flex: 1; background: #f8fafc; width: 100%; padding: 2rem;
+  background-image: url('/lab-bg.webp'); background-size: cover; background-position: center;
+}
 
 .register_content { padding: 3rem; background: white; border-radius: 12px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 1.5rem; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   h2 { align-self: center; margin: 0 0 0.5rem; font-size: 1.75rem; font-weight: 700; color: #171717; }
@@ -8,7 +10,7 @@
 
   .social_buttons { display: flex; flex-direction: column; gap: 0.75rem; }
 
-  .social_btn { display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 8px; transition: all 0.2s; border: 1px solid #e5e5e5; cursor: pointer; font-weight: 500; font-size: 0.938rem;
+  .social_btn { display: flex; align-items: center; justify-content: center; height: 48px; border-radius: 8px; transition: all 0.2s; border: 1px solid #666; cursor: pointer; font-weight: 500; font-size: 0.938rem;
     svg { margin-right: 12px; flex-shrink: 0; }
     &.google { color: #374151; background: #fff;
       &:hover { background: #f5f5f5; border-color: #d4d4d4; }

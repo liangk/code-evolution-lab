@@ -1,6 +1,7 @@
 import { Injectable, NgZone } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, Subject } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 export interface AnalysisRequest {
   code: string;
@@ -41,7 +42,7 @@ export interface EvolutionProgress {
   providedIn: 'root'
 })
 export class AnalysisService {
-  private apiUrl = 'http://localhost:3000/api';
+  private apiUrl = environment.apiUrl;
   private eventSource: EventSource | null = null;
   private progressSubject = new Subject<EvolutionProgress>();
   
