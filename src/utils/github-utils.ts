@@ -68,6 +68,11 @@ export async function getRepoVisibility(githubUrl: string): Promise<boolean> {
       return Boolean(response.body.private);
     }
 
+    if (response.status === 404) {
+      console.warn(`GitHub visibility lookup returned 404 for ${owner}/${repo}. Assuming private.`);
+      return true;
+    }
+
     console.warn(`GitHub visibility lookup failed (status ${response.status}). Defaulting to public.`);
     return false;
   } catch (error) {
