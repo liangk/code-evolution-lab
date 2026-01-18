@@ -11,6 +11,7 @@ CREATE TABLE "users" (
     "authProvider" TEXT,
     "googleId" TEXT,
     "githubId" TEXT,
+    "github_token" TEXT,
     "userType" "UserType" NOT NULL DEFAULT 'CUSTOMER',
     "tokenVersion" INTEGER NOT NULL DEFAULT 0,
     "lastLoginAt" TIMESTAMP(3),
@@ -43,6 +44,7 @@ CREATE TABLE "repositories" (
     "github_url" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "owner_id" TEXT NOT NULL,
+    "is_private" BOOLEAN NOT NULL DEFAULT false,
     "last_analyzed_at" TIMESTAMP(3),
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

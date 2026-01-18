@@ -22,6 +22,15 @@
 
 Unlike traditional linters that only identify problems, Code Evolution Lab **evolves** multiple solution candidates using evolutionary algorithms, ranking them by fitness score based on performance gain, code complexity, and maintainability.
 
+## Community Edition
+
+This is the community edition of Code Evolution Lab. Active development has moved to a private repository. This version will receive:
+- Security patches
+- Bug fixes for critical issues
+- Community contributions (reviewed and merged periodically)
+
+Premium features and advanced capabilities are being developed separately.
+
 ### Why Code Evolution Lab?
 
 | Traditional Tools | Code Evolution Lab |
