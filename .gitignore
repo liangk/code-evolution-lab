@@ -117,3 +117,11 @@ build/Release
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+
+# Package build artifacts
+packages/*/dist/
+packages/github-action/action-dist/
+
+# CLI output directory (commit baseline.json selectively)
+.codeevolution/

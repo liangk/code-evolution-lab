@@ -1,0 +1,131 @@
+# Code Evolution GitHub Action
+
+> Detect performance anti-patterns on every PR — backed by empirical evidence from 5 research studies
+
+## Quick Start
+
+```yaml
+# .github/workflows/code-evolution.yml
+name: Code Evolution Diagnostics
+on: [pull_request]
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: liangk/empirical-study/packages/github-action@main
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+```
+
+## What It Does
+
+On every pull request, this action:
+
+1. **Scans** your codebase for 16 empirically-validated anti-patterns
+2. **Filters** to only report issues in files changed by the PR
+3. **Compares** against your baseline (if `.codeevolution/baseline.json` exists)
+4. **Comments** on the PR with actionable diagnostics and empirical evidence
+5. **Fails** the check if critical issues are introduced
+
+## PR Comment Example
+
+```markdown
+## Code Evolution Diagnostics
+
+| Category | New | Resolved | Total |
+|----------|-----|----------|-------|
+| loop     | +2  | -1       | 19    |
+| memory   | 0   | 0        | 12    |
+
+### New Issues in This PR
+
+🟠 **[loop/nested-loops]** `src/services/matcher.ts:89`
+> Potential O(n²) — consider Map/Set lookup for O(n).
+> *Study 04, BM-04 — 64× at n=10,000*
+
+**Score: 71/100** 📉 (was 73 — -2)
+```
+
+## Inputs
+
+| Input | Description | Default |
+|-------|-------------|---------|
+| `path` | Path to analyze (relative to repo root) | `.` |
+| `severity` | Minimum severity to report: `critical\|high\|medium\|low` | `medium` |
+| `fail-on` | Fail check at this severity or above: `critical\|high\|medium\|low\|none` | `critical` |
+| `baseline` | Compare against `.codeevolution/baseline.json` | `true` |
+| `comment` | Post a PR comment with results | `true` |
+| `github-token` | GitHub token for API access | `${{ github.token }}` |
+
+## Outputs
+
+| Output | Description |
+|--------|-------------|
+| `issues-found` | Total number of issues found |
+| `confidence-score` | Overall score (0–100) |
+| `new-issues` | New issues vs baseline |
+| `resolved-issues` | Resolved issues vs baseline |
+
+## Setting Up Baseline
+
+For temporal comparison (recommended):
+
+```bash
+# Install CLI
+npm install -g code-evolution
+
+# Create baseline and commit it
+code-evolution baseline create
+git add .codeevolution/baseline.json
+git commit -m "chore: add code evolution baseline"
+```
+
+The action will automatically compare against this baseline on every PR.
+
+## Advanced Configuration
+
+### Fail only on high+ severity
+
+```yaml
+- uses: liangk/empirical-study/packages/github-action@main
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    fail-on: high
+    severity: medium
+```
+
+### Scan specific directory
+
+```yaml
+- uses: liangk/empirical-study/packages/github-action@main
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    path: src/
+```
+
+### No PR comment (check only)
+
+```yaml
+- uses: liangk/empirical-study/packages/github-action@main
+  with:
+    github-token: ${{ secrets.GITHUB_TOKEN }}
+    comment: 'false'
+```
+
+## Detection Categories
+
+| Category | Rules | Source Study |
+|----------|-------|-------------|
+| **Loop** | 6 anti-patterns (regex, JSON.parse, await, nested, chained) | Study 04: Loop Performance |
+| **Memory** | 6 anti-patterns (useEffect, listeners, timers, subscriptions) | Study 03: Memory Leaks |
+| **Index** | 4 anti-patterns (FK, filter, sort, composite — Prisma) | Study 05: Missing Index |
+
+All rules are backed by controlled benchmarks with statistical significance testing (Welch's t-test, Cohen's d, power-law regression).
+
+## Links
+
+- **CLI:** [`code-evolution`](https://www.npmjs.com/package/code-evolution)
+- **Research:** [github.com/liangk/empirical-study](https://github.com/liangk/empirical-study)
+- **Publication:** [stackinsight.dev](https://stackinsight.dev)

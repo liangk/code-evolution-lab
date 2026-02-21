@@ -1,0 +1,43 @@
+name: 'Code Evolution Diagnostics'
+description: 'Detect performance anti-patterns backed by empirical evidence from 5 research studies'
+author: 'Code Evolution Lab'
+
+branding:
+  icon: 'zap'
+  color: 'orange'
+
+inputs:
+  path:
+    description: 'Path to analyze (relative to repo root)'
+    required: false
+    default: '.'
+  severity:
+    description: 'Minimum severity to report: critical|high|medium|low'
+    required: false
+    default: 'medium'
+  fail-on:
+    description: 'Fail the check if issues at this severity or above exist: critical|high|medium|low|none'
+    required: false
+    default: 'critical'
+  baseline:
+    description: 'Compare against .codeevolution/baseline.json if it exists'
+    required: false
+    default: 'true'
+  comment:
+    description: 'Post a PR comment with results'
+    required: false
+    default: 'true'
+
+outputs:
+  issues-found:
+    description: 'Total number of issues found'
+  confidence-score:
+    description: 'Overall confidence score (0-100)'
+  new-issues:
+    description: 'Number of new issues compared to baseline'
+  resolved-issues:
+    description: 'Number of resolved issues compared to baseline'
+
+runs:
+  using: 'node20'
+  main: 'action-dist/index.js'
