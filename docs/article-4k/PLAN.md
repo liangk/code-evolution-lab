@@ -21,54 +21,98 @@ Transform Code Evolution Lab from **research artifacts** into a **repeatable dia
 ## Architecture Overview
 
 ```
-empirical-study/
+code-evolution-lab/                    # Monorepo root
+  package.json                         # npm workspaces (core-engine, cli, replay, github-action)
+  tsconfig.base.json                   # Shared TypeScript compiler options
+  .npmrc                               # npm publish config (@code-evolution scope, provenance)
+
   packages/
-    core-engine/              # Unified detection engine
+    core-engine/                       # Unified detection engine
       src/
         rules/
-          loop-rules.ts       # Derived from Study 04 (js-loop-detector)
-          memory-rules.ts     # Derived from Study 03 (react/vue/angular detectors)
-          index-rules.ts      # Derived from Study 05 (prisma-index-detector)
-        engine.ts             # Rule registry + file scanner
-        types.ts              # Unified DiagnosticIssue type
+          loop-rules.ts                # Derived from Study 04 (regex, JSON, nested loops, chained array)
+          memory-rules.ts              # Derived from Study 03 (React/Vue/Angular leak patterns)
+          index-rules.ts               # Derived from Study 05 (Prisma missing index patterns)
+        engine.ts                      # Rule registry + AST file scanner
+        types.ts                       # DiagnosticIssue, ScanOptions, AnalysisReport
         reporter/
-          json-reporter.ts    # .codeevolution/results.json
-          markdown-reporter.ts# .codeevolution/hotspots.md
-          console-reporter.ts # Terminal output
-          score.ts            # Confidence score calculator
-      package.json
+          json-reporter.ts             # .codeevolution/results.json
+          markdown-reporter.ts         # .codeevolution/hotspots.md
+          console-reporter.ts          # Colored terminal output
+          score.ts                     # Confidence score calculator
+      package.json                     # @code-evolution/core-engine
       tsconfig.json
       README.md
 
-    cli/                      # CLI entry point
+    cli/                               # CLI entry point (published as `code-evolution`)
       src/
-        index.ts              # Commander.js CLI
+        index.ts                       # Commander.js CLI setup
         commands/
-          analyze.ts          # code-evolution analyze <path>
-          replay.ts           # code-evolution replay [study]
-          baseline.ts         # code-evolution baseline create|compare
+          analyze.ts                   # code-evolution analyze <path>
+          replay.ts                    # code-evolution replay [study] --quick
+          baseline.ts                  # code-evolution baseline create|compare
       bin/
-        code-evolution.js     # Shebang entry
-      package.json
+        code-evolution.js              # Shebang entry point
+      package.json                     # name: "code-evolution"
       tsconfig.json
-      README.md
 
-    github-action/            # GitHub Action
+    replay/                            # Bundled benchmark suites (self-contained)
       src/
-        index.ts              # Action entry
-        pr-comment.ts         # PR comment formatter
-        diff-filter.ts        # Only report issues in changed files
+        index.ts                       # STUDIES registry + exported types
+        study03/                       # Memory Leak benchmarks (no DB required)
+          run-all.ts                   # Orchestrator: 5 scenarios, heap growth analysis
+          scenarios/
+            react-useeffect-leak.ts    # useEffect without cleanup
+            vue-onmounted-leak.ts      # onMounted timer without clearInterval
+            angular-subscribe-leak.ts  # subscribe without unsubscribe
+            vue-watch-stop-leak.ts     # watch/watchEffect without stop handle
+            raf-cancel-leak.ts         # requestAnimationFrame without cancel
+        study04/                       # Loop Performance benchmarks (no DB required)
+          run-all.ts                   # Orchestrator: BM-01..06, t-test, Cohen's d
+          harness/
+            types.ts                   # TrialRecord, BenchmarkSummary, ComparisonResult
+            runner.ts                  # Trial runner with warmup + GC
+            stats.ts                   # mean, median, stddev, paired t-test, Cohen's d
+            data-gen.ts                # Seeded PRNG data generators (deterministic)
+          modules/
+            bm01-regex/                # Regex compiled in loop vs. hoisted constant
+            bm02-json/                 # JSON.parse in loop vs. cached before loop
+            bm04-nested-loops/         # O(n²) nested scan vs. O(n) Map lookup
+            bm05-nested-array/         # Nested forEach vs. for-loop
+            bm06-chained-array/        # filter().map() vs. single-pass reduce
+        study05/                       # Missing Index benchmarks (requires PostgreSQL)
+          run-all.ts                   # Stub — exits with DB requirement message
+      package.json                     # @code-evolution/replay (private: true)
+      tsconfig.json
+
+    github-action/                     # GitHub Action
+      src/
+        index.ts                       # Action entry point
+        pr-comment.ts                  # PR comment formatter
+        diff-filter.ts                 # Diff-aware: only report issues in changed files
       action.yml
       package.json
       tsconfig.json
-      README.md
+
+  results/                             # Benchmark output (gitignored)
+    study03/bench-<timestamp>.json
+    study04/bench-<timestamp>.json
 
   docs/
     article-4k/
-      PLAN.md                 # This file
-      CHECKLIST.md            # Implementation checklist
-      article-draft.md        # Article #4K content
+      PLAN.md                          # This file
+      article-draft.md                 # Article #4K content
 ```
+
+### Study Inclusion Summary
+
+| Study | Self-Contained | Included in `packages/replay` | Notes |
+|-------|---------------|-------------------------------|-------|
+| 01 — N+1 Query | ✗ | ✗ | Requires PostgreSQL + Prisma |
+| 02 — Blocking I/O | ✗ | ✗ | Requires Express server + autocannon |
+| 03 — Memory Leaks | ✓ | ✓ | Pure Node.js, no external deps |
+| 04 — Loop Performance | ✓ | ✓ | Pure Node.js, seeded PRNG data |
+| 05 — Missing Index | ✗ | stub only | Requires PostgreSQL + Prisma |
 
 ---
 

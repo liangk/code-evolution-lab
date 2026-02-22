@@ -1,0 +1,19 @@
+{
+  "name": "@code-evolution/replay",
+  "version": "1.0.0",
+  "description": "Replay framework — bundled benchmark suites from all empirical studies",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "study03": "node --expose-gc -r ts-node/register src/study03/run-all.ts",
+    "study04": "node -r ts-node/register src/study04/run-all.ts",
+    "study05": "node -r ts-node/register src/study05/run-all.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
