@@ -2,6 +2,24 @@ export type { MemorySnapshot, ScenarioDefinition, ScenarioResult } from './study
 export type { BenchmarkModule, BenchmarkOutput, BenchmarkSummary, ComparisonResult, RunConfig, TrialRecord } from './study04/harness/types';
 
 export const STUDIES = {
+  '01': {
+    id: '01',
+    name: 'N+1 Query Problem',
+    description: 'Prisma N+1 query patterns vs eager loading (requires PostgreSQL + Prisma)',
+    entrypoint: './study01/run-all',
+    requiresDb: true,
+    nodeFlags: [],
+    quickFlag: '',
+  },
+  '02': {
+    id: '02',
+    name: 'Blocking I/O',
+    description: 'Synchronous I/O impact on Node.js event loop (repo scan + benchmarks)',
+    entrypoint: './study02/run-all',
+    requiresDb: false,
+    nodeFlags: [],
+    quickFlag: '',
+  },
   '03': {
     id: '03',
     name: 'Memory Leaks',

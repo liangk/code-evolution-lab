@@ -2,7 +2,12 @@
   "name": "@code-evolution/replay",
   "version": "1.0.0",
   "description": "Replay framework — bundled benchmark suites from all empirical studies",
-  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -10,8 +15,13 @@
     "study04": "node -r ts-node/register src/study04/run-all.ts",
     "study05": "node -r ts-node/register src/study05/run-all.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "express": "^4.21.0",
+    "@prisma/client": "^6.3.1",
+    "prisma": "^6.3.1"
+  },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.13.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"

@@ -6,7 +6,7 @@ import { replayCommand } from './commands/replay';
 const program = new Command();
 
 program
-  .name('code-evolution')
+  .name('code-evolution-lab')
   .description('Evolution-Aware Static Analysis — empirical software diagnostics as code')
   .version('1.0.0');
 

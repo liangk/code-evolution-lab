@@ -6,7 +6,8 @@ import { angularSubscribeScenario } from './scenarios/angular-subscribe-leak';
 import { vueWatchStopScenario } from './scenarios/vue-watch-stop-leak';
 import { rafCancelScenario } from './scenarios/raf-cancel-leak';
 
-const RESULTS_DIR = join(__dirname, '..', '..', '..', 'results', 'study03');
+const BASE_RESULTS_DIR = process.env.CODE_EVOLUTION_LAB_RESULTS_DIR || join(process.cwd(), 'results');
+const RESULTS_DIR = join(BASE_RESULTS_DIR, 'study03');
 
 export interface MemorySnapshot {
   cycle: number;
@@ -88,6 +89,118 @@ function parseArgs(): { cycles: number; quick: boolean } {
   return { cycles, quick };
 }
 
+function toMB(bytes: number): string {
+  return (bytes / 1024 / 1024).toFixed(2);
+}
+
+function calculateStats(snapshots: MemorySnapshot[]): { mean: number; cv: number } {
+  if (snapshots.length === 0) return { mean: 0, cv: 0 };
+  
+  const heapValues = snapshots.map(s => s.heapUsed);
+  const mean = heapValues.reduce((sum, val) => sum + val, 0) / heapValues.length;
+  
+  if (heapValues.length < 2) return { mean, cv: 0 };
+  
+  const variance = heapValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / heapValues.length;
+  const stddev = Math.sqrt(variance);
+  const cv = mean !== 0 ? (stddev / mean) * 100 : 0;
+  
+  return { mean, cv };
+}
+
+function getCodeDescription(scenarioName: string): { bad: string; good: string } {
+  const descriptions: Record<string, { bad: string; good: string }> = {
+    'react-useeffect-leak': {
+      bad: 'useEffect(() => { window.addEventListener(\'resize\', handler); }); // No cleanup',
+      good: 'useEffect(() => { window.addEventListener(\'resize\', handler); return () => window.removeEventListener(\'resize\', handler); }, []);'
+    },
+    'vue-onmounted-leak': {
+      bad: 'onMounted(() => { timerId = setInterval(() => {...}, 100); }); // No cleanup',
+      good: 'onMounted(() => { timerId = setInterval(() => {...}, 100); }); onUnmounted(() => { clearInterval(timerId); });'
+    },
+    'angular-subscribe-leak': {
+      bad: 'ngOnInit() { this.dataService.subscribe(() => {...}); } ngOnDestroy() { /* no unsubscribe */ }',
+      good: 'ngOnInit() { this.subscription = this.dataService.subscribe(() => {...}); } ngOnDestroy() { this.subscription.unsubscribe(); }'
+    },
+    'vue-watch-stop-leak': {
+      bad: 'onMounted(() => { watch(source, () => {...}); }); // No stop handle',
+      good: 'onMounted(() => { const stop = watch(source, () => {...}); onUnmounted(() => { stop(); }); });'
+    },
+    'raf-cancel-leak': {
+      bad: 'onMounted(() => { requestAnimationFrame(animate); }); // No cancel',
+      good: 'onMounted(() => { rafId = requestAnimationFrame(animate); }); onUnmounted(() => { cancelAnimationFrame(rafId); });'
+    }
+  };
+  return descriptions[scenarioName] || { bad: 'N/A', good: 'N/A' };
+}
+
+function buildSummaryMarkdown(
+  timestamp: string,
+  cycles: number,
+  results: ScenarioResult[],
+  metadata: { nodeVersion: string; platform: string }
+): string {
+  const lines: string[] = [];
+  lines.push(`# Study 03: Memory Leak Benchmarks — Summary Report`);
+  lines.push('');
+  lines.push(`## Metadata`);
+  lines.push(`- **Timestamp**: ${timestamp}`);
+  lines.push(`- **Cycles**: ${cycles}`);
+  lines.push(`- **Node Version**: ${metadata.nodeVersion}`);
+  lines.push(`- **Platform**: ${metadata.platform}`);
+  lines.push('');
+  lines.push(`---`);
+  lines.push('');
+
+  for (const r of results) {
+    const badStats = calculateStats(r.bad);
+    const goodStats = calculateStats(r.good);
+    const codeDesc = getCodeDescription(r.name);
+    
+    lines.push(`## ${r.framework.toUpperCase()} — ${r.name}`);
+    lines.push('');
+    lines.push(`**Issue**: ${r.description}`);
+    lines.push('');
+    lines.push(`### Code Comparison`);
+    lines.push('');
+    lines.push(`**❌ Bad Pattern (Leaks Memory)**`);
+    lines.push('```typescript');
+    lines.push(codeDesc.bad);
+    lines.push('```');
+    lines.push('');
+    lines.push(`**✅ Good Pattern (Proper Cleanup)**`);
+    lines.push('```typescript');
+    lines.push(codeDesc.good);
+    lines.push('```');
+    lines.push('');
+    lines.push(`### Statistical Data`);
+    lines.push('');
+    lines.push(`| Metric | Bad Pattern | Good Pattern |`);
+    lines.push(`|--------|-------------|--------------|`);
+    lines.push(`| **Heap Growth** | ${toMB(r.heapGrowthBadBytes)} MB | ${toMB(r.heapGrowthGoodBytes)} MB |`);
+    lines.push(`| **Mean Heap Usage** | ${toMB(badStats.mean)} MB | ${toMB(goodStats.mean)} MB |`);
+    lines.push(`| **CV (Coefficient of Variation)** | ${badStats.cv.toFixed(2)}% | ${goodStats.cv.toFixed(2)}% |`);
+    lines.push(`| **Leak Detected** | ${r.leakDetected ? '✅ Yes' : '~ No'} | N/A |`);
+    lines.push('');
+    lines.push(`---`);
+    lines.push('');
+  }
+
+  const leaked = results.filter(r => r.leakDetected).length;
+  lines.push(`## Summary`);
+  lines.push('');
+  lines.push(`**${leaked}/${results.length}** scenarios confirmed significant memory leak growth.`);
+  lines.push('');
+  if (leaked < results.length) {
+    const missed = results.filter(r => !r.leakDetected);
+    lines.push(`⚠️ **Note**: ${missed.length} scenario(s) did not show significant heap growth:`);
+    missed.forEach(r => lines.push(`- ${r.name}`));
+    lines.push('');
+    lines.push(`This may indicate the need for more cycles or running with \`--expose-gc\` flag.`);
+  }
+  return lines.join('\n');
+}
+
 async function main(): Promise<void> {
   const { cycles } = parseArgs();
 
@@ -127,6 +240,16 @@ async function main(): Promise<void> {
   const outputPath = join(RESULTS_DIR, `bench-${timestamp}.json`);
   writeFileSync(outputPath, JSON.stringify(output, null, 2));
   console.log(`\nResults saved to: ${outputPath}`);
+
+  const summaryMd = buildSummaryMarkdown(
+    output.metadata.timestamp,
+    cycles,
+    results,
+    { nodeVersion: process.version, platform: process.platform }
+  );
+  const summaryPath = join(RESULTS_DIR, `bench-${timestamp}.md`);
+  writeFileSync(summaryPath, summaryMd);
+  console.log(`Summary saved to: ${summaryPath}`);
 
   const leaked = results.filter(r => r.leakDetected);
   const missed = results.filter(r => !r.leakDetected);

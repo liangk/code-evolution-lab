@@ -1,26 +1,30 @@
 {
-  "name": "code-evolution",
+  "name": "code-evolution-lab",
   "version": "1.0.0",
   "description": "Evolution-Aware Static Analysis — empirical software diagnostics as code",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "code-evolution": "bin/code-evolution.js"
+    "code-evolution-lab": "bin/code-evolution-lab.js"
   },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "start": "node bin/code-evolution.js"
+    "start": "node bin/code-evolution-lab.js"
   },
   "dependencies": {
     "@code-evolution/core-engine": "1.0.0",
+    "@code-evolution/replay": "1.0.0",
     "commander": "^12.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.1",
     "typescript": "^5.7.3"
   },
-  "files": ["dist", "bin"],
+  "files": [
+    "dist",
+    "bin"
+  ],
   "keywords": [
     "performance",
     "static-analysis",

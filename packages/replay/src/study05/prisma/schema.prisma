@@ -1,0 +1,32 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model BenchUser {
+  id    Int     @id @default(autoincrement())
+  email String  @unique
+  name  String?
+  age   Int?
+
+  orders BenchOrder[]
+
+  @@map("bench_users")
+}
+
+model BenchOrder {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  totalAmount Float?   @map("total_amount")
+  status      String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user BenchUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("bench_orders")
+}
