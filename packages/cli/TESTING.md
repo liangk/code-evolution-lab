@@ -8,16 +8,12 @@ Follow these steps to test the CLI package locally before publishing:
 
 ```bash
 # From repo root
-cd packages/replay
-npm install
-npm run build
-
-cd ../cli
+cd packages
 npm install
 npm run build
 ```
 
-Note: `code-evolution-lab replay` executes the compiled replay entrypoints from `@code-evolution/replay/dist/**`, so `packages/replay` must be built first.
+Note: `code-evolution-lab` bundles the internal `core-engine` and `replay` workspace packages into the published tarball, so they must be built before packing or publishing.
 
 ### 2. Create Local Tarball
 
@@ -86,6 +82,8 @@ tar -tzf code-evolution-lab-1.0.0.tgz
 # - package/bin/           (CLI entry point)
 # - package/package.json
 # - package/README.md
+# - package/node_modules/@code-evolution/core-engine/
+# - package/node_modules/@code-evolution/replay/
 ```
 
 ### 7. Test DB-Backed Replays (Study 01/05)
@@ -154,8 +152,8 @@ code-evolution-lab --version
 ## Troubleshooting
 
 ### "Cannot find module" errors
-- Ensure `npm run build` completed in both replay and cli packages
-- Check that `dist/` folders exist with compiled .js files
+- Ensure `npm run build` completed in `packages`
+- Run `npm pack` in `packages/cli` and confirm bundled internal packages are present under `package/node_modules/@code-evolution/`
 
 ### "Command not found" after global install
 - Check bin path: `npm config get prefix`
