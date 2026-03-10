@@ -3,7 +3,6 @@ import { join } from 'path';
 import { createInterface } from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { spawnSync } from 'child_process';
-import { PrismaClient } from '@prisma/client';
 
 const BASE_RESULTS_DIR = process.env.CODE_EVOLUTION_LAB_RESULTS_DIR || join(process.cwd(), 'results');
 const RESULTS_DIR = join(BASE_RESULTS_DIR, 'study05');
@@ -13,6 +12,12 @@ function resolveSchemaPath(): string {
   if (existsSync(local)) return local;
   const fromRepoRoot = join(__dirname, '..', '..', 'src', 'study05', 'prisma', 'schema.prisma');
   return fromRepoRoot;
+}
+
+function resolveGeneratedClientPath(): string {
+  const local = join(__dirname, 'prisma', 'generated', 'client');
+  if (existsSync(join(local, 'index.js'))) return local;
+  return join(__dirname, '..', '..', 'src', 'study05', 'prisma', 'generated', 'client');
 }
 
 function resolvePrismaCliPath(): string {
@@ -26,18 +31,18 @@ function resolvePrismaCliPath(): string {
 }
 
 const SCHEMA_PATH = resolveSchemaPath();
+const GENERATED_CLIENT_PATH = resolveGeneratedClientPath();
 const PRISMA_CLI_PATH = resolvePrismaCliPath();
 const SEED_SCRIPT = join(__dirname, 'seed.js');
-const DEFAULT_DB_NAME = 'empirical_study_05';
-const DEFAULT_DB_BASE = 'postgresql://postgres:postgres@localhost:5432';
+const DEFAULT_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/empirical_study_05?schema=public';
 
-async function promptForDatabaseName(defaultName: string): Promise<string> {
+async function promptForDatabaseUrl(defaultUrl: string): Promise<string> {
   const rl = createInterface({ input, output });
-  const answer = await rl.question(`Enter PostgreSQL DB name [${defaultName}]: `);
+  const answer = await rl.question(`Enter DATABASE_URL [${defaultUrl}]: `);
   rl.close();
-  const name = answer.trim() || defaultName;
-  console.log(`Using database name: ${name}`);
-  return name;
+  const databaseUrl = answer.trim() || defaultUrl;
+  console.log(`Using DATABASE_URL: ${databaseUrl}`);
+  return databaseUrl;
 }
 
 async function promptYesNo(question: string): Promise<boolean> {
@@ -49,7 +54,7 @@ async function promptYesNo(question: string): Promise<boolean> {
 }
 
 function runCommand(cmd: string, args: string[]): boolean {
-  const result = spawnSync(cmd, args, { stdio: 'inherit', shell: true });
+  const result = spawnSync(cmd, args, { stdio: 'inherit' });
   return result.status === 0;
 }
 
@@ -57,48 +62,65 @@ function runPrismaCommand(args: string[]): boolean {
   return runCommand(process.execPath, [PRISMA_CLI_PATH, ...args]);
 }
 
+function clearPrismaClientCache(): void {
+  const moduleIds = [
+    GENERATED_CLIENT_PATH,
+    join(GENERATED_CLIENT_PATH, 'index.js'),
+    join(GENERATED_CLIENT_PATH, 'default.js'),
+  ];
+
+  for (const moduleId of moduleIds) {
+    try {
+      const resolved = require.resolve(moduleId);
+      delete require.cache[resolved];
+    } catch {}
+  }
+}
+
+function createPrismaClient(forceReload = false): any {
+  if (forceReload) clearPrismaClientCache();
+  const { PrismaClient } = require(GENERATED_CLIENT_PATH);
+  return new PrismaClient();
+}
+
 async function setupPrisma(): Promise<boolean> {
   console.log('\n--- Prisma Setup Check ---\n');
 
-  let needsGenerate = false;
-  try {
-    const { PrismaClient } = require('@prisma/client');
-    try {
-      const testClient = new PrismaClient();
-      await testClient.$disconnect();
-      console.log('✓ Prisma client detected');
-    } catch (e: any) {
-      if (typeof e?.message === 'string' && e.message.includes('did not initialize yet')) {
-        console.log('✗ Prisma client not generated yet');
-        needsGenerate = true;
-      } else {
-        throw e;
-      }
-    }
-  } catch {
-    console.log('✗ Prisma client not found');
-    needsGenerate = true;
+  console.log('Study 05 uses its own Prisma schema and must generate the Prisma client for this study before continuing.');
+  if (!await promptYesNo('Run prisma generate for Study 05 now?')) {
+    console.error('Prisma client generation is required before running this study.');
+    return false;
   }
 
-  if (needsGenerate || await promptYesNo('Run prisma generate?')) {
-    console.log('\nGenerating Prisma client...');
-    if (!runPrismaCommand(['generate', '--schema', SCHEMA_PATH])) {
-      console.error('Failed to generate Prisma client');
-      return false;
-    }
+  console.log('\nGenerating Prisma client...');
+  if (!runPrismaCommand(['generate', '--schema', SCHEMA_PATH])) {
+    console.error('Failed to generate Prisma client');
+    return false;
   }
+
+  clearPrismaClientCache();
 
   if (await promptYesNo('\nPush database schema (creates tables)?')) {
     console.log('\nPushing schema to database...');
     if (!runPrismaCommand(['db', 'push', '--schema', SCHEMA_PATH, '--skip-generate'])) {
-      console.error('Failed to push schema');
-      return false;
+      console.error('\nNormal schema push failed. This usually means the existing Study 05 benchmark tables are from an older schema.');
+      if (!await promptYesNo('Reset the Study 05 database and re-create the schema? This will delete all existing benchmark data.')) {
+        console.error('Failed to push schema');
+        return false;
+      }
+
+      console.log('\nResetting database and re-creating schema...');
+      if (!runPrismaCommand(['db', 'push', '--schema', SCHEMA_PATH, '--skip-generate', '--force-reset'])) {
+        console.error('Failed to reset and push schema');
+        return false;
+      }
     }
   }
 
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient(true);
+  const db = prisma as any;
   try {
-    const userCount = await prisma.benchUser.count();
+    const userCount = await db.benchUser.count();
     if (userCount === 0) {
       console.log('\n✗ Database is empty');
       if (await promptYesNo('Run seed script to populate test data?')) {
@@ -137,9 +159,7 @@ async function setupPrisma(): Promise<boolean> {
  *   3. Run `npx prisma migrate deploy` in the study directory
  *   4. Run `npx prisma db seed` to populate bench_users / bench_orders tables
  *
- * To run Study 05 benchmarks, use the original empirical-study repo:
- *   cd empirical-study/studies/05-missing-index
- *   npm run bench:all
+ * The replay setup and generated documentation are produced by `code-evolution-lab replay 05`.
  *
  * Modules covered:
  *   BM-01: Point Lookup — Unindexed Column (email)
@@ -173,41 +193,26 @@ function buildDocumentationMarkdown(): string {
   lines.push('');
   lines.push(`2. **Environment Configuration**: Set \`DATABASE_URL\``);
   lines.push(`   \`\`\`bash`);
-  lines.push(`   export DATABASE_URL="postgresql://replay_user:replay_pass@localhost:5432/replay_study05"`);
+  lines.push(`   export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/empirical_study_05?schema=public"`);
   lines.push(`   \`\`\``);
   lines.push('');
-  lines.push(`3. **Database Schema**: Deploy Prisma migrations`);
-  lines.push(`   \`\`\`bash`);
-  lines.push(`   cd empirical-study/studies/05-missing-index`);
-  lines.push(`   npx prisma migrate deploy`);
-  lines.push(`   \`\`\``);
-  lines.push('');
-  lines.push(`4. **Seed Data**: Populate \`bench_users\` and \`bench_orders\` tables`);
-  lines.push(`   \`\`\`bash`);
-  lines.push(`   npx prisma db seed`);
-  lines.push(`   \`\`\``);
+  lines.push(`3. **Database Schema + Seed Data**: The CLI handles Prisma schema push and data seeding automatically.`);
+  lines.push(`   When you run \`code-evolution-lab replay 05\`, it will prompt for your database URL, push the schema,`);
+  lines.push(`   generate the Prisma client, and seed \`bench_users\` / \`bench_orders\` — no manual steps required.`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
   
   lines.push(`## Running the Benchmarks`);
   lines.push('');
-  lines.push(`To execute Study 05 benchmarks, use the original empirical-study repository:`);
+  lines.push(`This document is generated from a \`code-evolution-lab replay 05\` run.`);
   lines.push('');
   lines.push(`\`\`\`bash`);
-  lines.push(`cd empirical-study/studies/05-missing-index`);
-  lines.push(`npm run bench:all`);
+  lines.push(`code-evolution-lab replay 05`);
+  lines.push(`code-evolution-lab replay 05 --quick`);
   lines.push(`\`\`\``);
   lines.push('');
-  lines.push(`Or run individual modules:`);
-  lines.push('');
-  lines.push(`\`\`\`bash`);
-  lines.push(`npm run bench:01  # Point Lookup`);
-  lines.push(`npm run bench:02  # Sorted Range Query`);
-  lines.push(`npm run bench:03  # Foreign Key Scan`);
-  lines.push(`npm run bench:04  # Composite Filter`);
-  lines.push(`npm run bench:05  # Covering Index`);
-  lines.push(`\`\`\``);
+  lines.push(`The replay writes setup documentation and any generated outputs to the local results directory shown by the CLI.`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
@@ -289,21 +294,23 @@ function buildDocumentationMarkdown(): string {
   
   lines.push(`### BM-05: Covering Index — Index-Only Scan`);
   lines.push('');
-  lines.push(`**Issue**: Query requires accessing table heap even when index could provide all data.`);
+  lines.push(`**Issue**: Query requires accessing table heap even when a covering index could provide all data inline.`);
   lines.push('');
   lines.push(`**❌ Without Covering Index**`);
   lines.push(`\`\`\`sql`);
-  lines.push(`CREATE INDEX idx_orders_user_id ON bench_orders(user_id);`);
-  lines.push(`SELECT user_id, total_amount FROM bench_orders WHERE user_id = 123;`);
-  lines.push(`-- Index scan + heap fetch for total_amount`);
+  lines.push(`CREATE INDEX idx_users_status ON bench_users(status);`);
+  lines.push(`SELECT id, email FROM bench_users WHERE status = 'active';`);
+  lines.push(`-- Single-column index on low-cardinality status; heap fetch still required for email`);
   lines.push(`\`\`\``);
   lines.push('');
   lines.push(`**✅ With Covering Index**`);
   lines.push(`\`\`\`sql`);
-  lines.push(`CREATE INDEX idx_orders_user_covering ON bench_orders(user_id) INCLUDE (total_amount);`);
-  lines.push(`SELECT user_id, total_amount FROM bench_orders WHERE user_id = 123;`);
-  lines.push(`-- Index-only scan (no heap access)`);
+  lines.push(`CREATE INDEX idx_users_status_covering ON bench_users(status) INCLUDE (id, email);`);
+  lines.push(`SELECT id, email FROM bench_users WHERE status = 'active';`);
+  lines.push(`-- Covering index includes projected columns — no heap access needed (in theory)`);
   lines.push(`\`\`\``);
+  lines.push('');
+  lines.push(`> **⚠️ Important caveat from the empirical study:** BM-05 showed **zero measurable benefit** (p = 0.24). PostgreSQL chose Seq Scan for both variants because the \`status\` column is low-cardinality — when 30–40% of rows match \`status='active'\`, the query planner correctly ignores the index. Covering indexes only help when the filter column is highly selective. Always verify with \`EXPLAIN ANALYZE\` before adding INCLUDE columns.`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
@@ -343,20 +350,21 @@ function buildDocumentationMarkdown(): string {
   lines.push(`| BM-02 (Sorted Range) | 100K rows | 20-100× |`);
   lines.push(`| BM-03 (FK Scan) | 500K rows | 100-500× |`);
   lines.push(`| BM-04 (Composite) | 100K rows | 30-150× |`);
-  lines.push(`| BM-05 (Covering) | 100K rows | 2-5× |`);
+  lines.push(`| BM-05 (Covering) | 100K rows | 0-2× (may show no benefit on low-cardinality filter columns) |`);
   lines.push('');
   lines.push(`*Actual results depend on hardware, PostgreSQL configuration, and data distribution.*`);
+  lines.push(`*Reference note: The original article figures were taken from a specific warm-cache PostgreSQL setup and include larger datasets up to 1M rows. This CLI replay is intended to reproduce the same qualitative findings and ranking of index benefits, but exact medians and speedup ratios will vary with hardware, cache state, planner choices, and filter selectivity.*`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
   
-  lines.push(`## Alternative: Run from Original Repository`);
+  lines.push(`## Optional Reference: Original Repository Workflow`);
   lines.push('');
-  lines.push(`For full benchmark execution with summary generation:`);
+  lines.push(`If you want to compare this replay against the original study implementation, you can still run the upstream repository separately:`);
   lines.push('');
   lines.push(`\`\`\`bash`);
   lines.push(`# Clone the original empirical-study repository`);
-  lines.push(`git clone https://github.com/code-evolution-lab/empirical-study.git`);
+  lines.push(`git clone https://github.com/liangk/empirical-study.git`);
   lines.push(`cd empirical-study/studies/05-missing-index`);
   lines.push('');
   lines.push(`# Install dependencies`);
@@ -371,7 +379,7 @@ function buildDocumentationMarkdown(): string {
   lines.push(`npm run bench:all`);
   lines.push(`\`\`\``);
   lines.push('');
-  lines.push(`Results will be saved to \`results/\` directory with both JSON and Markdown summaries.`);
+  lines.push(`Those upstream results are separate from the \`code-evolution-lab\` replay outputs generated by this CLI.`);
   
   return lines.join('\n');
 }
@@ -383,29 +391,8 @@ async function main() {
 
   if (!existsSync(RESULTS_DIR)) mkdirSync(RESULTS_DIR, { recursive: true });
 
-  const dbName = await promptForDatabaseName(DEFAULT_DB_NAME);
-  process.env.DATABASE_URL = `${DEFAULT_DB_BASE}/${dbName}?schema=public`;
-
-  // Check DB connection
-  const prisma = new PrismaClient();
-  try {
-    await prisma.$connect();
-    await prisma.$disconnect();
-  } catch (error: any) {
-    console.error('\n❌ Failed to connect to database:', error.message);
-    console.error('   Make sure PostgreSQL is running and DATABASE_URL is correct.\n');
-    
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const docPath = join(RESULTS_DIR, `study05-setup-${timestamp}.md`);
-    const documentation = buildDocumentationMarkdown();
-    writeFileSync(docPath, documentation);
-    console.log('📄 Setup guide saved to:', docPath);
-    console.log('\nTo run benchmarks:');
-    console.log('  1. Start PostgreSQL (e.g., docker compose up -d)');
-    console.log('  2. Set DATABASE_URL or enter DB name when prompted');
-    console.log('  3. Run: npm run replay:05\n');
-    return;
-  }
+  const defaultDatabaseUrl = process.env.DATABASE_URL || DEFAULT_DATABASE_URL;
+  process.env.DATABASE_URL = await promptForDatabaseUrl(defaultDatabaseUrl);
 
   // Run automated setup
   const setupSuccess = await setupPrisma();

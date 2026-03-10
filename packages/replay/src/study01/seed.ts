@@ -1,6 +1,15 @@
-import { PrismaClient } from '@prisma/client';
+import { existsSync } from 'fs';
+import { join } from 'path';
 
+function resolveGeneratedClientPath(): string {
+  const local = join(__dirname, 'prisma', 'generated', 'client');
+  if (existsSync(join(local, 'index.js'))) return local;
+  return join(__dirname, '..', '..', 'src', 'study01', 'prisma', 'generated', 'client');
+}
+
+const { PrismaClient } = require(resolveGeneratedClientPath());
 const prisma = new PrismaClient();
+const db = prisma as any;
 
 async function seed() {
   console.log('Seeding database for Study 01...');
@@ -12,7 +21,7 @@ async function seed() {
 
   console.log(`Creating ${userCount} users...`);
   for (let i = 0; i < userCount; i++) {
-    const user = await prisma.user.create({
+    const user = await db.user.create({
       data: {
         email: `user${i}@example.com`,
         name: `User ${i}`,
@@ -20,7 +29,7 @@ async function seed() {
     });
 
     for (let j = 0; j < postsPerUser; j++) {
-      const post = await prisma.post.create({
+      const post = await db.post.create({
         data: {
           title: `Post ${j} by User ${i}`,
           content: `Content for post ${j}`,
@@ -30,7 +39,7 @@ async function seed() {
       });
 
       for (let k = 0; k < commentsPerPost; k++) {
-        await prisma.comment.create({
+        await db.comment.create({
           data: {
             text: `Comment ${k} on post ${j}`,
             postId: post.id,
@@ -40,7 +49,7 @@ async function seed() {
     }
 
     for (let o = 0; o < ordersPerUser; o++) {
-      await prisma.order.create({
+      await db.order.create({
         data: {
           total: Math.random() * 1000,
           status: Math.random() > 0.5 ? 'active' : 'completed',
@@ -56,10 +65,10 @@ async function seed() {
   }
 
   const counts = {
-    users: await prisma.user.count(),
-    posts: await prisma.post.count(),
-    comments: await prisma.comment.count(),
-    orders: await prisma.order.count(),
+    users: await db.user.count(),
+    posts: await db.post.count(),
+    comments: await db.comment.count(),
+    orders: await db.order.count(),
   };
 
   console.log('\n✓ Seed complete:');

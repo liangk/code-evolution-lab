@@ -124,5 +124,9 @@ packages/*/dist/
 packages/github-action/action-dist/
 results/
 
+# Prisma generated clients
+packages/replay/src/study01/prisma/generated/
+packages/replay/src/study05/prisma/generated/
+
 # CLI output directory (commit baseline.json selectively)
 .codeevolution/

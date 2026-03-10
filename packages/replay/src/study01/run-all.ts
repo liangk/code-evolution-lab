@@ -3,7 +3,6 @@ import { join } from 'path';
 import { createInterface } from 'readline/promises';
 import { stdin as input, stdout as output } from 'process';
 import { spawnSync } from 'child_process';
-import { PrismaClient } from '@prisma/client';
 import { runTC1 } from './benchmarks/tc1-simple-one-to-many';
 import { runTC2 } from './benchmarks/tc2-nested-relationships';
 import { runTC3 } from './benchmarks/tc3-prisma-specific';
@@ -20,6 +19,12 @@ function resolveSchemaPath(): string {
   return fromRepoRoot;
 }
 
+function resolveGeneratedClientPath(): string {
+  const local = join(__dirname, 'prisma', 'generated', 'client');
+  if (existsSync(join(local, 'index.js'))) return local;
+  return join(__dirname, '..', '..', 'src', 'study01', 'prisma', 'generated', 'client');
+}
+
 function resolvePrismaCliPath(): string {
   try {
     return require.resolve('prisma/build/index.js');
@@ -31,18 +36,18 @@ function resolvePrismaCliPath(): string {
 }
 
 const SCHEMA_PATH = resolveSchemaPath();
+const GENERATED_CLIENT_PATH = resolveGeneratedClientPath();
 const PRISMA_CLI_PATH = resolvePrismaCliPath();
 const SEED_SCRIPT = join(__dirname, 'seed.js');
-const DEFAULT_DB_NAME = 'empirical_study_01';
-const DEFAULT_DB_BASE = 'postgresql://postgres:postgres@localhost:5432';
+const DEFAULT_DATABASE_URL = 'postgresql://postgres:postgres@localhost:5432/empirical_study_01?schema=public';
 
-async function promptForDatabaseName(defaultName: string): Promise<string> {
+async function promptForDatabaseUrl(defaultUrl: string): Promise<string> {
   const rl = createInterface({ input, output });
-  const answer = await rl.question(`Enter PostgreSQL DB name [${defaultName}]: `);
+  const answer = await rl.question(`Enter DATABASE_URL [${defaultUrl}]: `);
   rl.close();
-  const name = answer.trim() || defaultName;
-  console.log(`Using database name: ${name}`);
-  return name;
+  const databaseUrl = answer.trim() || defaultUrl;
+  console.log(`Using DATABASE_URL: ${databaseUrl}`);
+  return databaseUrl;
 }
 
 async function promptYesNo(question: string): Promise<boolean> {
@@ -54,7 +59,7 @@ async function promptYesNo(question: string): Promise<boolean> {
 }
 
 function runCommand(cmd: string, args: string[]): boolean {
-  const result = spawnSync(cmd, args, { stdio: 'inherit', shell: true });
+  const result = spawnSync(cmd, args, { stdio: 'inherit' });
   return result.status === 0;
 }
 
@@ -62,13 +67,33 @@ function runPrismaCommand(args: string[]): boolean {
   return runCommand(process.execPath, [PRISMA_CLI_PATH, ...args]);
 }
 
+function clearPrismaClientCache(): void {
+  const moduleIds = [
+    GENERATED_CLIENT_PATH,
+    join(GENERATED_CLIENT_PATH, 'index.js'),
+    join(GENERATED_CLIENT_PATH, 'default.js'),
+  ];
+
+  for (const moduleId of moduleIds) {
+    try {
+      const resolved = require.resolve(moduleId);
+      delete require.cache[resolved];
+    } catch {}
+  }
+}
+
+function createPrismaClient(forceReload = false): any {
+  if (forceReload) clearPrismaClientCache();
+  const { PrismaClient } = require(GENERATED_CLIENT_PATH);
+  return new PrismaClient();
+}
+
 async function setupPrisma(): Promise<boolean> {
   console.log('\n--- Prisma Setup Check ---\n');
 
-  // Check if Prisma client exists
   let needsGenerate = false;
   try {
-    const { PrismaClient } = require('@prisma/client');
+    const { PrismaClient } = require(GENERATED_CLIENT_PATH);
     try {
       const testClient = new PrismaClient();
       await testClient.$disconnect();
@@ -86,12 +111,17 @@ async function setupPrisma(): Promise<boolean> {
     needsGenerate = true;
   }
 
-  if (needsGenerate || await promptYesNo('Run prisma generate?')) {
+  if (needsGenerate) {
+    if (!await promptYesNo('Run prisma generate?')) {
+      console.error('Prisma client generation is required before running this study.');
+      return false;
+    }
     console.log('\nGenerating Prisma client...');
     if (!runPrismaCommand(['generate', '--schema', SCHEMA_PATH])) {
       console.error('Failed to generate Prisma client');
       return false;
     }
+    clearPrismaClientCache();
   }
 
   // Check DB connection and ask about schema push
@@ -104,7 +134,7 @@ async function setupPrisma(): Promise<boolean> {
   }
 
   // Check if DB has data
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient(true);
   try {
     const userCount = await prisma.user.count();
     if (userCount === 0) {
@@ -135,7 +165,7 @@ async function setupPrisma(): Promise<boolean> {
 
 async function checkDatabaseConnection(): Promise<boolean> {
   if (!process.env.DATABASE_URL) return false;
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient(true);
   try {
     await prisma.$connect();
     await prisma.$disconnect();
@@ -173,36 +203,23 @@ function buildSummaryMarkdown(allResults: { bad: BenchmarkResult; good: Benchmar
   lines.push(`   export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/empirical_study_01?schema=public"`);
   lines.push(`   \`\`\``);
   lines.push('');
-  lines.push(`3. **Database Schema**: Push Prisma schema to DB`);
-  lines.push(`   \`\`\`bash`);
-  lines.push(`   cd empirical-study/studies/01-n-plus-1-query`);
-  lines.push(`   npx prisma db push`);
-  lines.push(`   npx prisma generate`);
-  lines.push(`   \`\`\``);
-  lines.push('');
-  lines.push(`4. **Seed Data**: Populate test tables`);
-  lines.push(`   \`\`\`bash`);
-  lines.push(`   npm run seed`);
-  lines.push(`   \`\`\``);
+  lines.push(`3. **Database Schema + Seed Data**: The CLI handles Prisma schema push and data seeding automatically.`);
+  lines.push(`   When you run \`code-evolution-lab replay 01\`, it will prompt for your database URL, push the schema,`);
+  lines.push(`   generate the Prisma client, and seed test data — no manual steps required.`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
   
   lines.push(`## Running the Benchmarks`);
   lines.push('');
-  lines.push(`To execute Study 01 benchmarks, use the original empirical-study repository:`);
+  lines.push(`This document is generated from a \`code-evolution-lab replay 01\` run.`);
   lines.push('');
   lines.push(`\`\`\`bash`);
-  lines.push(`cd empirical-study/studies/01-n-plus-1-query`);
-  lines.push(`npm run bench:all`);
+  lines.push(`code-evolution-lab replay 01`);
+  lines.push(`code-evolution-lab replay 01 --quick`);
   lines.push(`\`\`\``);
   lines.push('');
-  lines.push(`Or run individual variants:`);
-  lines.push('');
-  lines.push(`\`\`\`bash`);
-  lines.push(`npm run bench:bad   # Only N+1 (unoptimized) versions`);
-  lines.push(`npm run bench:good  # Only optimized versions`);
-  lines.push(`\`\`\``);
+  lines.push(`The replay saves benchmark JSON and markdown summaries to the local results directory shown by the CLI.`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
@@ -363,21 +380,22 @@ function buildSummaryMarkdown(allResults: { bad: BenchmarkResult; good: Benchmar
   lines.push(`|-----------|-----------------|---------|`);
   lines.push(`| TC1 (Simple One-to-Many) | ~99% | 5-20× |`);
   lines.push(`| TC2 (Nested Relationships) | ~99% | 10-50× |`);
-  lines.push(`| TC3 (Many-to-One) | ~99% | 5-15× |`);
-  lines.push(`| TC4 (Conditional Loading) | ~50-90% | 2-10× |`);
+  lines.push(`| TC3 (Many-to-One) | ~99% | 10-30× |`);
+  lines.push(`| TC4 (Conditional Loading) | ~90-99% | 10-30× |`);
   lines.push('');
   lines.push(`*Actual results depend on dataset size, network latency, and database configuration.*`);
+  lines.push(`*Reference note: The original article numbers came from a specific empirical-study run. This CLI replay seeds its own local dataset and runs against your PostgreSQL environment, so exact query counts and speedup ratios may differ. The largest variation is usually in TC4, where the proportion of records requiring user data changes both the bad-query count and the observed speedup.*`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
   
-  lines.push(`## Alternative: Run from Original Repository`);
+  lines.push(`## Optional Reference: Original Repository Workflow`);
   lines.push('');
-  lines.push(`For full benchmark execution with summary generation:`);
+  lines.push(`If you want to compare this replay against the original study implementation, you can still run the upstream repository separately:`);
   lines.push('');
   lines.push(`\`\`\`bash`);
   lines.push(`# Clone the original empirical-study repository`);
-  lines.push(`git clone https://github.com/code-evolution-lab/empirical-study.git`);
+  lines.push(`git clone https://github.com/liangk/empirical-study.git`);
   lines.push(`cd empirical-study/studies/01-n-plus-1-query`);
   lines.push('');
   lines.push(`# Install dependencies`);
@@ -395,7 +413,7 @@ function buildSummaryMarkdown(allResults: { bad: BenchmarkResult; good: Benchmar
   lines.push(`npm run bench:all`);
   lines.push(`\`\`\``);
   lines.push('');
-  lines.push(`Results will be saved to \`results/\` directory with timestamped JSON files.`);
+  lines.push(`Those upstream results are separate from the \`code-evolution-lab\` replay outputs generated by this CLI.`);
   
   return lines.join('\n');
 }
@@ -406,8 +424,8 @@ async function main() {
   console.log('╚══════════════════════════════════════════════════╝\n');
 
   if (!existsSync(RESULTS_DIR)) mkdirSync(RESULTS_DIR, { recursive: true });
-  const dbName = await promptForDatabaseName(DEFAULT_DB_NAME);
-  process.env.DATABASE_URL = `${DEFAULT_DB_BASE}/${dbName}?schema=public`;
+  const defaultDatabaseUrl = process.env.DATABASE_URL || DEFAULT_DATABASE_URL;
+  process.env.DATABASE_URL = await promptForDatabaseUrl(defaultDatabaseUrl);
 
   // Run automated setup
   const setupSuccess = await setupPrisma();

@@ -1,0 +1,31 @@
+{
+  "name": "@code-evolution/packages",
+  "version": "1.0.0",
+  "description": "Code Evolution Lab Packages — CLI, replay, and core engine",
+  "private": true,
+  "workspaces": [
+    "core-engine",
+    "cli",
+    "replay",
+    "github-action"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "build:core": "npm run build --workspace=core-engine",
+    "build:cli": "npm run build --workspace=cli",
+    "build:replay": "npm run build --workspace=replay",
+    "build:local": "npm run build:replay && npm run build:cli",
+    "pack:replay": "npm pack --workspace=replay",
+    "pack:cli": "npm pack --workspace=cli",
+    "pack:local": "npm run build:local && npm run pack:replay && npm run pack:cli",
+    "link:replay": "npm run build:replay && npm link --workspace=replay",
+    "link:cli": "npm run build:local && npm link --workspace=cli",
+    "link:local": "npm run link:replay && npm run link:cli",
+    "replay:03": "npm run study03 --workspace=replay",
+    "replay:04": "npm run study04 --workspace=replay",
+    "replay:05": "npm run study05 --workspace=replay"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

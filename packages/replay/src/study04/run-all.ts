@@ -7,6 +7,8 @@ import { runBaseline as bm01Base } from './modules/bm01-regex/baseline';
 import { runOptimized as bm01Opt } from './modules/bm01-regex/optimized';
 import { runBaseline as bm02Base } from './modules/bm02-json/baseline';
 import { runOptimized as bm02Opt } from './modules/bm02-json/optimized';
+import { runBaseline as bm03Base } from './modules/bm03-async-io/baseline';
+import { runOptimized as bm03Opt } from './modules/bm03-async-io/optimized';
 import { runBaseline as bm04Base } from './modules/bm04-nested-loops/baseline';
 import { runOptimized as bm04Opt } from './modules/bm04-nested-loops/optimized';
 import { runBaseline as bm05Base } from './modules/bm05-nested-array/baseline';
@@ -41,6 +43,13 @@ const MODULES: BenchmarkModule[] = [
     hypothesis: null, nValues: N_VALUES, isAsync: false,
     runBaseline: (n) => bm02Base(n),
     runOptimized: (n) => bm02Opt(n),
+  },
+  {
+    id: 'BM-03', name: 'Sequential Async I/O — await-in-loop vs Promise.all',
+    description: 'Sequential await of independent async operations vs concurrent batching with Promise.all.',
+    hypothesis: 'H4', nValues: [10, 100, 1_000], isAsync: true,
+    runBaseline: (n) => bm03Base(n),
+    runOptimized: (n) => bm03Opt(n),
   },
   {
     id: 'BM-04', name: 'Nested Loops — O(n²) vs O(n) via Map',
@@ -98,6 +107,11 @@ function getCodeComparison(moduleId: string): { bad: string; good: string; expla
       good: 'const obj = JSON.parse(jsonStr); // Parse once before loop\nfor (let i = 0; i < keys.length; i++) {\n  results.push(obj[keys[i]]);\n}',
       explanation: 'Calling JSON.parse() inside the loop re-parses the same unchanged string on every iteration. Moving it outside the loop parses once and reuses the object.'
     },
+    'BM-03': {
+      bad: 'for (const item of items) {\n  results.push(await fetchItem(item)); // Sequential await blocks the next request\n}',
+      good: 'const results = await Promise.all(items.map(item => fetchItem(item))); // Run independent I/O concurrently',
+      explanation: 'Awaiting each independent async operation inside a loop serializes latency. Promise.all batches those independent operations so total wall time approaches the slowest request rather than the sum of all requests.'
+    },
     'BM-04': {
       bad: 'for (const user of users) { // O(n²) nested loops\n  let found = null;\n  for (const order of orders) {\n    if (order.userId === user.id) { found = order; break; }\n  }\n  results.push(found);\n}',
       good: 'const orderMap = new Map(); // O(n) with Map lookup\nfor (const o of orders) orderMap.set(o.userId, o);\nfor (const user of users) {\n  results.push(orderMap.get(user.id) ?? null);\n}',
@@ -115,145 +129,6 @@ function getCodeComparison(moduleId: string): { bad: string; good: string; expla
     }
   };
   return comparisons[moduleId] || { bad: 'N/A', good: 'N/A', explanation: 'No description available.' };
-}
-
-function buildSummaryMarkdown(output: BenchmarkOutput, modules: BenchmarkModule[]): string {
-  const lines: string[] = [];
-  lines.push(`# Study 04: Loop Performance Benchmarks — Summary Report`);
-  lines.push('');
-  lines.push(`## Metadata`);
-  lines.push(`- **Timestamp**: ${output.metadata.timestamp}`);
-  lines.push(`- **Node Version**: ${output.metadata.nodeVersion}`);
-  lines.push(`- **Platform**: ${output.metadata.platform}`);
-  lines.push(`- **Architecture**: ${output.metadata.arch}`);
-  lines.push(`- **Trials**: ${output.metadata.config.trials}`);
-  lines.push(`- **Warmup Iterations**: ${output.metadata.config.warmupIterations}`);
-  lines.push('');
-  lines.push(`---`);
-  lines.push('');
-
-  const moduleMap = new Map(modules.map(m => [m.id, m]));
-  const groupedByModule = new Map<string, ComparisonResult[]>();
-  
-  for (const comp of output.comparisons) {
-    if (!groupedByModule.has(comp.moduleId)) {
-      groupedByModule.set(comp.moduleId, []);
-    }
-    groupedByModule.get(comp.moduleId)!.push(comp);
-  }
-
-  for (const [moduleId, comparisons] of groupedByModule) {
-    const module = moduleMap.get(moduleId);
-    if (!module) continue;
-
-    const codeComp = getCodeComparison(moduleId);
-    
-    lines.push(`## ${moduleId}: ${module.name}`);
-    lines.push('');
-    lines.push(`**Issue**: ${module.description}`);
-    lines.push('');
-    if (module.hypothesis) {
-      lines.push(`**Hypothesis**: ${module.hypothesis}`);
-      lines.push('');
-    }
-
-    lines.push(`### Code Comparison`);
-    lines.push('');
-    lines.push(`**❌ Baseline Pattern (Inefficient)**`);
-    lines.push('```typescript');
-    lines.push(codeComp.bad);
-    lines.push('```');
-    lines.push('');
-    lines.push(`**✅ Optimized Pattern (Efficient)**`);
-    lines.push('```typescript');
-    lines.push(codeComp.good);
-    lines.push('```');
-    lines.push('');
-    lines.push(`**Explanation**: ${codeComp.explanation}`);
-    lines.push('');
-
-    lines.push(`### Performance Results`);
-    lines.push('');
-    lines.push(`| n | Baseline (ms) | Optimized (ms) | Speedup | CV (Base/Opt) | p-value | Cohen's d | Effect Size |`);
-    lines.push(`|---|---------------|----------------|---------|---------------|---------|-----------|-------------|`);
-    
-    for (const comp of comparisons.sort((a, b) => a.n - b.n)) {
-      const baseSummary = output.summaries.find(s => s.moduleId === moduleId && s.pattern === 'baseline' && s.n === comp.n);
-      const optSummary = output.summaries.find(s => s.moduleId === moduleId && s.pattern === 'optimized' && s.n === comp.n);
-      
-      const baseCV = baseSummary ? baseSummary.cvPct.toFixed(1) : 'N/A';
-      const optCV = optSummary ? optSummary.cvPct.toFixed(1) : 'N/A';
-      const baseMean = baseSummary ? baseSummary.meanWallMs.toFixed(3) : 'N/A';
-      const optMean = optSummary ? optSummary.meanWallMs.toFixed(3) : 'N/A';
-      
-      const speedupIcon = comp.speedupRatio >= 2 ? '🚀' : comp.speedupRatio >= 1.5 ? '⚡' : '';
-      const sigIcon = comp.significant ? '✅' : '~';
-      const anomalyIcon = comp.anomaly ? '⚠️' : '';
-      const hypothesisIcon = comp.hypothesisMet === true ? '✓' : comp.hypothesisMet === false ? '✗' : '';
-      
-      lines.push(`| ${comp.n.toLocaleString()} | ${baseMean} | ${optMean} | ${speedupIcon}${comp.speedupRatio.toFixed(2)}× ${hypothesisIcon} | ${baseCV}% / ${optCV}% | ${comp.pValue.toFixed(4)} ${sigIcon} | ${comp.cohensD.toFixed(2)} | ${comp.effectSize} ${anomalyIcon} |`);
-    }
-    
-    lines.push('');
-    lines.push(`### Statistical Summary`);
-    lines.push('');
-    
-    const avgSpeedup = comparisons.reduce((sum, c) => sum + c.speedupRatio, 0) / comparisons.length;
-    const maxSpeedup = Math.max(...comparisons.map(c => c.speedupRatio));
-    const significantCount = comparisons.filter(c => c.significant).length;
-    const anomalyCount = comparisons.filter(c => c.anomaly).length;
-    const hypothesisMetCount = comparisons.filter(c => c.hypothesisMet === true).length;
-    
-    lines.push(`- **Average Speedup**: ${avgSpeedup.toFixed(2)}×`);
-    lines.push(`- **Max Speedup**: ${maxSpeedup.toFixed(2)}× (at n=${comparisons.find(c => c.speedupRatio === maxSpeedup)?.n.toLocaleString()})`);
-    lines.push(`- **Statistically Significant**: ${significantCount}/${comparisons.length} configurations (p < 0.05)`);
-    if (module.hypothesis) {
-      lines.push(`- **Hypothesis Met**: ${hypothesisMetCount}/${comparisons.length} configurations`);
-    }
-    if (anomalyCount > 0) {
-      lines.push(`- ⚠️ **Anomalies**: ${anomalyCount} configuration(s) where optimization was slower`);
-    }
-    lines.push('');
-    lines.push(`---`);
-    lines.push('');
-  }
-
-  lines.push(`## Overall Summary`);
-  lines.push('');
-  
-  const totalComparisons = output.comparisons.length;
-  const totalSignificant = output.comparisons.filter(c => c.significant).length;
-  const totalAnomalies = output.comparisons.filter(c => c.anomaly).length;
-  const avgSpeedupAll = output.comparisons.reduce((sum, c) => sum + c.speedupRatio, 0) / totalComparisons;
-  const highCVCount = output.summaries.filter(s => s.flaggedHighCV).length;
-  
-  lines.push(`- **Total Configurations Tested**: ${totalComparisons}`);
-  lines.push(`- **Statistically Significant**: ${totalSignificant}/${totalComparisons} (${((totalSignificant/totalComparisons)*100).toFixed(1)}%)`);
-  lines.push(`- **Average Speedup Across All**: ${avgSpeedupAll.toFixed(2)}×`);
-  
-  if (highCVCount > 0) {
-    lines.push(`- ⚠️ **High CV (>10%)**: ${highCVCount} configuration(s) - results may be unstable`);
-  }
-  
-  if (totalAnomalies > 0) {
-    lines.push(`- ⚠️ **Anomalies Detected**: ${totalAnomalies} configuration(s) where optimization was slower than baseline`);
-    lines.push('');
-    lines.push(`  Anomalies may indicate:`);
-    lines.push(`  - Measurement noise or insufficient warmup`);
-    lines.push(`  - JIT compiler optimization differences`);
-    lines.push(`  - Need for more trials or different n values`);
-  }
-  
-  lines.push('');
-  lines.push(`### Legend`);
-  lines.push(`- 🚀 = Speedup ≥ 2×`);
-  lines.push(`- ⚡ = Speedup ≥ 1.5×`);
-  lines.push(`- ✅ = Statistically significant (p < 0.05)`);
-  lines.push(`- ✓ = Hypothesis met`);
-  lines.push(`- ✗ = Hypothesis not met`);
-  lines.push(`- ⚠️ = Anomaly (optimization slower)`);
-  
-  return lines.join('\n');
 }
 
 function buildArticleReportMarkdown(output: BenchmarkOutput, modules: BenchmarkModule[]): string {
@@ -295,6 +170,11 @@ function buildArticleReportMarkdown(output: BenchmarkOutput, modules: BenchmarkM
   for (const module of modules) {
     lines.push(`- **${module.id}**: ${module.name} — ${module.description}`);
   }
+  lines.push('');
+  lines.push(`**Omitted modules (not implemented in this CLI replay):**`);
+  lines.push(`- **BM-07** (DOM manipulation inside loop → DocumentFragment): Browser-only; cannot run in a Node.js process.`);
+  lines.push('');
+  lines.push(`**Note on BM-01 (Regex Compilation):** V8's JIT compiler caches regex literals even when written inline, so hoisting may produce little or no measurable speedup on modern Node.js. The hypothesis of ≥5× improvement (H2) is unlikely to be met on V8 18+; the pattern remains a readability and portability best practice rather than a runtime optimisation on this runtime.`);
   lines.push('');
 
   for (const module of modules) {
@@ -429,7 +309,7 @@ async function main(): Promise<void> {
   console.log(`n values: ${config.nFilter ? [config.nFilter] : N_VALUES}`);
   console.log(`Trials  : ${config.trials}  Warmup: ${config.warmupIterations}`);
   console.log(`Node    : ${process.version}  Platform: ${process.platform}\n`);
-  console.log('NOTE: BM-03 (async I/O) requires a separate runner.\n');
+  console.log('NOTE: BM-07 (DOM benchmark) remains excluded because it requires a browser runtime.\n');
 
   const allTrials: TrialRecord[] = [];
   const allSummaries: BenchmarkSummary[] = [];
@@ -480,20 +360,10 @@ async function main(): Promise<void> {
   writeFileSync(outputPath, JSON.stringify(output, null, 2));
   console.log(`\nResults saved to: ${outputPath}`);
 
-  const summaryMd = buildSummaryMarkdown(output, activeModules);
-  const summaryPath = join(RESULTS_DIR, `bench-${timestamp}.md`);
-  writeFileSync(summaryPath, summaryMd);
-  console.log(`Summary saved to: ${summaryPath}`);
-
-  const briefMd = buildBriefSummaryMarkdown(output);
-  const briefPath = join(RESULTS_DIR, `summary-${timestamp}.md`);
-  writeFileSync(briefPath, briefMd);
-  console.log(`Brief summary saved to: ${briefPath}`);
-
   const reportMd = buildArticleReportMarkdown(output, activeModules);
-  const reportPath = join(RESULTS_DIR, `report-${timestamp}.md`);
+  const reportPath = join(RESULTS_DIR, `summary-${timestamp}.md`);
   writeFileSync(reportPath, reportMd);
-  console.log(`Report saved to: ${reportPath}`);
+  console.log(`Summary saved to: ${reportPath}`);
 
   const flagged = allSummaries.filter(s => s.flaggedHighCV);
   if (flagged.length > 0) {

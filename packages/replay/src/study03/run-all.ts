@@ -127,8 +127,8 @@ function getCodeDescription(scenarioName: string): { bad: string; good: string }
       good: 'onMounted(() => { const stop = watch(source, () => {...}); onUnmounted(() => { stop(); }); });'
     },
     'raf-cancel-leak': {
-      bad: 'onMounted(() => { requestAnimationFrame(animate); }); // No cancel',
-      good: 'onMounted(() => { rafId = requestAnimationFrame(animate); }); onUnmounted(() => { cancelAnimationFrame(rafId); });'
+      bad: 'useEffect(() => { rafId = requestAnimationFrame(animate); }); // No cancel return',
+      good: 'useEffect(() => { rafId = requestAnimationFrame(animate); return () => cancelAnimationFrame(rafId); }, []);'
     }
   };
   return descriptions[scenarioName] || { bad: 'N/A', good: 'N/A' };
@@ -148,6 +148,8 @@ function buildSummaryMarkdown(
   lines.push(`- **Cycles**: ${cycles}`);
   lines.push(`- **Node Version**: ${metadata.nodeVersion}`);
   lines.push(`- **Platform**: ${metadata.platform}`);
+  lines.push('');
+  lines.push(`**Replay note:** This CLI report is a lightweight benchmark reproduction, not the full publication workflow. The original article combined these scenarios with a 500-repository static analysis and 50 repeated benchmark runs; this replay executes one local benchmark pass at the configured cycle count, so article-level statistics will not match line-for-line.`);
   lines.push('');
   lines.push(`---`);
   lines.push('');
@@ -196,7 +198,12 @@ function buildSummaryMarkdown(
     lines.push(`⚠️ **Note**: ${missed.length} scenario(s) did not show significant heap growth:`);
     missed.forEach(r => lines.push(`- ${r.name}`));
     lines.push('');
-    lines.push(`This may indicate the need for more cycles or running with \`--expose-gc\` flag.`);
+    lines.push(`**Why leaks may not be detected:** The CLI already runs with \`--expose-gc\` to force GC before each snapshot. If leaks still go undetected, the most likely cause is an insufficient cycle count — the detection threshold requires heap growth > 1 MB above the good pattern. At low cycle counts (e.g. \`--quick\` = 100 cycles), growth may fall just under this threshold even though a real leak exists.`);
+    lines.push('');
+    lines.push(`**To confirm leak detection, re-run without \`--quick\` (default 500 cycles):**`);
+    lines.push('```bash');
+    lines.push('code-evolution-lab replay 03');
+    lines.push('```');
   }
   return lines.join('\n');
 }
@@ -247,7 +254,7 @@ async function main(): Promise<void> {
     results,
     { nodeVersion: process.version, platform: process.platform }
   );
-  const summaryPath = join(RESULTS_DIR, `bench-${timestamp}.md`);
+  const summaryPath = join(RESULTS_DIR, `summary-${timestamp}.md`);
   writeFileSync(summaryPath, summaryMd);
   console.log(`Summary saved to: ${summaryPath}`);
 

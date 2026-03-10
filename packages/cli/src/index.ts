@@ -22,7 +22,27 @@ program
 
 program
   .command('baseline <action>')
-  .description('Manage baseline snapshots (create|compare)')
+  .description('Create or compare static-analysis baseline snapshots for the current project')
+  .addHelpText('after', `
+
+Actions:
+  create   Analyze the current directory and save a baseline snapshot to baseline.json.
+  compare  Re-analyze the current directory and compare results against an existing baseline.
+
+Outputs:
+  - baseline.json in the selected output directory
+  - current JSON, Markdown, and score reports for the latest analysis run
+
+Behavior:
+  - compare exits with a non-zero status if the current score is lower than the saved baseline
+  - useful for CI checks that guard against regressions
+
+Examples:
+  $ code-evolution-lab baseline create
+  $ code-evolution-lab baseline compare
+  $ code-evolution-lab baseline create --output .codeevolution
+  $ code-evolution-lab baseline compare --output .codeevolution
+`)
   .option('-o, --output <dir>', 'Output directory', '.codeevolution')
   .action(baselineCommand);
 

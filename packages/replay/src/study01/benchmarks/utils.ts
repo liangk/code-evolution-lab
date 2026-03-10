@@ -1,4 +1,11 @@
-import { PrismaClient } from '@prisma/client';
+import { existsSync } from 'fs';
+import { join } from 'path';
+
+function resolveGeneratedClientPath(): string {
+  const local = join(__dirname, '..', 'prisma', 'generated', 'client');
+  if (existsSync(join(local, 'index.js'))) return local;
+  return join(__dirname, '..', '..', '..', 'src', 'study01', 'prisma', 'generated', 'client');
+}
 
 export interface BenchmarkResult {
   testCase: string;
@@ -16,6 +23,7 @@ export interface BenchmarkResult {
 
 export function createTrackedPrisma() {
   let queryCount = 0;
+  const { PrismaClient } = require(resolveGeneratedClientPath());
   const prisma = new PrismaClient({
     log: [{ emit: 'event', level: 'query' }],
   });
@@ -57,7 +65,8 @@ export async function benchmark(
   const p95 = timings[Math.floor(timings.length * 0.95)];
   const p99 = timings[Math.floor(timings.length * 0.99)];
 
-  const datasetSize = await tracked.prisma.user.count();
+  const db = tracked.prisma as any;
+  const datasetSize = await db.user.count();
 
   return {
     testCase: name,
