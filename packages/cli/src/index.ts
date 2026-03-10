@@ -21,30 +21,40 @@ program
   .action(analyzeCommand);
 
 program
-  .command('baseline <action>')
-  .description('Create or compare static-analysis baseline snapshots for the current project')
+  .command('scan')
+  .description('Scan the current project and save a performance snapshot to .codeevolution/baseline.json')
   .addHelpText('after', `
-
-Actions:
-  create   Analyze the current directory and save a baseline snapshot to baseline.json.
-  compare  Re-analyze the current directory and compare results against an existing baseline.
 
 Outputs:
   - baseline.json in the selected output directory
   - current JSON, Markdown, and score reports for the latest analysis run
 
 Behavior:
-  - compare exits with a non-zero status if the current score is lower than the saved baseline
-  - useful for CI checks that guard against regressions
+  - creates a reference snapshot of the current working tree
+  - useful for CI and local guard rails before changing code
 
 Examples:
-  $ code-evolution-lab baseline create
-  $ code-evolution-lab baseline compare
-  $ code-evolution-lab baseline create --output .codeevolution
-  $ code-evolution-lab baseline compare --output .codeevolution
+  $ code-evolution-lab scan
+  $ code-evolution-lab scan --output .codeevolution
 `)
   .option('-o, --output <dir>', 'Output directory', '.codeevolution')
-  .action(baselineCommand);
+  .action(opts => baselineCommand('create', opts));
+
+program
+  .command('compare')
+  .description('Re-scan the current project and compare it against the saved scan snapshot')
+  .addHelpText('after', `
+
+Behavior:
+  - compares the latest scan against baseline.json
+  - exits non-zero if the current score is lower than the snapshot
+
+Examples:
+  $ code-evolution-lab compare
+  $ code-evolution-lab compare --output .codeevolution
+`)
+  .option('-o, --output <dir>', 'Output directory', '.codeevolution')
+  .action(opts => baselineCommand('compare', opts));
 
 program
   .command('replay [study]')

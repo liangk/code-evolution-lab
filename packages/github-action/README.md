@@ -76,10 +76,10 @@ For temporal comparison (recommended):
 # Install CLI
 npm install -g code-evolution
 
-# Create baseline and commit it
-code-evolution baseline create
+# Capture a scan snapshot and commit it
+code-evolution scan
 git add .codeevolution/baseline.json
-git commit -m "chore: add code evolution baseline"
+git commit -m "chore: add code evolution scan snapshot"
 ```
 
 The action will automatically compare against this baseline on every PR.

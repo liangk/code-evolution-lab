@@ -27,14 +27,14 @@ export async function baselineCommand(action: string, options: BaselineOptions):
   } else if (action === 'compare') {
     await compareBaselineSnapshot(outputDir, baselinePath);
   } else {
-    console.error(`Unknown action: ${action}. Use 'create' or 'compare'.`);
+    console.error(`Unknown action: ${action}. Use 'scan' or 'compare'.`);
     process.exit(1);
   }
 }
 
 async function createBaselineSnapshot(outputDir: string, baselinePath: string): Promise<void> {
   const targetPath = resolve('.');
-  console.log(`\nCreating baseline snapshot for: ${targetPath}\n`);
+  console.log(`\nScanning workspace for baseline snapshot: ${targetPath}\n`);
 
   const registry = new RuleRegistry();
   registry.registerAll(getAllRules());
@@ -50,20 +50,20 @@ async function createBaselineSnapshot(outputDir: string, baselinePath: string): 
   writeMarkdownReport(report, outputDir);
   writeScoreFile(report, outputDir);
 
-  console.log(`\nBaseline created: ${baselinePath}`);
+  console.log(`\nScan snapshot saved: ${baselinePath}`);
   console.log(`Score: ${baseline.summary.confidenceScore}/100`);
   console.log(`Issues: ${baseline.summary.issuesFound}\n`);
 }
 
 async function compareBaselineSnapshot(outputDir: string, baselinePath: string): Promise<void> {
   if (!existsSync(baselinePath)) {
-    console.error(`No baseline found at: ${baselinePath}`);
-    console.error(`Run 'code-evolution baseline create' first.`);
+    console.error(`No scan snapshot found at: ${baselinePath}`);
+    console.error(`Run 'code-evolution-lab scan' first.`);
     process.exit(1);
   }
 
   const targetPath = resolve('.');
-  console.log(`\nComparing against baseline: ${baselinePath}\n`);
+  console.log(`\nComparing workspace against scan snapshot: ${baselinePath}\n`);
 
   const baseline: BaselineSnapshot = JSON.parse(readFileSync(baselinePath, 'utf-8'));
 

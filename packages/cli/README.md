@@ -56,24 +56,24 @@ code-evolution analyze . --category loop
 code-evolution analyze . --json > report.json
 ```
 
-### `baseline` — Temporal comparison
+### `scan` / `compare` — Temporal comparison
 
 ```bash
-code-evolution baseline create    # Snapshot current state
-code-evolution baseline compare   # Compare against snapshot
+code-evolution scan            # Capture baseline scan snapshot
+code-evolution compare         # Re-scan and diff against snapshot
 ```
 
-The baseline system enables **temporal intelligence** — tracking how your codebase's health evolves over time.
+Capture a reference scan before you change code; compare runs later guard against regressions.
 
 **Workflow:**
 
-1. Run `code-evolution baseline create` and commit `.codeevolution/baseline.json`
-2. Make changes to your code
-3. Run `code-evolution baseline compare` to see what improved or regressed
+1. Run `code-evolution scan` and commit `.codeevolution/baseline.json`
+2. Make code changes
+3. Run `code-evolution compare` to spot regressions or resolved issues
 
 **Output:**
 ```
-Baseline Comparison
+Baselined scan comparison
 
   Previous score: 73/100
   Current score:  71/100
