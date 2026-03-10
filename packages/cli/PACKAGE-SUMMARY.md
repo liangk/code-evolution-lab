@@ -7,7 +7,7 @@
 - `bin`: `code-evolution-lab` → `bin/code-evolution-lab.js`
 - `files`: `["dist", "bin"]` - ships compiled code + bin entry
 - `main`: `dist/index.js` - for programmatic use
-- `dependencies`: includes `@code-evolution/core-engine` and `@code-evolution/replay`
+- `bundledDependencies`: bundles `@code-evolution/core-engine` and `@code-evolution/replay` inside the published tarball
 
 **Installation:**
 ```bash
@@ -24,7 +24,7 @@ code-evolution-lab analyze ./my-project
 **How it works:**
 - npm symlinks `bin/code-evolution-lab.js` to global bin directory
 - Bin script requires `dist/index.js` which loads Commander and routes commands
-- Replay command spawns `ts-node` to run study scripts from `@code-evolution/replay` package
+- Replay command resolves the bundled `@code-evolution/replay` package included inside `code-evolution-lab`
 
 ---
 
@@ -168,8 +168,7 @@ TC4: Conditional Loading      100       451           2             99.6%       
 
 ```bash
 # 1. Build packages
-cd packages/replay && npm run build
-cd ../cli && npm run build
+cd packages && npm run build
 
 # 2. Link locally
 npm link
@@ -226,6 +225,8 @@ tar -tzf code-evolution-lab-1.0.0.tgz | head -20
 # package/dist/commands/replay.js
 # package/dist/commands/analyze.js
 # package/dist/commands/baseline.js
+# package/node_modules/@code-evolution/core-engine/
+# package/node_modules/@code-evolution/replay/
 # ... etc
 ```
 
@@ -285,7 +286,7 @@ code-evolution-lab --version
 
 ## Notes
 
-- The CLI depends on `@code-evolution/replay` package which must be published separately or bundled
+- The CLI is published as a single npm package and bundles the internal `core-engine` and `replay` workspaces
 - For monorepo setup, consider using workspaces or lerna
 - DB-backed replays (01, 05) require PostgreSQL running locally
 - Self-contained replays (02, 03, 04) have no external dependencies beyond Node.js
