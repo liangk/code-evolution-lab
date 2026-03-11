@@ -1,47 +1,76 @@
 # Code Evolution Lab
 
 <p align="center">
-  <strong>AI-Powered Evolutionary Code Optimization Platform</strong>
+  <strong>Research-backed empirical diagnostics for JavaScript and TypeScript codebases</strong>
 </p>
 
 <p align="center">
-  Detect performance anti-patterns and generate optimized solutions using genetic algorithms.
+  Detect performance anti-patterns, track regressions over time, and reproduce the benchmark evidence behind every rule.
 </p>
 
 ---
 
 ## Overview
 
-Code Evolution Lab is an intelligent code analysis platform that combines **static code analysis** with **evolutionary algorithms** to automatically detect performance issues in JavaScript/TypeScript codebases and generate optimized solutions.
+Code Evolution Lab is a monorepo for the public tooling around empirical software diagnostics. It packages the research from [`liangk/empirical-study`](https://github.com/liangk/empirical-study) into practical developer tools: a CLI for local analysis, a GitHub Action for pull request checks, a reusable core engine, and replayable benchmark suites for reproducibility.
+
+The project focuses on performance patterns that have been studied empirically rather than stylistic lint rules. Today the public packages cover three rule families:
+
+- **Loop performance anti-patterns** — nested loops, sequential await, repeated regex/JSON work inside loops
+- **Memory leak patterns** — missing cleanup in React, Vue, Angular, timers, listeners, and subscriptions
+- **Missing Prisma indexes** — foreign-key, filter, sort, and composite index gaps
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **Deep Code Analysis** | AST-based detection of N+1 queries, memory leaks, inefficient loops, and more |
-| **Evolutionary Solutions** | Genetic algorithms generate and evolve multiple solution candidates |
-| **Fitness Scoring** | Solutions ranked by performance, complexity, and maintainability |
-| **GitHub Integration** | Analyze entire repositories with OAuth authentication |
-| **Real-time Progress** | Server-Sent Events for live evolution progress tracking |
-| **Modern Web UI** | Angular 21 dashboard with real-time analysis visualization |
-| **CLI Tool** | Analyze code directly from the terminal |
+| **CLI diagnostics** | Run `code-evolution-lab analyze`, `scan`, `compare`, and `replay` locally |
+| **Evidence-backed rules** | Findings are derived from completed empirical studies, controlled benchmarks, and corpus scans |
+| **Temporal comparison** | Capture a baseline snapshot and fail CI if code health regresses |
+| **GitHub integration** | Post diff-aware diagnostics on pull requests with the GitHub Action |
+| **Reusable core engine** | Programmatic API for custom analysis workflows and reporting |
+| **Replayable studies** | Re-run the underlying benchmark suites locally to inspect the evidence yourself |
+| **Web interface** | Angular-based UI for interactive workflows and project visualization |
 
 ## Quick Start
 
-### Prerequisites
+### For CLI users
+
+```bash
+# Analyze the current project
+npx code-evolution-lab analyze .
+
+# Capture a baseline snapshot before refactoring
+npx code-evolution-lab scan
+
+# Compare after changes to catch regressions
+npx code-evolution-lab compare
+```
+
+See [`packages/cli/`](./packages/cli/README.md) for full CLI documentation.
+
+### For repository contributors
+
+#### Prerequisites
 
 - **Node.js** 18+ (recommended: 20+)
 - **PostgreSQL** 14+
 - **npm** 9+
 
-### 1. Clone and Install
+#### 1. Clone and Install
 
 ```bash
 git clone https://github.com/liangk/code-evolution-lab.git
 cd code-evolution-lab
 ```
 
-### 2. Backend Setup
+#### 2. Install workspace dependencies
+
+```bash
+npm install
+```
+
+#### 3. Backend Setup
 
 ```bash
 cd backend
@@ -52,7 +81,7 @@ npm run prisma:migrate
 npm run start:api
 ```
 
-### 3. Frontend Setup
+#### 4. Frontend Setup
 
 ```bash
 cd apps/web
@@ -62,11 +91,12 @@ npm start
 
 Access the application at `http://localhost:8201`.
 
-### 4. Using the CLI
+#### 5. Using the packaged CLI from this monorepo
 
 ```bash
-cd backend
-npm run analyze -- ./src/**/*.ts --solutions
+cd packages/cli
+npm run build
+node bin/code-evolution-lab.js analyze ../..
 ```
 
 ## Project Structure
@@ -74,7 +104,7 @@ npm run analyze -- ./src/**/*.ts --solutions
 ```
 code-evolution-lab/
 ├── apps/
-│   └── web/                    # Angular 21 frontend
+│   └── web/                    # Angular UI for interactive workflows
 │       ├── src/
 │       │   ├── app/
 │       │   │   ├── components/ # UI components
@@ -83,7 +113,7 @@ code-evolution-lab/
 │       │   └── environments/   # Environment configs
 │       └── angular.json
 │
-├── backend/                    # Express.js API server
+├── backend/                    # Express.js API server and legacy platform services
 │   ├── src/
 │   │   ├── api/               # REST API routes
 │   │   ├── analyzer/          # Code parsing (Babel AST)
@@ -99,11 +129,11 @@ code-evolution-lab/
 │   │   └── cli.ts             # Command-line interface
 │   └── prisma/                # Database schema
 │
-├── packages/                   # Shared packages
-│   ├── core-engine/           # Unified detection engine
-│   ├── cli/                   # Published CLI tool
-│   ├── replay/                # Benchmark replay framework
-│   └── github-action/         # GitHub Action for CI/CD
+├── packages/                  # Public tooling packages
+│   ├── core-engine/           # Shared detection engine + reporters + baseline logic
+│   ├── cli/                   # Published npm CLI: code-evolution-lab
+│   ├── replay/                # Reproducible benchmark studies
+│   └── github-action/         # Pull request diagnostics action
 │
 └── docs/                      # Documentation
     ├── getting-started/
@@ -114,36 +144,28 @@ code-evolution-lab/
     └── reference/
 ```
 
-## Detectors
+## Public packages
 
-Code Evolution Lab includes four main detectors:
+| Package | What it is for |
+|---------|----------------|
+| [`packages/cli`](./packages/cli/README.md) | Local project analysis, baseline snapshots, regression comparison, and study replay |
+| [`packages/core-engine`](./packages/core-engine/README.md) | Programmatic detection engine for custom tooling and integrations |
+| [`packages/github-action`](./packages/github-action/README.md) | Diff-aware pull request diagnostics in GitHub Actions |
+| `packages/replay` | Bundled benchmark suites that reproduce the empirical study workloads |
 
-| Detector | Issues Detected |
-|----------|-----------------|
-| **N+1 Query** | Database queries inside loops |
-| **Inefficient Loop** | Nested loops, regex in loops, JSON operations, sequential awaits |
-| **Memory Leak** | Event listeners, timers, closures without cleanup |
-| **Large Payload** | Excessive API responses, SELECT * queries |
+## Why this repository exists
 
-## Evolutionary Algorithm
+This repository connects three layers that are often separate in tooling projects:
 
-The evolutionary engine optimizes solutions through:
+1. **Empirical research** — benchmark studies and corpus analysis in `liangk/empirical-study`
+2. **Detection engine** — reusable rules and reporting in `@code-evolution/core-engine`
+3. **Developer workflows** — CLI, GitHub Action, replay tooling, and web UI
 
-1. **Initial Population** — Generate solution candidates from detected issues
-2. **Fitness Evaluation** — Score solutions on performance, code preservation, validity
-3. **Selection** — Tournament selection based on fitness
-4. **Crossover** — Combine strategies from different solutions
-5. **Mutation** — Apply random code transformations
-6. **Iteration** — Evolve over multiple generations
+The goal is to help developers answer practical questions with evidence:
 
-Configure via environment variables:
-
-```env
-EVO_POPULATION_SIZE=20
-EVO_MAX_GENERATIONS=10
-EVO_MUTATION_RATE=0.3
-EVO_CROSSOVER_RATE=0.7
-```
+- Which patterns in this codebase have measurable performance cost?
+- Did this refactor improve things or introduce regressions?
+- Can I reproduce the benchmark that justified this rule?
 
 ## API
 

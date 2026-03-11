@@ -1,6 +1,6 @@
 {
   "name": "code-evolution-lab",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Evolution-Aware Static Analysis — empirical software diagnostics as code",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

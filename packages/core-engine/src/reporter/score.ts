@@ -23,7 +23,7 @@ export function generateScoreText(report: AnalysisReport): string {
     text += `  ${cat.padEnd(18)} ${String(catScore).padStart(3)}/100 (${catIssues.length} issues, ${highConf} high-confidence)\n`;
   }
 
-  text += `\nBased on: 5 empirical studies, 200+ benchmarks, 40+ real-world repos\n`;
+  text += `\nBased on: 5 completed empirical studies, controlled benchmarks, and real-world corpus scans\n`;
   text += `Generated: ${report.timestamp}\n`;
   return text;
 }

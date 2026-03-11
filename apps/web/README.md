@@ -1,59 +1,81 @@
-# Web
+# Code Evolution Lab Web App
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.0.4.
+This Angular application is the browser-based interface for Code Evolution Lab. It is intended for contributors and teams that want a visual workflow on top of the project's analysis capabilities, rather than working only through the CLI and GitHub Action.
 
-## Development server
+## What this app is for
 
-To start a local development server, run:
+The web app provides an interactive surface for the broader platform experience around Code Evolution Lab. Depending on the part of the repository you are working on, that can include:
 
-```bash
-ng serve
-```
+- Reviewing analysis workflows in a browser instead of the terminal
+- Connecting the UI to the backend API for interactive diagnostics
+- Experimenting with contributor-facing dashboards and project views
+- Validating frontend flows around repository analysis and reporting
 
-Once the server is running, open your browser and navigate to `http://localhost:8201/`. The application will automatically reload whenever you modify any of the source files.
+If you only want to scan a codebase locally or in CI, use the published CLI in [`packages/cli`](../../packages/cli/README.md) or the GitHub Action in [`packages/github-action`](../../packages/github-action/README.md).
 
-## Code scaffolding
+## Local development
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
+### Prerequisites
 
-```bash
-ng generate component component-name
-```
+- **Node.js** 18+
+- **npm** 9+
+- The backend API running locally if you are working on integrated flows
 
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
-
-```bash
-ng generate --help
-```
-
-## Building
-
-To build the project run:
+### Start the app
 
 ```bash
-ng build
+npm install
+npm start
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+Open `http://localhost:8201/` in your browser.
 
-## Running unit tests
+The application reloads automatically when you modify source files.
 
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+## Recommended workflow
+
+For full-stack local development:
+
+1. Start the backend API from the repository's `backend` project
+2. Start this Angular app with `npm start`
+3. Use the browser UI to exercise the flows you are changing
+
+## Common commands
 
 ```bash
-ng test
+# Start development server
+npm start
+
+# Create a production build
+npm run build
+
+# Run unit tests
+npm test
 ```
 
-## Running end-to-end tests
+Production builds are written to the app's `dist/` output directory.
 
-For end-to-end (e2e) testing, run:
+## Project structure
 
-```bash
-ng e2e
-```
+| Path | Purpose |
+|------|---------|
+| `src/app/components/` | UI components and feature views |
+| `src/app/services/` | API clients and frontend orchestration |
+| `src/app/guards/` | Routing and access guards |
+| `src/environments/` | Environment-specific configuration |
 
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
+## When to update this README
 
-## Additional Resources
+Update this document when the web app's role changes significantly, especially if you add:
 
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+- New contributor workflows
+- New backend dependencies or environment requirements
+- New build, test, or preview commands
+- New top-level feature areas worth documenting for other contributors
+
+## Additional resources
+
+- **Root project overview:** [`README.md`](../../README.md)
+- **CLI documentation:** [`packages/cli/README.md`](../../packages/cli/README.md)
+- **Docs index:** [`docs/README.md`](../../docs/README.md)
+- **Angular CLI reference:** [angular.dev/tools/cli](https://angular.dev/tools/cli)

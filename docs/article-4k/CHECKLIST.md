@@ -11,7 +11,7 @@
 - [ ] Update root `.gitignore` for new package artifacts
 - [ ] Create `packages/core-engine/package.json`
 - [ ] Create `packages/core-engine/tsconfig.json`
-- [ ] Create `packages/cli/package.json` (bin: `code-evolution`)
+- [ ] Create `packages/cli/package.json` (bin: `code-evolution-lab`)
 - [ ] Create `packages/cli/tsconfig.json`
 
 ### 1.2 Core Engine — Types & Registry
@@ -50,10 +50,10 @@
 
 ### 1.5 CLI — Commands
 - [ ] `packages/cli/src/index.ts` — Commander.js program setup
-- [ ] `packages/cli/src/commands/analyze.ts` — `code-evolution analyze [path]`
-- [ ] `packages/cli/src/commands/replay.ts` — `code-evolution replay [study]`
-- [ ] `packages/cli/src/commands/baseline.ts` — `code-evolution baseline create|compare`
-- [ ] `packages/cli/bin/code-evolution.js` — shebang entry point
+- [ ] `packages/cli/src/commands/analyze.ts` — `code-evolution-lab analyze [path]`
+- [ ] `packages/cli/src/commands/replay.ts` — `code-evolution-lab replay [study]`
+- [ ] `packages/cli/src/commands/baseline.ts` — `code-evolution-lab scan|compare`
+- [ ] `packages/cli/bin/code-evolution-lab.js` — shebang entry point
 
 ### 1.6 Documentation (Phase 1)
 - [ ] `packages/core-engine/README.md` — engine API docs
@@ -61,19 +61,19 @@
 - [ ] `docs/article-4k/article-draft.md` — Article #4K full content draft
 
 ### 1.7 Validation (Phase 1)
-- [ ] Run `code-evolution analyze` against Study 04 real-world corpus repos
-- [ ] Run `code-evolution analyze` against Study 03 sample repos
+- [ ] Run `code-evolution-lab analyze` against Study 04 real-world corpus repos
+- [ ] Run `code-evolution-lab analyze` against Study 03 sample repos
 - [ ] Verify `.codeevolution/` output files are well-formed
-- [ ] Verify `npx code-evolution` works from clean install
-- [ ] Verify `code-evolution replay` can re-run Study 04 benchmarks
+- [ ] Verify `npx code-evolution-lab` works from clean install
+- [ ] Verify `code-evolution-lab replay` can re-run Study 04 benchmarks
 
 ---
 
 ## Phase 2 — GitHub Action + Baseline System (Weeks 3–5)
 
 ### 2.1 Baseline Snapshot
-- [ ] Implement `baseline create` in CLI → writes `.codeevolution/baseline.json`
-- [ ] Implement `baseline compare` in CLI → reads baseline, diffs against current
+- [ ] Implement `scan` in CLI → writes `.codeevolution/baseline.json`
+- [ ] Implement `compare` in CLI → reads baseline, diffs against current
 - [ ] Define baseline.json schema (version, timestamp, issue hashes, summary)
 - [ ] Implement issue hash function (stable across runs for same issue)
 

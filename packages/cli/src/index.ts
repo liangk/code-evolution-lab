@@ -2,13 +2,14 @@ import { Command } from 'commander';
 import { analyzeCommand } from './commands/analyze';
 import { baselineCommand } from './commands/baseline';
 import { replayCommand } from './commands/replay';
+import packageJson from '../package.json';
 
 const program = new Command();
 
 program
   .name('code-evolution-lab')
   .description('Evolution-Aware Static Analysis — empirical software diagnostics as code')
-  .version('1.0.0');
+  .version(packageJson.version);
 
 program
   .command('analyze [path]')

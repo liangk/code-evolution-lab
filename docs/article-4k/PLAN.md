@@ -44,16 +44,16 @@ code-evolution-lab/                    # Monorepo root
       tsconfig.json
       README.md
 
-    cli/                               # CLI entry point (published as `code-evolution`)
+    cli/                               # CLI entry point (published as `code-evolution-lab`)
       src/
         index.ts                       # Commander.js CLI setup
         commands/
-          analyze.ts                   # code-evolution analyze <path>
-          replay.ts                    # code-evolution replay [study] --quick
-          baseline.ts                  # code-evolution baseline create|compare
+          analyze.ts                   # code-evolution-lab analyze <path>
+          replay.ts                    # code-evolution-lab replay [study] --quick
+          baseline.ts                  # code-evolution-lab scan|compare implementation
       bin/
-        code-evolution.js              # Shebang entry point
-      package.json                     # name: "code-evolution"
+        code-evolution-lab.js          # Shebang entry point
+      package.json                     # name: "code-evolution-lab"
       tsconfig.json
 
     replay/                            # Bundled benchmark suites (self-contained)
@@ -180,20 +180,20 @@ Rules derived from existing detectors:
 
 ```bash
 # Analyze a project
-npx code-evolution analyze [path]
+npx code-evolution-lab analyze [path]
   --format json|markdown|console     # Output format (default: all)
   --severity high|medium|low         # Minimum severity filter
   --category loop|memory|index       # Filter by category
   --output <dir>                     # Output directory (default: .codeevolution/)
 
 # Replay study benchmarks (requires study dependencies)
-npx code-evolution replay [study]
+npx code-evolution-lab replay [study]
   --study 01|02|03|04|05             # Specific study to replay
   --quick                            # Reduced trial count for quick validation
 
-# Baseline management
-npx code-evolution baseline create   # Snapshot current state
-npx code-evolution baseline compare  # Compare against last snapshot
+# Scan snapshot workflow
+npx code-evolution-lab scan          # Snapshot current state
+npx code-evolution-lab compare       # Compare against last snapshot
 ```
 
 **Package setup:**
@@ -201,7 +201,7 @@ npx code-evolution baseline compare  # Compare against last snapshot
 - chalk for colored output
 - ora for spinners
 - Dependencies: `@code-evolution/core-engine`
-- Bin entry: `code-evolution` → `bin/code-evolution.js`
+- Bin entry: `code-evolution-lab` → `bin/code-evolution-lab.js`
 
 ### 1.3 Deterministic Output Format
 
@@ -266,7 +266,7 @@ Based on: 5 empirical studies, 200+ benchmarks, 40+ real-world repos
 2. **Prior work:** 4 completed empirical studies exposed recurring patterns
 3. **Breakthrough:** These patterns are now executable against *any* codebase
 4. **Demo:** Run against samples + well-known OSS project
-5. **Call to action:** `npx code-evolution analyze my-project`
+5. **Call to action:** `npx code-evolution-lab analyze my-project`
 
 **Target:** ~4,000 words, published on stackinsight.dev
 
@@ -296,7 +296,7 @@ inputs:
 ```
 
 **Action behavior on every PR:**
-1. Run `code-evolution analyze` on the repo
+1. Run `code-evolution-lab analyze` on the repo
 2. Filter findings to only changed files (diff-aware)
 3. Compare against `.codeevolution/baseline.json` if it exists
 4. Post PR comment with:
@@ -326,9 +326,9 @@ inputs:
 
 ### 2.2 Baseline Snapshot System
 
-**Create baseline:**
+**Create scan snapshot:**
 ```bash
-npx code-evolution baseline create
+npx code-evolution-lab scan
 # Writes .codeevolution/baseline.json
 ```
 
@@ -343,15 +343,15 @@ npx code-evolution baseline create
 }
 ```
 
-**Compare baseline:**
+**Compare scan snapshot:**
 ```bash
-npx code-evolution baseline compare
+npx code-evolution-lab compare
 # Outputs diff: new issues, resolved issues, score delta
 ```
 
 **Integration with CI:**
-- First `baseline create` is run manually and committed
-- CI runs `baseline compare` on every PR
+- First `scan` is run manually and committed
+- CI runs `compare` on every PR
 - New issues → warning or failure
 - Resolved issues → positive signal
 
@@ -379,7 +379,7 @@ External dependencies:
 1. **Monorepo:** npm workspaces in root `package.json`
 2. **Package names:**
    - `@code-evolution/core-engine`
-   - `code-evolution` (CLI, the `npx` entry)
+   - `code-evolution-lab` (CLI, the `npx` entry)
    - `code-evolution-action` (GitHub Marketplace)
 3. **Build:** TypeScript → CommonJS via tsc
 4. **Publish:** npm for CLI + core-engine, GitHub Marketplace for action

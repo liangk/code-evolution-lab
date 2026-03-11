@@ -1,6 +1,6 @@
 # Code Evolution Lab Documentation
 
-Welcome to the documentation for **Code Evolution Lab** — an AI-powered evolutionary code optimization platform that combines static code analysis with genetic algorithms to automatically detect performance issues and generate optimized solutions.
+Welcome to the documentation index for **Code Evolution Lab**. This documentation covers the repository's public tooling, supporting packages, contributor workflows, and architecture notes for the empirical diagnostics platform built around [`liangk/empirical-study`](https://github.com/liangk/empirical-study).
 
 ## Table of Contents
 
@@ -38,44 +38,44 @@ Welcome to the documentation for **Code Evolution Lab** — an AI-powered evolut
 
 ## Overview
 
-Code Evolution Lab is an intelligent code analysis platform that detects performance anti-patterns in JavaScript/TypeScript codebases and generates optimized solutions using evolutionary algorithms.
+Code Evolution Lab packages empirical software diagnostics into practical developer workflows. The documentation in this directory is meant to help contributors and users understand:
+
+- What each package in the repository is responsible for
+- How to run the CLI and GitHub Action effectively
+- How the backend, frontend, and shared packages fit together
+- Where to find architecture and reference material when modifying the codebase
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **Deep Code Analysis** | AST-based detection of N+1 queries, memory leaks, inefficient loops, and more |
-| **Evolutionary Solutions** | Genetic algorithms generate and evolve multiple solution candidates |
-| **Fitness Scoring** | Solutions ranked by performance, complexity, and maintainability |
-| **GitHub Integration** | Analyze entire repositories with OAuth authentication |
-| **Real-time Progress** | Server-Sent Events for live evolution progress tracking |
-| **Modern Web UI** | Angular 21 dashboard with real-time analysis visualization |
+| **CLI workflows** | Local analysis, baseline snapshots, regression comparison, and study replay |
+| **GitHub Action workflows** | Pull request diagnostics with diff-aware reporting and baseline comparison |
+| **Shared analysis engine** | Reusable rule registry, reporters, and temporal comparison primitives |
+| **Architecture references** | Backend, frontend, and package-level structure documentation |
+| **Research alignment** | Documentation that connects tooling behavior back to empirical-study methodology |
 
 ### Project Structure
 
 ```
 code-evolution-lab/
 ├── apps/
-│   └── web/                    # Angular 21 frontend application
-├── backend/                    # Express.js API server
-│   ├── src/
-│   │   ├── api/               # REST API routes and middleware
-│   │   ├── analyzer/          # Code parsing and analysis
-│   │   ├── detectors/         # Issue detection modules
-│   │   ├── generators/        # Solution generation with evolutionary algorithm
-│   │   └── cli.ts             # Command-line interface
-│   └── prisma/                # Database schema and migrations
-├── packages/                   # Shared packages
-│   ├── core-engine/           # Unified detection engine
-│   ├── cli/                   # Published CLI tool
-│   ├── replay/                # Benchmark replay framework
-│   └── github-action/         # GitHub Action for CI/CD
-└── docs/                      # Documentation
+│   └── web/                    # Angular web interface
+├── backend/                    # Express.js API and legacy platform services
+├── packages/                   # Public tooling packages
+│   ├── core-engine/           # Shared detection engine + reporters
+│   ├── cli/                   # Published npm CLI
+│   ├── replay/                # Replayable benchmark suites
+│   └── github-action/         # GitHub Action for PR diagnostics
+└── docs/                      # Documentation index and references
 ```
 
 ### Quick Links
 
 - **Repository**: [GitHub](https://github.com/liangk/code-evolution-lab)
+- **CLI README**: [packages/cli/README.md](../packages/cli/README.md)
+- **Core Engine README**: [packages/core-engine/README.md](../packages/core-engine/README.md)
+- **GitHub Action README**: [packages/github-action/README.md](../packages/github-action/README.md)
 - **License**: MIT
 - **Author**: Ko-Hsin Liang
 

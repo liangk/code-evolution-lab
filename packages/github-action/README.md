@@ -74,10 +74,10 @@ For temporal comparison (recommended):
 
 ```bash
 # Install CLI
-npm install -g code-evolution
+npm install -g code-evolution-lab
 
 # Capture a scan snapshot and commit it
-code-evolution scan
+code-evolution-lab scan
 git add .codeevolution/baseline.json
 git commit -m "chore: add code evolution scan snapshot"
 ```
@@ -126,6 +126,6 @@ All rules are backed by controlled benchmarks with statistical significance test
 
 ## Links
 
-- **CLI:** [`code-evolution`](https://www.npmjs.com/package/code-evolution)
+- **CLI:** [`code-evolution-lab`](https://www.npmjs.com/package/code-evolution-lab)
 - **Research:** [github.com/liangk/empirical-study](https://github.com/liangk/empirical-study)
 - **Publication:** [stackinsight.dev](https://stackinsight.dev)

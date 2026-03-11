@@ -33,14 +33,14 @@ node dist/cli.js <file-or-pattern> [options]
 ### Analyze Files
 
 ```bash
-code-evolution-lab <file-or-pattern> [options]
+code-evolution-lab analyze [path] [options]
 ```
 
 **Arguments:**
 
 | Argument | Description |
 |----------|-------------|
-| `<file-or-pattern>` | File path or glob pattern (e.g., `src/**/*.ts`) |
+| `[path]` | Directory path to analyze (defaults to current directory) |
 
 **Options:**
 
@@ -66,53 +66,53 @@ code-evolution-lab <file-or-pattern> [options]
 
 ```bash
 # Analyze single file
-npm run analyze -- ./src/index.ts
+code-evolution-lab analyze ./src
 
 # Analyze all TypeScript files
-npm run analyze -- "src/**/*.ts"
+code-evolution-lab analyze .
 
 # Analyze with glob pattern
-npm run analyze -- "src/**/*.{ts,js}"
+code-evolution-lab analyze ./src --category loop
 ```
 
 ### With Solutions
 
 ```bash
 # Generate solutions for detected issues
-npm run analyze -- ./src/service.ts --solutions
+code-evolution-lab analyze ./src --severity high
 ```
 
 ### Output Formats
 
 ```bash
 # Text output (default)
-npm run analyze -- ./src/**/*.ts
+code-evolution-lab analyze ./src
 
 # JSON output
-npm run analyze -- ./src/**/*.ts --format json
+code-evolution-lab analyze ./src --json
 
 # SARIF output (for IDE integration)
-npm run analyze -- ./src/**/*.ts --format sarif -o report.sarif
+code-evolution-lab analyze ./src --output .codeevolution
 ```
 
 ### Filtering
 
 ```bash
 # Only show high and critical issues
-npm run analyze -- ./src/**/*.ts --min-severity high
+code-evolution-lab analyze ./src --severity high
 
 # Ignore test files
-npm run analyze -- ./src/**/*.ts --ignore "**/*.test.ts" --ignore "**/*.spec.ts"
+code-evolution-lab analyze ./src --category memory
 ```
 
 ### CI Integration
 
 ```bash
 # Fail CI if any critical issues found
-npm run analyze -- ./src/**/*.ts --fail-on critical
+code-evolution-lab analyze ./src
 
 # Fail if high or critical issues found
-npm run analyze -- ./src/**/*.ts --fail-on high
+code-evolution-lab analyze ./src --severity high
 ```
 
 ## Output Formats
