@@ -121,7 +121,6 @@ Thumbs.db
 
 # Package build artifacts
 packages/*/dist/
-packages/github-action/action-dist/
 results/
 
 # Prisma generated clients

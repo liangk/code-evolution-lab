@@ -1,12 +1,14 @@
-# Code Evolution GitHub Action
+# Code Evolution Lab GitHub Action
 
 > Detect performance anti-patterns on every PR — backed by empirical evidence from 5 research studies
 
 ## Quick Start
 
+Use the published action from this repository (no local packaging required):
+
 ```yaml
 # .github/workflows/code-evolution.yml
-name: Code Evolution Diagnostics
+name: Code Evolution Lab Diagnostics
 on: [pull_request]
 
 jobs:
@@ -14,10 +16,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: liangk/empirical-study/packages/github-action@main
+      - uses: liangk/code-evolution-lab/packages/github-action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
+
+Notes for users:
+
+- Replace `@v1` with a specific version or `@main` if you want the latest commit (less stable).
+- No npm install is needed; the action bundles the CLI.
+- Set `github-token` to `${{ secrets.GITHUB_TOKEN }}` so the action can post PR comments and access the repo.
+- Optional: add a baseline by committing `.codeevolution/baseline.json` (generated via the CLI) to enable regression comparisons.
 
 ## What It Does
 
