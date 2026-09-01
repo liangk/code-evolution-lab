@@ -6,7 +6,10 @@ export function generateScoreText(report: AnalysisReport): string {
   const { summary } = report;
   let text = `${summary.confidenceScore}/100\n\nBreakdown:\n`;
 
-  const categories: DiagnosticCategory[] = ['loop', 'memory', 'index'];
+  const categories: DiagnosticCategory[] = [
+    'n1', 'blocking-io', 'memory', 'loop', 'index',
+    'resource', 'bundle', 'dom', 'payload', 'redos', 'caching',
+  ];
   for (const cat of categories) {
     const catIssues = report.issues.filter(i => i.category === cat);
     if (catIssues.length === 0) {
@@ -23,7 +26,7 @@ export function generateScoreText(report: AnalysisReport): string {
     text += `  ${cat.padEnd(18)} ${String(catScore).padStart(3)}/100 (${catIssues.length} issues, ${highConf} high-confidence)\n`;
   }
 
-  text += `\nBased on: 5 completed empirical studies, controlled benchmarks, and real-world corpus scans\n`;
+  text += `\nBased on: 11 completed empirical studies, controlled benchmarks, and real-world corpus scans\n`;
   text += `Generated: ${report.timestamp}\n`;
   return text;
 }

@@ -24,7 +24,7 @@ export function formatPrComment(report: AnalysisReport, diff?: BaselineDiff): st
   let md = `## Code Evolution Diagnostics\n\n`;
 
   // Summary table
-  const cats: DiagnosticCategory[] = ['loop', 'memory', 'index'];
+  const cats: DiagnosticCategory[] = ['n1', 'loop', 'memory', 'payload', 'index', 'blocking-io', 'redos', 'bundle', 'dom', 'caching', 'resource'];
   if (diff) {
     md += `| Category | New | Resolved | Total |\n|----------|-----|----------|-------|\n`;
     for (const cat of cats) {

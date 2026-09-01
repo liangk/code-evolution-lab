@@ -2,7 +2,7 @@
 
 > Evolution-Aware Static Analysis — empirical software diagnostics as code
 
-`code-evolution-lab` scans any JavaScript or TypeScript codebase for performance anti-patterns that are known to cause measurable degradation in production. Its rules are derived from **5 completed empirical studies** published in [liangk/empirical-study](https://github.com/liangk/empirical-study), which combine controlled benchmarks with static analysis evaluation and real-world corpus scans.
+`code-evolution-lab` scans any JavaScript or TypeScript codebase for performance anti-patterns that are known to cause measurable degradation in production. Its rules are derived from **11 completed empirical studies** published in [liangk/empirical-study](https://github.com/liangk/empirical-study), which combine controlled benchmarks with static analysis evaluation and real-world corpus scans.
 
 It is not a linter that flags style preferences. It flags patterns where measured evidence shows a **10×–64× performance cost** at realistic data scales — and it tells you the exact magnitude.
 
@@ -78,20 +78,30 @@ Analyzes the target directory (default: current directory) and produces:
 - `.codeevolution/hotspots.md` — human-readable Markdown report with code context
 - `.codeevolution/confidence-score.txt` — the overall 0–100 health score
 
-The scan covers 16 rules across three categories derived from empirical studies:
+The scan covers 35 rules across 11 categories derived from empirical studies:
 
 | Category | Patterns detected | Source study |
 |----------|-------------------|-------------|
+| **N+1** | ORM/DB call made once per loop iteration | Study 01 — N+1 Query |
+| **Blocking I/O** | Sync file, crypto, child-process, DB calls | Study 02 — Blocking I/O |
 | **Loop** | Regex in loop, JSON.parse in loop, sequential await, nested loops, nested/chained array methods | Study 04 — Loop Performance |
 | **Memory** | Missing useEffect cleanup, event listener leaks, timer leaks, RxJS subscription leaks, Observer leaks, Vue/Angular lifecycle leaks | Study 03 — Memory Leaks |
 | **Index** | Missing FK index, missing filter/sort index, missing composite index (Prisma schemas) | Study 05 — Missing Index |
+| **Resource** | Unclosed connections, streams, file handles | Study 06 — Resource Leaks |
+| **Bundle** | Heavy package imports, namespace imports that block tree-shaking | Study 07 — Bundle Bloat |
+| **DOM** | DOM manipulation in loops, innerHTML XSS risk, document.write() | Study 08 — DOM Manipulation |
+| **Payload** | Unbounded queries, unpaginated return payloads | Study 09 — Large Payloads |
+| **ReDoS** | Dangerous nested-quantifier patterns, regex applied to user input | Study 10 — ReDoS |
+| **Caching** | Repeated expensive calls, uncached API/DB calls in hot paths | Study 11 — Caching |
+
+Full per-rule detail for every category is in [Detection Rules](#detection-rules) below.
 
 **Options:**
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `-s, --severity <level>` | Minimum severity to report: `critical\|high\|medium\|low` | `low` |
-| `-c, --category <cat>` | Filter to one category: `loop\|memory\|index` | all |
+| `-c, --category <cat>` | Filter to one category: `n1\|blocking-io\|loop\|memory\|index\|resource\|bundle\|dom\|payload\|redos\|caching` | all |
 | `-o, --output <dir>` | Directory for output files | `.codeevolution/` |
 | `--json` | Output JSON to stdout only (suppresses console output) | false |
 | `--no-files` | Skip writing output files to disk | false |
@@ -268,7 +278,7 @@ All output is written to `.codeevolution/` by default (override with `--output`)
     "filesScanned": 1247,
     "issuesFound": 42,
     "bySeverity": { "critical": 2, "high": 15, "medium": 25, "low": 0 },
-    "byCategory": { "loop": 18, "memory": 12, "index": 12 },
+    "byCategory": { "n1": 3, "blocking-io": 2, "loop": 18, "memory": 12, "index": 7 },
     "confidenceScore": 73
   },
   "issues": [
@@ -344,6 +354,65 @@ These patterns are detected from **Prisma schema files** combined with query cal
 | `index/missing-sort-index` | medium | Field used in `.orderBy()` with no `@@index` | Database sorts the full result set in memory instead of using an index |
 | `index/missing-composite` | medium | Multiple fields used together in `.where()` with no `@@index([a, b])` | Two separate single-column indexes are far less efficient than one composite |
 
+### N+1 Rules (Study 01 — N+1 Query)
+
+| Rule | Severity | What it detects | Measured cost |
+|------|----------|----------------|--------------|
+| `n1/query-in-loop` | high–critical | ORM/DB finder method (`findUnique`, `findMany`, `query`, etc.) called inside a loop | **10–100× slower** at 100K rows vs. a single batched query |
+
+### Blocking I/O Rules (Study 02 — Blocking I/O)
+
+| Rule | Severity | What it detects | Measured cost |
+|------|----------|----------------|--------------|
+| `blocking-io/sync-file-operation` | medium–critical | `readFileSync`/`writeFileSync`/etc. blocking the event loop | **5–15× slower** under concurrent load |
+| `blocking-io/sync-crypto-operation` | medium–high | `pbkdf2Sync`, `scryptSync`, `randomBytes`, etc. | CPU-intensive, blocks the event loop |
+| `blocking-io/sync-child-process` | high | `execSync`, `execFileSync`, `spawnSync` | Blocks until the child process exits |
+| `blocking-io/sync-database-operation` | critical | `querySync`/`runSync`-style DB calls | Blocks all concurrent requests |
+
+### Resource Rules (Study 06 — Resource Leaks)
+
+| Rule | Severity | What it detects | Real-world impact |
+|------|----------|----------------|------------------|
+| `resource/unclosed-connection` | high | DB/socket connection with no apparent close/release | Connection pool exhaustion under load |
+| `resource/unclosed-stream` | high | Read/write stream with no apparent close/destroy | File descriptor leak |
+| `resource/unclosed-file-handle` | high | `fs.open()`/`openSync()` with no matching close | System file-handle exhaustion |
+
+### Bundle Rules (Study 07 — Bundle Bloat)
+
+| Rule | Severity | What it detects | Real-world impact |
+|------|----------|----------------|------------------|
+| `bundle/heavy-package-import` | medium | Import of a known-heavy package (moment, lodash, jquery, etc.) | Adds tens to hundreds of KB to the bundle |
+| `bundle/namespace-import` | high | `import * as` on a tree-shakable package | Pulls in the entire package regardless of usage |
+
+### DOM Rules (Study 08 — DOM Manipulation)
+
+| Rule | Severity | What it detects | Real-world impact |
+|------|----------|----------------|------------------|
+| `dom/manipulation-in-loop` | medium–high | `appendChild`/innerHTML/etc. inside a loop | Repeated reflow/repaint per iteration |
+| `dom/innerhtml-user-input` | critical | `innerHTML` assigned from unsanitized user input | XSS vulnerability |
+| `dom/document-write` | high | `document.write()`/`writeln()` | Blocks HTML parsing |
+
+### Payload Rules (Study 09 — Large Payloads)
+
+| Rule | Severity | What it detects | Real-world impact |
+|------|----------|----------------|------------------|
+| `payload/unbounded-query` | medium | `findAll`/`findMany` without field selection or a row limit | Loads unnecessary data over the network |
+| `payload/large-return` | high | Function returns unbounded query results directly | Memory pressure and slow responses at scale |
+
+### ReDoS Rules (Study 10 — ReDoS)
+
+| Rule | Severity | What it detects | Real-world impact |
+|------|----------|----------------|------------------|
+| `redos/dangerous-pattern` | medium–critical | Nested-quantifier regex patterns (e.g. `(a+)+`) or high complexity score | Catastrophic backtracking — denial of service |
+| `redos/regex-user-input` | high | Regex method applied to a value that looks like user input | Malicious input can trigger a hang |
+
+### Caching Rules (Study 11 — Caching)
+
+| Rule | Severity | What it detects | Real-world impact |
+|------|----------|----------------|------------------|
+| `caching/repeated-expensive-call` | medium | The same expensive call repeated in one function | Wasted redundant network/DB round-trips |
+| `caching/api-without-cache` | medium | fetch/axios/DB call in a hot path (render/handler/effect) with no cache indicator nearby | Uncached calls add latency to every invocation |
+
 ---
 
 ## CI Integration
@@ -399,7 +468,7 @@ steps:
 
 ## Empirical Research Backing
 
-`code-evolution-lab` is built on top of 5 completed empirical studies published in [`liangk/empirical-study`](https://github.com/liangk/empirical-study). Across the completed studies, the methodology combines controlled benchmark experiments, static analysis evaluation, and real-world corpus scans.
+`code-evolution-lab` is built on top of 11 completed empirical studies published in [`liangk/empirical-study`](https://github.com/liangk/empirical-study). Across the completed studies, the methodology combines controlled benchmark experiments, static analysis evaluation, and real-world corpus scans.
 
 | Study | Topic | Key finding |
 |-------|-------|------------|
@@ -408,6 +477,12 @@ steps:
 | Study 03 | Memory Leaks | Missing cleanup causes heap to grow proportionally with component mount count |
 | Study 04 | Loop Performance | Nested loops and JSON.parse-in-loop up to 64× and 46× slower at large n |
 | Study 05 | Prisma Missing Index | Missing composite indexes add full-table-scan cost to every filtered query |
+| Study 06 | Resource Leaks | Unclosed connections/streams/handles exhaust system resources under sustained load |
+| Study 07 | Bundle Bloat | Heavy dependencies and namespace imports add tens to hundreds of KB per bundle |
+| Study 08 | DOM Manipulation | Unbatched DOM writes in loops trigger repeated reflow/repaint |
+| Study 09 | Large Payloads | Unbounded queries return far more data than clients need, adding network cost |
+| Study 10 | ReDoS | Nested-quantifier regex patterns can hang on crafted input (catastrophic backtracking) |
+| Study 11 | Caching | Uncached hot-path calls repeat identical work on every invocation |
 
 Raw data, methodology, and benchmark code are available in the [empirical-study repository](https://github.com/liangk/empirical-study). Use `code-evolution-lab replay` to run any study benchmark locally.
 

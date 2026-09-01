@@ -118,13 +118,26 @@ export function analyzeFile(
   const needsAst = applicable.some(r => r.needsAst);
   const ast = needsAst ? tryParseAst(content) : null;
 
+  // Several RuleDefinitions commonly share one detect() function — one AST
+  // traversal that emits every issue for its whole rule family in a single
+  // call, with each issue already tagged with its own specific `rule` id.
+  // Calling detect() once per RuleDefinition (instead of once per unique
+  // function) would replay that same full traversal result once per sibling
+  // rule id, duplicating every real finding N times over. Deduplicate by
+  // function identity, and filter each family's output down to the rule ids
+  // actually enabled for this scan, so a `rules`/`categories` filter applies
+  // correctly even when several ids share one detector.
+  const uniqueDetectors = new Set(applicable.map(r => r.detect));
+  const enabledRuleIds = new Set(applicable.map(r => r.id));
+
   const issues: DiagnosticIssue[] = [];
-  for (const rule of applicable) {
+  for (const detect of uniqueDetectors) {
+    const owner = applicable.find(r => r.detect === detect);
     try {
-      const found = rule.detect(relPath, content, rule.needsAst ? ast : undefined);
-      issues.push(...found);
+      const found = detect(relPath, content, owner?.needsAst ? ast : undefined);
+      issues.push(...found.filter(i => enabledRuleIds.has(i.rule)));
     } catch {
-      // Rule failed on this file — skip silently
+      // Rule family failed on this file — skip silently
     }
   }
 
@@ -180,7 +193,10 @@ export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): 
 
 function buildSummary(filesScanned: number, issues: DiagnosticIssue[]): AnalysisSummary {
   const bySeverity: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-  const byCategory: Record<DiagnosticCategory, number> = { loop: 0, memory: 0, index: 0 };
+  const byCategory: Record<DiagnosticCategory, number> = {
+    n1: 0, 'blocking-io': 0, memory: 0, loop: 0, index: 0,
+    resource: 0, bundle: 0, dom: 0, payload: 0, redos: 0, caching: 0,
+  };
 
   for (const i of issues) {
     bySeverity[i.severity]++;

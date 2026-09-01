@@ -8,7 +8,7 @@ It is designed for teams that want the detection engine without coupling themsel
 
 ## What this package provides
 
-- **16 detection rules** derived from 5 empirical studies
+- **35 detection rules** derived from all 11 empirical studies
 - **Babel AST analysis** for JavaScript/TypeScript patterns
 - **Prisma schema analysis** for missing database indexes
 - **Reporting** in JSON, Markdown, and console formats
@@ -31,9 +31,17 @@ It is designed for teams that want the detection engine without coupling themsel
 
 | Category | What it covers | Origin |
 |----------|----------------|--------|
-| **Loop** | Nested loops, sequential await, regex/JSON work inside loops, nested/chained array methods | Study 04 — Loop Performance |
+| **N+1** | ORM/DB calls made once per loop iteration instead of a batched query | Study 01 — N+1 Query |
+| **Blocking I/O** | Sync file, crypto, child-process, and DB calls that block the event loop | Study 02 — Blocking I/O |
 | **Memory** | React/Vue/Angular cleanup issues, listener leaks, timer leaks, subscription leaks, observer leaks | Study 03 — Memory Leaks |
+| **Loop** | Nested loops, sequential await, regex/JSON work inside loops, nested/chained array methods | Study 04 — Loop Performance |
 | **Index** | Missing Prisma foreign-key, filter, sort, and composite indexes | Study 05 — Missing Index |
+| **Resource** | Unclosed connections, streams, and file handles | Study 06 — Resource Leaks |
+| **Bundle** | Heavy package imports and namespace imports that defeat tree-shaking | Study 07 — Bundle Bloat |
+| **DOM** | DOM manipulation in loops, innerHTML XSS risk, document.write() | Study 08 — DOM Manipulation |
+| **Payload** | Unbounded queries and unpaginated return payloads | Study 09 — Large Payloads |
+| **ReDoS** | Regex patterns vulnerable to catastrophic backtracking | Study 10 — ReDoS |
+| **Caching** | Repeated expensive calls and uncached API/DB calls in hot paths | Study 11 — Caching |
 
 Every issue emitted by the engine carries rule metadata, severity, a recommendation, and research context such as `studyReference` and `empiricalSpeedup` when available.
 
@@ -94,7 +102,9 @@ interface DiagnosticIssue {
   confidence: number;        // 0.0–1.0
 }
 
-type DiagnosticCategory = 'loop' | 'memory' | 'index';
+type DiagnosticCategory =
+  | 'n1' | 'blocking-io' | 'memory' | 'loop' | 'index'
+  | 'resource' | 'bundle' | 'dom' | 'payload' | 'redos' | 'caching';
 type Severity = 'critical' | 'high' | 'medium' | 'low';
 ```
 

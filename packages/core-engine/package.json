@@ -1,12 +1,15 @@
 {
   "name": "@code-evolution/core-engine",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Unified detection engine for empirical software diagnostics",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch"
+    "build": "node scripts/clean-dist.js && tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@babel/parser": "^7.28.5",
@@ -16,7 +19,10 @@
   },
   "devDependencies": {
     "@types/babel__traverse": "^7.20.0",
+    "@types/jest": "^29.5.0",
     "@types/node": "^22.13.1",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
     "typescript": "^5.7.3"
   },
   "files": ["dist"],

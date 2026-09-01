@@ -2,7 +2,18 @@
 // Diagnostic categories — one per empirical study domain
 // ---------------------------------------------------------------------------
 
-export type DiagnosticCategory = 'loop' | 'memory' | 'index';
+export type DiagnosticCategory =
+  | 'n1'
+  | 'blocking-io'
+  | 'memory'
+  | 'loop'
+  | 'index'
+  | 'resource'
+  | 'bundle'
+  | 'dom'
+  | 'payload'
+  | 'redos'
+  | 'caching';
 
 // ---------------------------------------------------------------------------
 // Severity levels

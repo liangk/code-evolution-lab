@@ -14,7 +14,7 @@ import {
 } from '@code-evolution/core-engine';
 import type { AnalysisReport, BaselineSnapshot, BaselineDiff, Severity } from '@code-evolution/core-engine';
 import { formatPrComment } from './pr-comment';
-import { filterByChangedFiles } from './diff-filter';
+import { getChangedFiles, filterReportByFiles, filterIssuesByFiles } from './diff-filter';
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
 
@@ -49,7 +49,7 @@ async function run(): Promise<void> {
     core.setOutput('issues-found', report.summary.issuesFound);
     core.setOutput('confidence-score', report.summary.confidenceScore);
 
-    // Baseline comparison
+    // Baseline comparison (repo-wide — tracks overall drift since the baseline was captured)
     let diff: BaselineDiff | undefined;
     const baselinePath = join(outputDir, 'baseline.json');
 
@@ -61,14 +61,26 @@ async function run(): Promise<void> {
       core.info(`Baseline comparison: +${diff.newIssues.length} new, -${diff.resolvedIssues.length} resolved`);
     }
 
-    // Filter to changed files only (for PR context)
+    // Scope everything PR-facing (comment + fail check) to the files this PR
+    // actually changed, so a pre-existing issue elsewhere in the repo can't
+    // fail a PR that never touched it, and the comment's summary table always
+    // matches its itemized lists.
     let filteredReport = report;
+    let prDiff = diff;
     const context = github.context;
     if (context.payload.pull_request) {
       try {
         const token = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
         if (token) {
-          filteredReport = await filterByChangedFiles(report, context, token);
+          const changedFiles = await getChangedFiles(context, token);
+          filteredReport = filterReportByFiles(report, changedFiles);
+          if (diff) {
+            prDiff = {
+              ...diff,
+              newIssues: filterIssuesByFiles(diff.newIssues, changedFiles),
+              resolvedIssues: filterIssuesByFiles(diff.resolvedIssues, changedFiles),
+            };
+          }
         }
       } catch (err) {
         core.warning(`Could not filter by changed files: ${(err as Error).message}`);
@@ -79,7 +91,7 @@ async function run(): Promise<void> {
     if (postComment && context.payload.pull_request) {
       const token = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
       if (token) {
-        const comment = formatPrComment(filteredReport, diff);
+        const comment = formatPrComment(filteredReport, prDiff);
         const octokit = github.getOctokit(token);
         await octokit.rest.issues.createComment({
           ...context.repo,
@@ -94,10 +106,12 @@ async function run(): Promise<void> {
     core.info(`Issues: ${report.summary.issuesFound}`);
     core.info(`Score: ${report.summary.confidenceScore}/100`);
 
-    // Fail check if threshold exceeded
+    // Fail check if threshold exceeded — scoped to the PR's changed files on
+    // PR runs (filteredReport === report on push/schedule runs, where there's
+    // no "changed files" concept to scope to).
     if (failOn !== 'none') {
       const failOrder = SEVERITY_ORDER[failOn] ?? 0;
-      const hasFailure = report.issues.some(i => SEVERITY_ORDER[i.severity] <= failOrder);
+      const hasFailure = filteredReport.issues.some(i => SEVERITY_ORDER[i.severity] <= failOrder);
       if (hasFailure) {
         core.setFailed(`Issues found at severity '${failOn}' or above.`);
       }

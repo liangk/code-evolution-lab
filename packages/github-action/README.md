@@ -32,11 +32,11 @@ Notes for users:
 
 On every pull request, this action:
 
-1. **Scans** your codebase for 16 empirically-validated anti-patterns
+1. **Scans** your codebase for 35 empirically-validated anti-patterns across all 11 detector categories
 2. **Filters** to only report issues in files changed by the PR
 3. **Compares** against your baseline (if `.codeevolution/baseline.json` exists)
 4. **Comments** on the PR with actionable diagnostics and empirical evidence
-5. **Fails** the check if critical issues are introduced
+5. **Fails** the check if critical issues are introduced by the PR
 
 ## PR Comment Example
 
@@ -127,9 +127,17 @@ The action will automatically compare against this baseline on every PR.
 
 | Category | Rules | Source Study |
 |----------|-------|-------------|
-| **Loop** | 6 anti-patterns (regex, JSON.parse, await, nested, chained) | Study 04: Loop Performance |
+| **N+1** | 1 anti-pattern (ORM/DB call inside a loop) | Study 01: N+1 Query |
+| **Blocking I/O** | 4 anti-patterns (sync file, crypto, child-process, DB) | Study 02: Blocking I/O |
 | **Memory** | 6 anti-patterns (useEffect, listeners, timers, subscriptions) | Study 03: Memory Leaks |
+| **Loop** | 6 anti-patterns (regex, JSON.parse, await, nested, chained) | Study 04: Loop Performance |
 | **Index** | 4 anti-patterns (FK, filter, sort, composite — Prisma) | Study 05: Missing Index |
+| **Resource** | 3 anti-patterns (connections, streams, file handles) | Study 06: Resource Leaks |
+| **Bundle** | 2 anti-patterns (heavy packages, namespace imports) | Study 07: Bundle Bloat |
+| **DOM** | 3 anti-patterns (loop manipulation, innerHTML XSS, document.write) | Study 08: DOM Manipulation |
+| **Payload** | 2 anti-patterns (unbounded queries, unpaginated returns) | Study 09: Large Payloads |
+| **ReDoS** | 2 anti-patterns (dangerous patterns, regex on user input) | Study 10: ReDoS |
+| **Caching** | 2 anti-patterns (repeated calls, uncached hot paths) | Study 11: Caching |
 
 All rules are backed by controlled benchmarks with statistical significance testing (Welch's t-test, Cohen's d, power-law regression).
 

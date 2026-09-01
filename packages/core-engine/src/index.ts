@@ -24,7 +24,21 @@ export type {
 } from './types';
 
 // Rules
-export { getAllRules, loopRules, memoryRules, indexRules, resetIndexRuleCache } from './rules';
+export {
+  getAllRules,
+  loopRules,
+  memoryRules,
+  indexRules,
+  resetIndexRuleCache,
+  n1Rules,
+  blockingIoRules,
+  resourceRules,
+  bundleRules,
+  domRules,
+  payloadRules,
+  redosRules,
+  cachingRules,
+} from './rules';
 
 // Reporters
 export {

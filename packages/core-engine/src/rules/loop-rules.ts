@@ -184,7 +184,7 @@ function detectLoopIssues(filePath: string, content: string, ast: any): Diagnost
 
       ForStatement(path: any) {
         const depth = countLoopDepth(path);
-        if (depth >= 2) {
+        if (depth >= 1) {
           const loc = path.node.loc?.start;
           if (!loc) return;
           issues.push({
@@ -203,7 +203,7 @@ function detectLoopIssues(filePath: string, content: string, ast: any): Diagnost
 
       ForOfStatement(path: any) {
         const depth = countLoopDepth(path);
-        if (depth >= 2) {
+        if (depth >= 1) {
           const loc = path.node.loc?.start;
           if (!loc) return;
           issues.push({

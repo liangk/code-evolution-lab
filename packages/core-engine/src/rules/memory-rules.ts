@@ -45,10 +45,11 @@ function bodyContainsIndicator(code: string, node: any): string | null {
   return null;
 }
 
-function hasReturnInCallback(path: any): boolean {
+function hasReturnInCallback(node: any): boolean {
   let found = false;
   try {
-    path.traverse({
+    traverse(node, {
+      noScope: true,
       ReturnStatement() { found = true; },
       ArrowFunctionExpression() { /* skip nested */ },
       FunctionExpression() { /* skip nested */ },
@@ -91,7 +92,7 @@ function detectMemoryIssues(filePath: string, content: string, ast: any): Diagno
           const callback = node.arguments[0];
           if (callback && (callback.type === 'ArrowFunctionExpression' || callback.type === 'FunctionExpression')) {
             const indicator = bodyContainsIndicator(fileCode, callback);
-            if (indicator && !hasReturnInCallback(path.get('arguments.0'))) {
+            if (indicator && !hasReturnInCallback(callback)) {
               issues.push({
                 id: '', rule: 'memory/missing-effect-cleanup', category: 'memory', severity: 'critical',
                 file: filePath, line: loc.line, column: loc.column,
