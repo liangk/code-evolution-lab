@@ -13,7 +13,7 @@ import {
   writeScoreFile,
 } from '@code-evolution/core-engine';
 import type { BaselineSnapshot } from '@code-evolution/core-engine';
-import { resolveScanTargets } from '../target';
+import { resolveScanTargets, warnIfNothingScanned } from '../target';
 
 interface BaselineOptions {
   output?: string;
@@ -50,6 +50,7 @@ async function createBaselineSnapshot(
   registry.registerAll(getAllRules());
 
   const report = analyzeDirectory({ targetPath, includePaths }, registry);
+  warnIfNothingScanned(report.summary.filesScanned, includePaths ?? [targetPath]);
   const baseline = createBaseline(report);
 
   mkdirSync(outputDir, { recursive: true });
@@ -90,6 +91,7 @@ async function compareBaselineSnapshot(
   registry.registerAll(getAllRules());
 
   const report = analyzeDirectory({ targetPath, includePaths }, registry);
+  warnIfNothingScanned(report.summary.filesScanned, includePaths ?? [targetPath]);
   const diff = compareBaseline(baseline, report);
 
   printBaselineDiff(diff);

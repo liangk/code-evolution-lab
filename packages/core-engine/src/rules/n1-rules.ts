@@ -12,126 +12,45 @@
  * write-side N+1 — one `update`/`upsert`/`create` per item — was invisible
  * because the method list held only readers.
  *
- * Seven rounds of fixes against that corpus produced the structure below:
+ * Seven rounds of fixes against that corpus produced the structure below. The
+ * half that answers "is this a database call at all" now lives in
+ * `db-call-heuristics.ts`, shared with any other rule that needs it. What is
+ * left here is the half about loops:
  *
- *   1. Method names are split into DISTINCTIVE (evidence on their own; no
- *      Map, Set, Array or Promise has them) and AMBIGUOUS (only reported when
- *      something else corroborates: an ORM import, a query-builder chain, a
- *      known database handle, or a data-access receiver).
- *   2. A query in a nested loop belongs to the innermost loop that contains
- *      it, so one N+1 is not reported once per enclosing loop.
- *   3. Retry and polling loops are skipped — their iterations are attempts at
- *      one operation, not items in a collection.
- *   4. Pagination loops are skipped — one query per page of rows is the fix,
- *      not the bug.
- *   5. Loops over pre-chunked batches are skipped, and so is a query whose
- *      filter consumes the whole iterated item (`where: { id: { in: batch } }`).
- *   6. Bulk flushes (a write whose payload is a buffered array) are skipped.
- *   7. Drivers that stage writes and commit once (Firestore, DynamoDB) are
- *      skipped for transaction/batch receivers.
+ *   - A query in a nested loop belongs to the innermost loop that contains it,
+ *     so one N+1 is not reported once per enclosing loop.
+ *   - Retry and polling loops are skipped — their iterations are attempts at
+ *     one operation, not items in a collection.
+ *   - Pagination loops are skipped — one query per page of rows is the fix,
+ *     not the bug.
+ *   - Loops over pre-chunked batches are skipped, and so is a query whose
+ *     filter consumes the whole iterated item (`where: { id: { in: batch } }`).
+ *   - Bulk flushes (a write whose payload is a buffered array) are skipped.
+ *   - Fallback chains that return on the first success are skipped.
+ *   - Drivers that stage writes and commit once (Firestore, DynamoDB) are
+ *     skipped for transaction/batch receivers.
  *
- * Changing any list or veto here changes published study results. The reduced
- * corpus cases live in the study repository; keep them in sync.
+ * Changing any list or veto here — or in the shared module — changes published
+ * study results. The reduced corpus cases are in
+ * `__tests__/n1-rules.test.ts`; keep them in sync with the study repository.
  */
 
 import traverse from '@babel/traverse';
 import type { RuleDefinition, DiagnosticIssue, Severity } from '../types';
+import {
+  AMBIGUOUS_DB_METHODS,
+  DISTINCTIVE_DB_METHODS,
+  classifyDatabaseCall,
+  collectDbContext,
+  isDefinitelyNotADatabaseCall,
+  rootIdentifierName,
+  type DbContext,
+} from './db-call-heuristics';
 
 const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
 
-/**
- * Method names specific enough to ORMs that seeing one is strong evidence on
- * its own. None of these exist on Map, Set, Array, or Promise.
- */
-const DISTINCTIVE_DB_METHODS = new Set([
-  'findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
-  'findOne',
-  'findByPk', 'findAll', 'findAndCountAll', 'findOrCreate',
-  'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
-  'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
-  'executeTakeFirst', 'executeTakeFirstOrThrow',
-  'createMany', 'updateMany', 'deleteMany', 'bulkCreate',
-  'upsert', 'aggregate', 'groupBy',
-]);
-
-/**
- * Method names ORMs use that collide constantly with ordinary JavaScript. A
- * match on one of these is only reported when something else confirms it.
- */
-const AMBIGUOUS_DB_METHODS = new Set([
-  'find', 'get', 'all', 'run', 'query', 'execute', 'exec', 'raw',
-  'create', 'update', 'delete', 'destroy', 'save', 'insert', 'count',
-]);
-
-/** Array/iterable methods whose first argument is a callback. */
-const CALLBACK_FIRST_METHODS = new Set([
-  'find', 'findIndex', 'findLast', 'findLastIndex', 'filter', 'some', 'every',
-  'map', 'forEach', 'flatMap', 'reduce', 'sort',
-]);
-
-/** Receivers that are never a database handle. */
-const NON_DB_RECEIVERS = new Set([
-  'Promise', 'Object', 'JSON', 'Math', 'Array', 'Number', 'String', 'Boolean',
-  'Reflect', 'Symbol', 'Date', 'RegExp', 'Set', 'Map', 'WeakMap', 'WeakSet',
-  'console', 'process', 'crypto', 'localStorage', 'sessionStorage',
-  'res', 'req', 'request', 'response', 'headers', 'searchParams', 'params',
-  'cookies', 'logger', 'log', 'config', 'env', 'i18n', 'router',
-  'redis', 'cache', 'memcached', 'kv', 'socket', 'socketio', 'io', 'emitter',
-]);
-
-/** Receiver names that identify a database handle or ORM client. */
-const DB_HANDLE_NAMES = new Map<string, string>([
-  ['prisma', 'Prisma'],
-  ['prismaClient', 'Prisma'],
-  ['knex', 'Knex'],
-  ['sequelize', 'Sequelize'],
-  ['mongoose', 'Mongoose'],
-  ['kysely', 'SQL Builder'],
-  ['db', 'Database'],
-  ['database', 'Database'],
-  ['orm', 'Database'],
-  ['tx', 'Database'],
-  ['trx', 'Database'],
-  ['transaction', 'Database'],
-  ['pg', 'Raw SQL'],
-  ['sql', 'Raw SQL'],
-  ['datasource', 'Database'],
-  ['dataSource', 'Database'],
-  ['em', 'TypeORM'],
-  ['entityManager', 'TypeORM'],
-  ['queryRunner', 'TypeORM'],
-  ['models', 'Database'],
-]);
-
-/** Receiver names that identify a data-access layer wrapping the database. */
-const DATA_ACCESS_RECEIVER = /(repository|repositories|repo|dao|store|model)s?$/i;
-
-/** Variable names that almost always hold an in-memory collection. */
-const COLLECTION_NAME_HINT = /(map|set|cache|registry|lookup|index|dict|counts|byId|byKey|byName|byType)$/i;
-
-/** Query-builder methods that mark a chain as SQL, not a plain method call. */
-const SQL_BUILDER_METHODS = new Set([
-  'selectFrom', 'insertInto', 'updateTable', 'deleteFrom', 'selectAll',
-  'createQueryBuilder', 'getMany', 'getOne', 'getRawMany', 'getRawOne',
-  'innerJoin', 'leftJoin', 'returningAll', 'from', 'into',
-]);
-
 /** Helpers that split a collection into fixed-size batches. */
 const BATCH_PRODUCERS = /^(chunk|chunked|chunks|batch|batched|batches|partition|paginate|splitIntoChunks|toChunks)$/i;
-
-const SQL_KEYWORD =
-  /\b(select|insert\s+into|update\s+\w|delete\s+from|with\s+\w+\s+as|truncate|(drop|create|alter)\s+(table|index|publication|schema|database|view|subscription))\b/i;
-
-/** Packages whose imported bindings identify an ORM. */
-const ORM_PACKAGES: Array<[RegExp, string]> = [
-  [/^@prisma\/client$|^\.prisma\//, 'Prisma'],
-  [/^sequelize($|\/)/, 'Sequelize'],
-  [/^mongoose$/, 'Mongoose'],
-  [/^typeorm($|\/)/, 'TypeORM'],
-  [/^knex$/, 'Knex'],
-  [/^kysely($|\/)/, 'SQL Builder'],
-  [/^(pg|mysql|mysql2|postgres|better-sqlite3|sqlite3)$/, 'Raw SQL'],
-];
 
 const STAGED_WRITE_DRIVER =
   /(firebase|firestore|@google-cloud\/firestore|dynamodb|@aws-sdk\/lib-dynamodb)/i;
@@ -140,9 +59,7 @@ type LoopKind = 'for-of' | 'for' | 'for-in' | 'while' | 'forEach';
 
 interface LoopInfo {
   kind: LoopKind;
-  node: any;
   start: number;
-  end: number;
   line: number;
   column: number;
   /** Ranges that actually run once per iteration. */
@@ -160,11 +77,10 @@ interface CandidateCall {
   fallbackChainExit: boolean;
 }
 
-interface FileFacts {
-  collectionVars: Set<string>;
+interface FileFacts extends DbContext {
+  /** Names holding pre-chunked batches, from chunk()/batched()/... */
   batchVars: Set<string>;
-  ormBindings: Map<string, string>;
-  detectedORMs: Set<string>;
+  /** True when the file uses a driver that stages writes and commits once. */
   hasStagedWriteDriver: boolean;
 }
 
@@ -178,43 +94,6 @@ function snippetAt(code: string, line: number): string {
 
 function hasRange(node: any): boolean {
   return typeof node?.start === 'number' && typeof node?.end === 'number';
-}
-
-/** `foo.bar.baz()` -> "foo"; `this.userRepo.get()` -> "userRepo". */
-function rootIdentifierName(node: any): string | null {
-  let current = node;
-  let depth = 0;
-  while (current && depth < 12) {
-    depth++;
-    if (current.type === 'Identifier') return current.name;
-    if (current.type === 'ThisExpression') return null;
-    if (current.type === 'MemberExpression') {
-      if (current.object?.type === 'ThisExpression') {
-        return current.property?.type === 'Identifier' ? current.property.name : null;
-      }
-      current = current.object;
-    } else if (current.type === 'CallExpression') {
-      current = current.callee;
-    } else if (current.type === 'TSNonNullExpression' || current.type === 'TSAsExpression') {
-      current = current.expression;
-    } else {
-      return null;
-    }
-  }
-  return null;
-}
-
-/** The immediate receiver name: `this.userRepository.get()` -> "userRepository". */
-function receiverName(node: any): string | null {
-  if (!node) return null;
-  if (node.type === 'Identifier') return node.name;
-  if (node.type === 'TSNonNullExpression' || node.type === 'TSAsExpression') {
-    return receiverName(node.expression);
-  }
-  if (node.type === 'MemberExpression' && node.property?.type === 'Identifier') {
-    return node.property.name;
-  }
-  return null;
 }
 
 /** True when any identifier inside `node` matches `pattern`. */
@@ -255,124 +134,42 @@ function containsPaginationArguments(node: any): boolean {
   return found;
 }
 
-/** The literal text of a string expression, including templates and `'a' + b`. */
-function flattenStringLiteral(node: any, depth = 0): string {
-  if (!node || depth > 8) return '';
-  if (node.type === 'StringLiteral') return node.value;
-  if (node.type === 'TemplateLiteral') {
-    return node.quasis.map((q: any) => q.value?.raw ?? '').join(' ');
-  }
-  if (node.type === 'BinaryExpression' && node.operator === '+') {
-    return flattenStringLiteral(node.left, depth + 1) + ' ' + flattenStringLiteral(node.right, depth + 1);
-  }
-  return '';
-}
-
 // ---------------------------------------------------------------------------
 // Pass A — file-level facts
 // ---------------------------------------------------------------------------
 
 function collectFileFacts(ast: any): FileFacts {
-  const collectionVars = new Set<string>();
   const batchVars = new Set<string>();
-  const ormBindings = new Map<string, string>();
-  const detectedORMs = new Set<string>();
   let hasStagedWriteDriver = false;
-
-  const arrayProducing = new Set([
-    'map', 'filter', 'slice', 'concat', 'split', 'flat', 'flatMap',
-    'sort', 'reverse', 'keys', 'values', 'entries', 'from', 'chunk',
-  ]);
-  const collectionConstructors = new Set(['Map', 'Set', 'WeakMap', 'WeakSet']);
-
-  const isCollectionInit = (init: any): boolean => {
-    if (!init) return false;
-    if (init.type === 'NewExpression') {
-      return init.callee?.type === 'Identifier' && collectionConstructors.has(init.callee.name);
-    }
-    if (init.type === 'ArrayExpression') return true;
-    if (init.type === 'CallExpression') {
-      const method = init.callee?.property?.name;
-      if (method && arrayProducing.has(method)) return true;
-      const objectName = init.callee?.object?.name;
-      if ((objectName === 'Object' || objectName === 'Array') && method) return true;
-    }
-    if (init.type === 'TSAsExpression' || init.type === 'TSNonNullExpression') {
-      return isCollectionInit(init.expression);
-    }
-    return false;
-  };
-
-  const ormFor = (source: string): string | null => {
-    for (const [pattern, label] of ORM_PACKAGES) {
-      if (pattern.test(source)) return label;
-    }
-    return null;
-  };
 
   traverse(ast, {
     noScope: true,
 
     ImportDeclaration(path: any) {
-      const source = path.node.source?.value ?? '';
-      if (STAGED_WRITE_DRIVER.test(source)) hasStagedWriteDriver = true;
-      const label = ormFor(source);
-      if (!label) return;
-      detectedORMs.add(label);
-      for (const spec of path.node.specifiers ?? []) {
-        if (spec.local?.type === 'Identifier') ormBindings.set(spec.local.name, label);
-      }
+      if (STAGED_WRITE_DRIVER.test(path.node.source?.value ?? '')) hasStagedWriteDriver = true;
     },
 
     VariableDeclarator(path: any) {
       const id = path.node.id;
       let init = path.node.init;
-
-      if (id?.type === 'Identifier' && isCollectionInit(init)) {
-        collectionVars.add(id.name);
-      }
-
       if (init?.type === 'AwaitExpression') init = init.argument;
-      if (init?.type === 'CallExpression') {
-        const fn = init.callee?.name || init.callee?.property?.name;
-        if (id?.type === 'Identifier' && fn && BATCH_PRODUCERS.test(fn)) {
-          batchVars.add(id.name);
-        }
-        // const prisma = new PrismaClient() / require('mongoose')
-        if (init.callee?.name === 'require') {
-          const arg = init.arguments?.[0];
-          if (arg?.type === 'StringLiteral') {
-            if (STAGED_WRITE_DRIVER.test(arg.value)) hasStagedWriteDriver = true;
-            const label = ormFor(arg.value);
-            if (label) {
-              detectedORMs.add(label);
-              if (id?.type === 'Identifier') ormBindings.set(id.name, label);
-            }
-          }
-        }
-      }
-    },
+      if (init?.type !== 'CallExpression') return;
 
-    ClassProperty(path: any) {
-      if (path.node.key?.type === 'Identifier' && isCollectionInit(path.node.value)) {
-        collectionVars.add(path.node.key.name);
+      const fn = init.callee?.name || init.callee?.property?.name;
+      if (id?.type === 'Identifier' && fn && BATCH_PRODUCERS.test(fn)) {
+        batchVars.add(id.name);
       }
-    },
 
-    AssignmentExpression(path: any) {
-      const left = path.node.left;
-      if (
-        left?.type === 'MemberExpression' &&
-        left.object?.type === 'ThisExpression' &&
-        left.property?.type === 'Identifier' &&
-        isCollectionInit(path.node.right)
-      ) {
-        collectionVars.add(left.property.name);
+      if (init.callee?.name === 'require') {
+        const arg = init.arguments?.[0];
+        if (arg?.type === 'StringLiteral' && STAGED_WRITE_DRIVER.test(arg.value)) {
+          hasStagedWriteDriver = true;
+        }
       }
     },
   });
 
-  return { collectionVars, batchVars, ormBindings, detectedORMs, hasStagedWriteDriver };
+  return { ...collectDbContext(ast), batchVars, hasStagedWriteDriver };
 }
 
 // ---------------------------------------------------------------------------
@@ -426,9 +223,7 @@ function isBatchLoop(node: any, kind: LoopKind, batchVars: Set<string>): boolean
     }
   }
 
-  if (kind === 'while' || kind === 'for') {
-    if (containsPaginationArguments(node)) return true;
-  }
+  if ((kind === 'while' || kind === 'for') && containsPaginationArguments(node)) return true;
 
   // for (let i = 0; i < ids.length; i += PAGE_SIZE) — fixed-size windows.
   if (kind === 'for' && node.update?.type === 'AssignmentExpression' && node.update.operator === '+=') {
@@ -465,9 +260,7 @@ function collectLoops(ast: any, batchVars: Set<string>): LoopInfo[] {
     if (!loc) return;
     loops.push({
       kind,
-      node,
       start: node.start,
-      end: node.end,
       line: loc.line,
       column: loc.column,
       scanRanges: scanNodesOf(node, kind)
@@ -567,9 +360,10 @@ function collectCandidateCalls(ast: any): CandidateCall[] {
 }
 
 // ---------------------------------------------------------------------------
-// Vetoes and classification
+// Loop-specific vetoes
 // ---------------------------------------------------------------------------
 
+/** `insertInto(t).values(buffer).execute()` or `createMany({ data: rows })`. */
 function isBulkOperation(callExpr: any, collectionVars: Set<string>): boolean {
   const isCollectionArg = (arg: any): boolean => {
     if (!arg) return false;
@@ -652,129 +446,15 @@ function queryConsumesWholeItem(callExpr: any, itemName: string | null): boolean
 }
 
 /**
- * Hard vetoes — calls that look like queries by name but demonstrably are
- * not. In the study corpus these accounted for most of the false positives.
+ * Firestore and friends stage writes on a transaction/batch object and commit
+ * once, so `transaction.delete(ref)` is not a round trip per item. The
+ * receiver name alone is therefore not evidence for those files.
  */
-function isNotADatabaseCall(callExpr: any, method: string, facts: FileFacts): boolean {
-  const receiver = callExpr.callee.object;
-
-  // Promise.all(...), Object.keys(...), res.get(...) etc.
-  const rootName = rootIdentifierName(receiver);
-  if (rootName && NON_DB_RECEIVERS.has(rootName)) return true;
-
-  // Array.prototype.find(cb) / .some(cb): an ORM finder never takes a
-  // callback as its first argument — it takes a filter object or an id.
-  if (CALLBACK_FIRST_METHODS.has(method)) {
-    const firstArg = callExpr.arguments?.[0];
-    if (firstArg && (firstArg.type === 'ArrowFunctionExpression' || firstArg.type === 'FunctionExpression')) {
-      return true;
-    }
-  }
-
-  // The receiver is a variable this file initialised with new Map()/[]/.map().
-  const recvName = receiverName(receiver);
-  if (recvName && facts.collectionVars.has(recvName)) return true;
-
-  // someMap.get(k) / countsByKey.set(k, v) — name-shaped in-memory lookups.
-  if (recvName && COLLECTION_NAME_HINT.test(recvName)) {
-    if (['get', 'set', 'has', 'delete', 'keys', 'values', 'find'].includes(method)) return true;
-  }
-
-  // A write whose payload is a whole buffered array is a bulk flush.
-  if (isBulkOperation(callExpr, facts.collectionVars)) return true;
-
-  return false;
-}
-
-/** True for chains like `tx.deleteFrom('x').where(...).execute()`. */
-function isQueryBuilderChain(callExpr: any): boolean {
-  let current: any = callExpr.callee;
-  let depth = 0;
-  while (current && depth < 12) {
-    depth++;
-    if (current.type === 'MemberExpression') {
-      const method = current.property?.name;
-      if (method && SQL_BUILDER_METHODS.has(method)) return true;
-      current = current.object;
-    } else if (current.type === 'CallExpression') {
-      const method = current.callee?.property?.name;
-      if (method && SQL_BUILDER_METHODS.has(method)) return true;
-      current = current.callee;
-    } else {
-      break;
-    }
-  }
-  return false;
-}
-
-function ormByMethodName(method: string): string {
-  if (['findOne', 'findAll', 'findByPk', 'findAndCountAll', 'findOrCreate', 'bulkCreate'].includes(method)) {
-    return 'Sequelize';
-  }
-  if (['findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
-       'createMany', 'updateMany', 'deleteMany', 'upsert', 'groupBy'].includes(method)) {
-    return 'Prisma';
-  }
-  if (['find', 'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
-       'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace'].includes(method)) {
-    return 'Mongoose';
-  }
-  if (['executeTakeFirst', 'executeTakeFirstOrThrow'].includes(method)) return 'SQL Builder';
-  if (['query', 'execute', 'exec', 'raw'].includes(method)) return 'Raw SQL';
-  return 'Database';
-}
-
-/**
- * Positive identification. Returns the ORM/driver label, or null when there
- * is not enough evidence that this call reaches a database. Staying quiet
- * beats another false positive.
- */
-function classifyDatabaseCall(call: CandidateCall, facts: FileFacts): string | null {
-  const { node: callExpr, method } = call;
-
-  // 1. The receiver traces back to an imported ORM binding.
-  const rootName = rootIdentifierName(callExpr.callee.object);
-  if (rootName && facts.ormBindings.has(rootName)) {
-    return facts.ormBindings.get(rootName)!;
-  }
-
-  // 2. A SQL query-builder chain: tx.deleteFrom(...).where(...).execute()
-  if (isQueryBuilderChain(callExpr)) return 'SQL Builder';
-
-  // 3. A raw SQL string passed to query()/raw()/execute().
-  if (['query', 'raw', 'execute', 'exec'].includes(method)) {
-    const firstArg = callExpr.arguments?.[0];
-    if (firstArg && SQL_KEYWORD.test(flattenStringLiteral(firstArg))) return 'Raw SQL';
-  }
-
-  // 4. The receiver is a recognised database handle: prisma.*, db.*, tx.*
-  if (rootName && DB_HANDLE_NAMES.has(rootName)) {
-    // Firestore and friends stage writes on a transaction/batch object and
-    // commit once, so `transaction.delete(ref)` is not a round trip per item.
-    const isStagedWrite = rootName === 'transaction' || rootName === 'tx' || rootName === 'batch';
-    if (!(facts.hasStagedWriteDriver && isStagedWrite)) {
-      return DB_HANDLE_NAMES.get(rootName)!;
-    }
-  }
-
-  // 5. The receiver is a data-access object: userRepository.get(id). Only
-  // when the result is awaited or returned — a plain Map that happens to be
-  // called `repositories` is not a data-access layer.
-  const recvName = receiverName(callExpr.callee.object);
-  if (recvName && DATA_ACCESS_RECEIVER.test(recvName)) {
-    if (DISTINCTIVE_DB_METHODS.has(method) || call.promiseContext) return 'Repository';
-  }
-
-  // 6. A method name that only ORMs use is evidence by itself.
-  if (DISTINCTIVE_DB_METHODS.has(method)) return ormByMethodName(method);
-
-  // 7. An ambiguous method name, but this file imports the matching ORM.
-  if (facts.detectedORMs.size > 0) {
-    const fallback = ormByMethodName(method);
-    if (facts.detectedORMs.has(fallback)) return fallback;
-  }
-
-  return null;
+function classifyForLoop(call: CandidateCall, facts: FileFacts): string | null {
+  const rootName = rootIdentifierName(call.node.callee?.object);
+  const isStagedWrite = rootName === 'transaction' || rootName === 'tx' || rootName === 'batch';
+  const allowDbHandle = !(facts.hasStagedWriteDriver && isStagedWrite);
+  return classifyDatabaseCall(call.node, call.method, facts, call.promiseContext, allowDbHandle);
 }
 
 // ---------------------------------------------------------------------------
@@ -812,10 +492,11 @@ function detectN1Issues(filePath: string, content: string, ast: any): Diagnostic
       if (!owner || owner.isBatch) continue;
 
       if (call.fallbackChainExit) continue;
-      if (isNotADatabaseCall(call.node, call.method, facts)) continue;
+      if (isDefinitelyNotADatabaseCall(call.node, call.method, facts)) continue;
+      if (isBulkOperation(call.node, facts.collectionVars)) continue;
       if (queryConsumesWholeItem(call.node, owner.itemName)) continue;
 
-      const orm = classifyDatabaseCall(call, facts);
+      const orm = classifyForLoop(call, facts);
       if (!orm) continue;
 
       const list = byLoop.get(owner);

@@ -185,6 +185,23 @@ function nestedLoopIssue(path: any, content: string, filePath: string, label: st
   };
 }
 
+/**
+ * A regex literal in a loop is not recompiled. Since ES5 each evaluation
+ * produces a new RegExp *object*, but V8 caches the compiled pattern per
+ * literal site, so the only per-iteration cost is the allocation — which is
+ * why Study 04 measured 1.03× in V8 rather than anything dramatic.
+ *
+ * `new RegExp(dynamicString)` is different: the pattern text changes between
+ * iterations, so it genuinely recompiles each time and cannot simply be
+ * hoisted. That is the case worth reporting.
+ */
+function isStaticPattern(arg: any): boolean {
+  if (!arg) return true;
+  if (t.isStringLiteral(arg)) return true;
+  if (t.isTemplateLiteral(arg)) return arg.expressions.length === 0;
+  return false;
+}
+
 function detectLoopIssues(filePath: string, content: string, ast: any): DiagnosticIssue[] {
   if (!ast) return [];
   const issues: DiagnosticIssue[] = [];
@@ -198,15 +215,19 @@ function detectLoopIssues(filePath: string, content: string, ast: any): Diagnost
         const loc = path.node.loc?.start;
         if (!loc) return;
         issues.push({
-          id: '', rule: 'loop/regex-in-loop', category: 'loop', severity: 'high',
+          id: '', rule: 'loop/regex-in-loop', category: 'loop', severity: 'low',
           file: filePath, line: loc.line, column: loc.column,
           title: 'Regex literal inside loop',
-          description: 'Regex is recompiled on every iteration. Hoist outside the loop.',
+          description:
+            'A new RegExp object is allocated on each iteration, but V8 caches the compiled ' +
+            'pattern for this literal, so it is not recompiled. Hoisting it removes the ' +
+            'allocation only — Study 04 measured 1.03× in V8. Worth doing in a hot loop, ' +
+            'not worth restructuring code for.',
           snippet: snippetAt(content, loc.line),
-          recommendation: 'Move the regex to a constant outside the loop.',
+          recommendation: 'Move the regex to a constant outside the loop if this is a hot path.',
           studyReference: 'Study 04, BM-01',
-          empiricalSpeedup: '1.03× in V8, 2× in CPython',
-          confidence: 0.85,
+          empiricalSpeedup: '1.03× in V8',
+          confidence: 0.5,
         });
       },
 
@@ -215,16 +236,28 @@ function detectLoopIssues(filePath: string, content: string, ast: any): Diagnost
         if (!isInsideLoop(path)) return;
         const loc = path.node.loc?.start;
         if (!loc) return;
+
+        const staticPattern = isStaticPattern(path.node.arguments?.[0]);
         issues.push({
-          id: '', rule: 'loop/regex-in-loop', category: 'loop', severity: 'high',
+          id: '', rule: 'loop/regex-in-loop', category: 'loop',
+          severity: staticPattern ? 'low' : 'medium',
           file: filePath, line: loc.line, column: loc.column,
-          title: 'new RegExp() inside loop',
-          description: 'RegExp constructor called on every iteration. Hoist outside the loop.',
+          title: staticPattern
+            ? 'new RegExp() with a fixed pattern inside loop'
+            : 'new RegExp() with a computed pattern inside loop',
+          description: staticPattern
+            ? 'The pattern is constant, so V8 serves it from the regexp compilation cache. ' +
+              'Hoisting removes the allocation only.'
+            : 'The pattern string is built from loop data, so a new regex is compiled on every ' +
+              'iteration — this one cannot be served from the compilation cache. Compilation is ' +
+              'far more expensive than matching.',
           snippet: snippetAt(content, loc.line),
-          recommendation: 'Move `new RegExp(...)` to a constant outside the loop.',
+          recommendation: staticPattern
+            ? 'Move `new RegExp(...)` to a constant outside the loop if this is a hot path.'
+            : 'Build the pattern before the loop, or memoise compiled RegExp objects keyed by pattern string.',
           studyReference: 'Study 04, BM-01',
-          empiricalSpeedup: '1.03× in V8, 2× in CPython',
-          confidence: 0.85,
+          empiricalSpeedup: staticPattern ? '1.03× in V8' : 'Compilation cost per iteration',
+          confidence: staticPattern ? 0.5 : 0.75,
         });
       },
 
@@ -338,7 +371,7 @@ function detectLoopIssues(filePath: string, content: string, ast: any): Diagnost
 
 export const loopRules: RuleDefinition[] = [
   {
-    id: 'loop/regex-in-loop', name: 'Regex in Loop', category: 'loop', severity: 'high',
+    id: 'loop/regex-in-loop', name: 'Regex in Loop', category: 'loop', severity: 'medium',
     filePatterns: JS_PATTERNS, needsAst: true, detect: detectLoopIssues,
   },
   {

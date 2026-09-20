@@ -57,6 +57,22 @@ export function resolveScanTargets(pathArgs: string[]): ScanTargets {
   return { targetPath: resolve('.'), includePaths: resolved };
 }
 
+/**
+ * A scan that matched nothing looks identical to a clean codebase: zero
+ * issues, a perfect score, and a tick. That is how a mistyped path or a
+ * directory holding only compiled output reads, so say what happened instead.
+ */
+export function warnIfNothingScanned(filesScanned: number, targets: string[]): void {
+  if (filesScanned > 0) return;
+  console.warn(`\nNo .js, .ts, .jsx, .tsx or .mjs files were found under:`);
+  for (const target of targets) console.warn(`  ${target}`);
+  console.warn(`\nA score of 100 here means nothing was scanned, not that nothing is wrong.`);
+  console.warn(`Directories named node_modules, dist, build, coverage, .next, .nuxt,`);
+  console.warn(`__tests__, __mocks__ and e2e are skipped, as are *.test.* and *.spec.* files.`);
+  console.warn(`Most published npm packages ship only compiled output in dist/, so pass a`);
+  console.warn(`source directory instead.\n`);
+}
+
 function validateDirectory(targetPath: string): string {
   if (!existsSync(targetPath)) {
     console.error(`\nNo such directory: ${targetPath}\n`);

@@ -700,8 +700,21 @@ const SYNC_FILE_METHODS = new Set([
     'openSync', 'closeSync', 'fstatSync', 'ftruncateSync', 'futimesSync',
     'fsyncSync', 'fdatasyncSync', 'linkSync', 'symlinkSync',
 ]);
+/**
+ * Creating a Hash or Hmac object does no work — `crypto.createHash('sha256')`
+ * allocates and returns; the cost is in `.update()`/`.digest()`, and even then
+ * it is proportional to the data, not a blocking I/O wait. They were in this
+ * list and produced a finding for every hash construction in this package.
+ *
+ * `randomBytes(n)` without a callback is synchronous but takes microseconds
+ * for the sizes anyone actually uses, so it is reported at low severity only.
+ * The genuinely expensive ones are the key-derivation functions.
+ */
 const SYNC_CRYPTO_METHODS = new Set([
-    'randomBytes', 'createHash', 'createHmac',
+    'randomBytes',
+    'pbkdf2Sync', 'scryptSync', 'generateKeyPairSync', 'generateKeySync',
+]);
+const EXPENSIVE_CRYPTO_METHODS = new Set([
     'pbkdf2Sync', 'scryptSync', 'generateKeyPairSync', 'generateKeySync',
 ]);
 const SYNC_CHILD_PROCESS_METHODS = new Set(['execSync', 'execFileSync', 'spawnSync']);
@@ -740,11 +753,55 @@ function isInRequestHandler(path) {
     }
     return false;
 }
+/**
+ * Whether this file is plausibly part of a server at all.
+ *
+ * Blocking the event loop only matters when there is an event loop serving
+ * concurrent work. A CLI that walks a directory tree with `statSync`, a build
+ * script, or a test helper has nothing to block — synchronous fs is the
+ * correct choice there, and often the simpler one. Scanning this package
+ * reported `statSync` as CRITICAL for exactly that reason.
+ *
+ * The signal is deliberately coarse: a server framework import, a Node server
+ * module, or a function that takes (req, res). When none of those appear, the
+ * findings are still reported, but at low severity and low confidence — the
+ * file may still be required by a server somewhere.
+ */
+const SERVER_MODULES = /^(express|fastify|koa|@hapi\/hapi|hapi|restify|http|https|http2|net|next|@nestjs\/)/;
+function fileLooksLikeServer(ast) {
+    let found = false;
+    try {
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            ImportDeclaration(path) {
+                if (SERVER_MODULES.test(path.node.source?.value ?? ''))
+                    found = true;
+            },
+            CallExpression(path) {
+                if (path.node.callee?.name === 'require') {
+                    const arg = path.node.arguments?.[0];
+                    if (arg?.type === 'StringLiteral' && SERVER_MODULES.test(arg.value))
+                        found = true;
+                }
+            },
+            Function(path) {
+                const names = (path.node.params || []).map((p) => p?.name);
+                if (names.includes('req') && names.includes('res'))
+                    found = true;
+            },
+        });
+    }
+    catch {
+        // ignore
+    }
+    return found;
+}
 function detectBlockingIoIssues(filePath, content, ast) {
     if (!ast)
         return [];
     const issues = [];
     try {
+        const serverFile = fileLooksLikeServer(ast);
         (0, traverse_1.default)(ast, {
             noScope: true,
             CallExpression(path) {
@@ -757,44 +814,69 @@ function detectBlockingIoIssues(filePath, content, ast) {
                 if (SYNC_FILE_METHODS.has(methodName)) {
                     const inLoop = isInLoop(path);
                     const inHandler = isInRequestHandler(path);
-                    const severity = inLoop ? 'critical' : inHandler ? 'high' : 'medium';
+                    // Request-handler context dominates: blocking one request handler
+                    // stalls every other in-flight request. A loop only multiplies a
+                    // cost that matters in the first place.
+                    let severity;
+                    if (inHandler)
+                        severity = inLoop ? 'critical' : 'high';
+                    else if (serverFile)
+                        severity = inLoop ? 'high' : 'medium';
+                    else
+                        severity = inLoop ? 'medium' : 'low';
+                    const context = inHandler
+                        ? ' In a request handler, this blocks every other in-flight request.'
+                        : serverFile
+                            ? ''
+                            : ' This file shows no sign of being part of a server, so there may be no event loop to block — synchronous fs is often the right choice in a CLI or build script.';
                     issues.push({
                         id: '', rule: 'blocking-io/sync-file-operation', category: 'blocking-io', severity,
                         file: filePath, line: loc.line, column: loc.column,
                         title: `Blocking file operation: ${methodName}`,
-                        description: `Synchronous file operation '${methodName}' blocks the event loop.${inLoop ? ' Inside a loop, this severely degrades performance.' : ''}${inHandler ? ' In a request handler, this blocks other requests.' : ''}`,
+                        description: `Synchronous file operation '${methodName}' blocks the event loop.${inLoop ? ' It runs once per iteration here.' : ''}${context}`,
                         snippet: snippetAt(content, loc.line),
                         recommendation: `Use ${methodName.replace('Sync', '')} with async/await instead.`,
                         studyReference: 'Study 02',
                         empiricalSpeedup: '5\u201315\u00d7 slower',
-                        confidence: 0.85,
+                        confidence: inHandler ? 0.85 : serverFile ? 0.7 : 0.4,
                     });
                     return;
                 }
                 if (SYNC_CRYPTO_METHODS.has(methodName)) {
+                    // `randomBytes(n, cb)` is the async form.
+                    if (methodName === 'randomBytes') {
+                        const last = node.arguments?.[node.arguments.length - 1];
+                        if (last?.type === 'ArrowFunctionExpression' || last?.type === 'FunctionExpression')
+                            return;
+                    }
                     const inHandler = isInRequestHandler(path);
+                    const expensive = EXPENSIVE_CRYPTO_METHODS.has(methodName);
                     issues.push({
-                        id: '', rule: 'blocking-io/sync-crypto-operation', category: 'blocking-io', severity: inHandler ? 'high' : 'medium',
+                        id: '', rule: 'blocking-io/sync-crypto-operation', category: 'blocking-io',
+                        severity: expensive ? (inHandler ? 'high' : 'medium') : 'low',
                         file: filePath, line: loc.line, column: loc.column,
                         title: `Blocking crypto operation: ${methodName}`,
-                        description: `Synchronous crypto operation '${methodName}' is CPU-intensive and blocks the event loop.`,
+                        description: expensive
+                            ? `Synchronous key derivation '${methodName}' is deliberately CPU-intensive and blocks the event loop for its entire duration.`
+                            : `'${methodName}' is synchronous, though it is fast at typical sizes.`,
                         snippet: snippetAt(content, loc.line),
                         recommendation: 'Use the async version with util.promisify or a native async equivalent.',
                         studyReference: 'Study 02',
-                        confidence: 0.75,
+                        confidence: expensive ? 0.75 : 0.4,
                     });
                     return;
                 }
                 if (SYNC_CHILD_PROCESS_METHODS.has(methodName)) {
                     issues.push({
-                        id: '', rule: 'blocking-io/sync-child-process', category: 'blocking-io', severity: 'high',
+                        id: '', rule: 'blocking-io/sync-child-process', category: 'blocking-io',
+                        severity: serverFile ? 'high' : 'medium',
                         file: filePath, line: loc.line, column: loc.column,
                         title: `Blocking child process: ${methodName}`,
-                        description: `Synchronous child process call '${methodName}' blocks until the process exits.`,
+                        description: `Synchronous child process call '${methodName}' blocks until the process exits.${serverFile ? '' : ' This file shows no sign of being part of a server; in a build or CLI script this is usually intentional.'}`,
                         snippet: snippetAt(content, loc.line),
                         recommendation: 'Use exec/execFile/spawn with callbacks or util.promisify instead.',
                         studyReference: 'Study 02',
-                        confidence: 0.85,
+                        confidence: serverFile ? 0.85 : 0.5,
                     });
                     return;
                 }
@@ -828,7 +910,7 @@ exports.blockingIoRules = [
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
     },
     {
-        id: 'blocking-io/sync-child-process', name: 'Sync Child Process', category: 'blocking-io', severity: 'high',
+        id: 'blocking-io/sync-child-process', name: 'Sync Child Process', category: 'blocking-io', severity: 'medium',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
     },
     {
@@ -1079,6 +1161,411 @@ exports.cachingRules = [
     },
 ];
 //# sourceMappingURL=caching-rules.js.map
+
+/***/ }),
+
+/***/ 7601:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Shared heuristics for "is this call actually reaching a database?"
+ *
+ * The N+1 rule spent seven rounds of corpus work learning this, and the answer
+ * is never "the method is called `find`". `Map.get()`, `Array.prototype.find()`
+ * with a callback, `Promise.all()` and a plain object called `store` all match
+ * on name alone, and on real codebases that produced a 60-88% false-positive
+ * rate.
+ *
+ * The structure that fixed it:
+ *
+ *   - DISTINCTIVE method names are evidence on their own. No Map, Set, Array or
+ *     Promise has a `findUnique` or a `findByPk`.
+ *   - AMBIGUOUS method names need corroboration from somewhere else: an ORM
+ *     import in the file, a query-builder chain, a known database handle, or a
+ *     data-access receiver whose result is awaited.
+ *   - Some receivers are hard vetoes regardless of method name.
+ *
+ * Any rule that identifies database calls by method name should use this
+ * module rather than keeping its own list. Changing these sets changes
+ * published study results — the corpus tests in `__tests__/n1-rules.test.ts`
+ * are the gate.
+ */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.ORM_PACKAGES = exports.SQL_KEYWORD = exports.SQL_BUILDER_METHODS = exports.COLLECTION_NAME_HINT = exports.DATA_ACCESS_RECEIVER = exports.DB_HANDLE_NAMES = exports.NON_DB_RECEIVERS = exports.CALLBACK_FIRST_METHODS = exports.AMBIGUOUS_DB_METHODS = exports.DISTINCTIVE_DB_METHODS = void 0;
+exports.rootIdentifierName = rootIdentifierName;
+exports.receiverName = receiverName;
+exports.isQueryBuilderChain = isQueryBuilderChain;
+exports.flattenStringLiteral = flattenStringLiteral;
+exports.ormForPackage = ormForPackage;
+exports.ormByMethodName = ormByMethodName;
+exports.isCollectionInit = isCollectionInit;
+exports.collectDbContext = collectDbContext;
+exports.isDefinitelyNotADatabaseCall = isDefinitelyNotADatabaseCall;
+exports.classifyDatabaseCall = classifyDatabaseCall;
+const traverse_1 = __importDefault(__nccwpck_require__(8254));
+/**
+ * Method names specific enough to ORMs that seeing one is strong evidence on
+ * its own. None of these exist on Map, Set, Array, or Promise.
+ */
+exports.DISTINCTIVE_DB_METHODS = new Set([
+    'findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
+    'findOne',
+    'findByPk', 'findAll', 'findAndCountAll', 'findOrCreate',
+    'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
+    'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
+    'executeTakeFirst', 'executeTakeFirstOrThrow',
+    'createMany', 'updateMany', 'deleteMany', 'bulkCreate',
+    'upsert', 'aggregate', 'groupBy',
+]);
+/**
+ * Method names ORMs use that collide constantly with ordinary JavaScript. A
+ * match on one of these is only reported when something else confirms it.
+ */
+exports.AMBIGUOUS_DB_METHODS = new Set([
+    'find', 'get', 'all', 'run', 'query', 'execute', 'exec', 'raw',
+    'create', 'update', 'delete', 'destroy', 'save', 'insert', 'count',
+]);
+/** Array/iterable methods whose first argument is a callback. */
+exports.CALLBACK_FIRST_METHODS = new Set([
+    'find', 'findIndex', 'findLast', 'findLastIndex', 'filter', 'some', 'every',
+    'map', 'forEach', 'flatMap', 'reduce', 'sort',
+]);
+/** Receivers that are never a database handle. */
+exports.NON_DB_RECEIVERS = new Set([
+    'Promise', 'Object', 'JSON', 'Math', 'Array', 'Number', 'String', 'Boolean',
+    'Reflect', 'Symbol', 'Date', 'RegExp', 'Set', 'Map', 'WeakMap', 'WeakSet',
+    'console', 'process', 'crypto', 'localStorage', 'sessionStorage',
+    'res', 'req', 'request', 'response', 'headers', 'searchParams', 'params',
+    'cookies', 'logger', 'log', 'config', 'env', 'i18n', 'router',
+    'redis', 'cache', 'memcached', 'kv', 'socket', 'socketio', 'io', 'emitter',
+]);
+/** Receiver names that identify a database handle or ORM client. */
+exports.DB_HANDLE_NAMES = new Map([
+    ['prisma', 'Prisma'],
+    ['prismaClient', 'Prisma'],
+    ['knex', 'Knex'],
+    ['sequelize', 'Sequelize'],
+    ['mongoose', 'Mongoose'],
+    ['kysely', 'SQL Builder'],
+    ['db', 'Database'],
+    ['database', 'Database'],
+    ['orm', 'Database'],
+    ['tx', 'Database'],
+    ['trx', 'Database'],
+    ['transaction', 'Database'],
+    ['pg', 'Raw SQL'],
+    ['sql', 'Raw SQL'],
+    ['datasource', 'Database'],
+    ['dataSource', 'Database'],
+    ['em', 'TypeORM'],
+    ['entityManager', 'TypeORM'],
+    ['queryRunner', 'TypeORM'],
+    ['models', 'Database'],
+]);
+/** Receiver names that identify a data-access layer wrapping the database. */
+exports.DATA_ACCESS_RECEIVER = /(repository|repositories|repo|dao|store|model)s?$/i;
+/** Variable names that almost always hold an in-memory collection. */
+exports.COLLECTION_NAME_HINT = /(map|set|cache|registry|lookup|index|dict|counts|byId|byKey|byName|byType)$/i;
+/** Query-builder methods that mark a chain as SQL, not a plain method call. */
+exports.SQL_BUILDER_METHODS = new Set([
+    'selectFrom', 'insertInto', 'updateTable', 'deleteFrom', 'selectAll',
+    'createQueryBuilder', 'getMany', 'getOne', 'getRawMany', 'getRawOne',
+    'innerJoin', 'leftJoin', 'returningAll', 'from', 'into',
+]);
+exports.SQL_KEYWORD = /\b(select|insert\s+into|update\s+\w|delete\s+from|with\s+\w+\s+as|truncate|(drop|create|alter)\s+(table|index|publication|schema|database|view|subscription))\b/i;
+/** Packages whose imported bindings identify an ORM. */
+exports.ORM_PACKAGES = [
+    [/^@prisma\/client$|^\.prisma\//, 'Prisma'],
+    [/^sequelize($|\/)/, 'Sequelize'],
+    [/^mongoose$/, 'Mongoose'],
+    [/^typeorm($|\/)/, 'TypeORM'],
+    [/^knex$/, 'Knex'],
+    [/^kysely($|\/)/, 'SQL Builder'],
+    [/^(pg|mysql|mysql2|postgres|better-sqlite3|sqlite3)$/, 'Raw SQL'],
+];
+// ---------------------------------------------------------------------------
+// AST helpers
+// ---------------------------------------------------------------------------
+/** `foo.bar.baz()` -> "foo"; `this.userRepo.get()` -> "userRepo". */
+function rootIdentifierName(node) {
+    let current = node;
+    let depth = 0;
+    while (current && depth < 12) {
+        depth++;
+        if (current.type === 'Identifier')
+            return current.name;
+        if (current.type === 'ThisExpression')
+            return null;
+        if (current.type === 'MemberExpression') {
+            if (current.object?.type === 'ThisExpression') {
+                return current.property?.type === 'Identifier' ? current.property.name : null;
+            }
+            current = current.object;
+        }
+        else if (current.type === 'CallExpression') {
+            current = current.callee;
+        }
+        else if (current.type === 'TSNonNullExpression' || current.type === 'TSAsExpression') {
+            current = current.expression;
+        }
+        else {
+            return null;
+        }
+    }
+    return null;
+}
+/** The immediate receiver name: `this.userRepository.get()` -> "userRepository". */
+function receiverName(node) {
+    if (!node)
+        return null;
+    if (node.type === 'Identifier')
+        return node.name;
+    if (node.type === 'TSNonNullExpression' || node.type === 'TSAsExpression') {
+        return receiverName(node.expression);
+    }
+    if (node.type === 'MemberExpression' && node.property?.type === 'Identifier') {
+        return node.property.name;
+    }
+    return null;
+}
+/** True for chains like `tx.deleteFrom('x').where(...).execute()`. */
+function isQueryBuilderChain(callExpr) {
+    let current = callExpr.callee;
+    let depth = 0;
+    while (current && depth < 12) {
+        depth++;
+        if (current.type === 'MemberExpression') {
+            const method = current.property?.name;
+            if (method && exports.SQL_BUILDER_METHODS.has(method))
+                return true;
+            current = current.object;
+        }
+        else if (current.type === 'CallExpression') {
+            const method = current.callee?.property?.name;
+            if (method && exports.SQL_BUILDER_METHODS.has(method))
+                return true;
+            current = current.callee;
+        }
+        else {
+            break;
+        }
+    }
+    return false;
+}
+/**
+ * The literal text of a string expression, including templates and `'a' + b`.
+ */
+function flattenStringLiteral(node, depth = 0) {
+    if (!node || depth > 8)
+        return '';
+    if (node.type === 'StringLiteral')
+        return node.value;
+    if (node.type === 'TemplateLiteral') {
+        return node.quasis.map((q) => q.value?.raw ?? '').join(' ');
+    }
+    if (node.type === 'BinaryExpression' && node.operator === '+') {
+        return flattenStringLiteral(node.left, depth + 1) + ' ' + flattenStringLiteral(node.right, depth + 1);
+    }
+    return '';
+}
+function ormForPackage(source) {
+    for (const [pattern, label] of exports.ORM_PACKAGES) {
+        if (pattern.test(source))
+            return label;
+    }
+    return null;
+}
+function ormByMethodName(method) {
+    if (['findOne', 'findAll', 'findByPk', 'findAndCountAll', 'findOrCreate', 'bulkCreate'].includes(method)) {
+        return 'Sequelize';
+    }
+    if (['findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
+        'createMany', 'updateMany', 'deleteMany', 'upsert', 'groupBy'].includes(method)) {
+        return 'Prisma';
+    }
+    if (['find', 'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
+        'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace'].includes(method)) {
+        return 'Mongoose';
+    }
+    if (['executeTakeFirst', 'executeTakeFirstOrThrow'].includes(method))
+        return 'SQL Builder';
+    if (['query', 'execute', 'exec', 'raw'].includes(method))
+        return 'Raw SQL';
+    return 'Database';
+}
+// ---------------------------------------------------------------------------
+// File-level context
+// ---------------------------------------------------------------------------
+const ARRAY_PRODUCING = new Set([
+    'map', 'filter', 'slice', 'concat', 'split', 'flat', 'flatMap',
+    'sort', 'reverse', 'keys', 'values', 'entries', 'from', 'chunk',
+]);
+const COLLECTION_CONSTRUCTORS = new Set(['Map', 'Set', 'WeakMap', 'WeakSet']);
+function isCollectionInit(init) {
+    if (!init)
+        return false;
+    if (init.type === 'NewExpression') {
+        return init.callee?.type === 'Identifier' && COLLECTION_CONSTRUCTORS.has(init.callee.name);
+    }
+    if (init.type === 'ArrayExpression')
+        return true;
+    if (init.type === 'CallExpression') {
+        const method = init.callee?.property?.name;
+        if (method && ARRAY_PRODUCING.has(method))
+            return true;
+        const objectName = init.callee?.object?.name;
+        if ((objectName === 'Object' || objectName === 'Array') && method)
+            return true;
+    }
+    if (init.type === 'TSAsExpression' || init.type === 'TSNonNullExpression') {
+        return isCollectionInit(init.expression);
+    }
+    return false;
+}
+/**
+ * Walk the file once and record what it tells us about database access:
+ * which names hold in-memory collections, and which ORMs it imports.
+ */
+function collectDbContext(ast) {
+    const collectionVars = new Set();
+    const ormBindings = new Map();
+    const detectedORMs = new Set();
+    (0, traverse_1.default)(ast, {
+        noScope: true,
+        ImportDeclaration(path) {
+            const label = ormForPackage(path.node.source?.value ?? '');
+            if (!label)
+                return;
+            detectedORMs.add(label);
+            for (const spec of path.node.specifiers ?? []) {
+                if (spec.local?.type === 'Identifier')
+                    ormBindings.set(spec.local.name, label);
+            }
+        },
+        VariableDeclarator(path) {
+            const id = path.node.id;
+            let init = path.node.init;
+            if (id?.type === 'Identifier' && isCollectionInit(init)) {
+                collectionVars.add(id.name);
+            }
+            if (init?.type === 'AwaitExpression')
+                init = init.argument;
+            if (init?.type === 'CallExpression' && init.callee?.name === 'require') {
+                const arg = init.arguments?.[0];
+                if (arg?.type === 'StringLiteral') {
+                    const label = ormForPackage(arg.value);
+                    if (label) {
+                        detectedORMs.add(label);
+                        if (id?.type === 'Identifier')
+                            ormBindings.set(id.name, label);
+                    }
+                }
+            }
+        },
+        ClassProperty(path) {
+            if (path.node.key?.type === 'Identifier' && isCollectionInit(path.node.value)) {
+                collectionVars.add(path.node.key.name);
+            }
+        },
+        AssignmentExpression(path) {
+            const left = path.node.left;
+            if (left?.type === 'MemberExpression' &&
+                left.object?.type === 'ThisExpression' &&
+                left.property?.type === 'Identifier' &&
+                isCollectionInit(path.node.right)) {
+                collectionVars.add(left.property.name);
+            }
+        },
+    });
+    return { collectionVars, ormBindings, detectedORMs };
+}
+// ---------------------------------------------------------------------------
+// Vetoes and classification
+// ---------------------------------------------------------------------------
+/**
+ * Hard vetoes — calls that look like queries by name but demonstrably are not.
+ * In the study corpus these accounted for most of the false positives.
+ *
+ * Does not cover bulk-flush detection, which needs the calling rule's own
+ * notion of what a buffered payload is.
+ */
+function isDefinitelyNotADatabaseCall(callExpr, method, ctx) {
+    const receiver = callExpr.callee?.object;
+    // Promise.all(...), Object.keys(...), res.get(...) etc.
+    const rootName = rootIdentifierName(receiver);
+    if (rootName && exports.NON_DB_RECEIVERS.has(rootName))
+        return true;
+    // Array.prototype.find(cb) / .some(cb): an ORM finder never takes a callback
+    // as its first argument — it takes a filter object or an id.
+    if (exports.CALLBACK_FIRST_METHODS.has(method)) {
+        const firstArg = callExpr.arguments?.[0];
+        if (firstArg && (firstArg.type === 'ArrowFunctionExpression' || firstArg.type === 'FunctionExpression')) {
+            return true;
+        }
+    }
+    // The receiver is a variable this file initialised with new Map()/[]/.map().
+    const recvName = receiverName(receiver);
+    if (recvName && ctx.collectionVars.has(recvName))
+        return true;
+    // someMap.get(k) / countsByKey.set(k, v) — name-shaped in-memory lookups.
+    if (recvName && exports.COLLECTION_NAME_HINT.test(recvName)) {
+        if (['get', 'set', 'has', 'delete', 'keys', 'values', 'find'].includes(method))
+            return true;
+    }
+    return false;
+}
+/**
+ * Positive identification. Returns the ORM/driver label, or null when there is
+ * not enough evidence that this call reaches a database. Staying quiet beats
+ * another false positive.
+ *
+ * `resultIsAwaited` lets the caller supply its own notion of promise context;
+ * it only affects the data-access-receiver branch. `allowDbHandleReceiver` can
+ * be turned off for drivers that stage writes on a `tx`/`transaction`/`batch`
+ * object and commit once, where the receiver name is not evidence of a round
+ * trip.
+ */
+function classifyDatabaseCall(callExpr, method, ctx, resultIsAwaited = false, allowDbHandleReceiver = true) {
+    // 1. The receiver traces back to an imported ORM binding.
+    const rootName = rootIdentifierName(callExpr.callee?.object);
+    if (rootName && ctx.ormBindings.has(rootName))
+        return ctx.ormBindings.get(rootName);
+    // 2. A SQL query-builder chain: tx.deleteFrom(...).where(...).execute()
+    if (isQueryBuilderChain(callExpr))
+        return 'SQL Builder';
+    // 3. A raw SQL string passed to query()/raw()/execute().
+    if (['query', 'raw', 'execute', 'exec'].includes(method)) {
+        const firstArg = callExpr.arguments?.[0];
+        if (firstArg && exports.SQL_KEYWORD.test(flattenStringLiteral(firstArg)))
+            return 'Raw SQL';
+    }
+    // 4. The receiver is a recognised database handle: prisma.*, db.*, tx.*
+    if (allowDbHandleReceiver && rootName && exports.DB_HANDLE_NAMES.has(rootName)) {
+        return exports.DB_HANDLE_NAMES.get(rootName);
+    }
+    // 5. The receiver is a data-access object: userRepository.get(id).
+    const recvName = receiverName(callExpr.callee?.object);
+    if (recvName && exports.DATA_ACCESS_RECEIVER.test(recvName)) {
+        if (exports.DISTINCTIVE_DB_METHODS.has(method) || resultIsAwaited)
+            return 'Repository';
+    }
+    // 6. A method name that only ORMs use is evidence by itself.
+    if (exports.DISTINCTIVE_DB_METHODS.has(method))
+        return ormByMethodName(method);
+    // 7. An ambiguous method name, but this file imports the matching ORM.
+    if (ctx.detectedORMs.size > 0) {
+        const fallback = ormByMethodName(method);
+        if (ctx.detectedORMs.has(fallback))
+            return fallback;
+    }
+    return null;
+}
+//# sourceMappingURL=db-call-heuristics.js.map
 
 /***/ }),
 
@@ -1730,6 +2217,25 @@ function nestedLoopIssue(path, content, filePath, label) {
         confidence: level >= 3 ? 0.7 : 0.6,
     };
 }
+/**
+ * A regex literal in a loop is not recompiled. Since ES5 each evaluation
+ * produces a new RegExp *object*, but V8 caches the compiled pattern per
+ * literal site, so the only per-iteration cost is the allocation — which is
+ * why Study 04 measured 1.03× in V8 rather than anything dramatic.
+ *
+ * `new RegExp(dynamicString)` is different: the pattern text changes between
+ * iterations, so it genuinely recompiles each time and cannot simply be
+ * hoisted. That is the case worth reporting.
+ */
+function isStaticPattern(arg) {
+    if (!arg)
+        return true;
+    if (t.isStringLiteral(arg))
+        return true;
+    if (t.isTemplateLiteral(arg))
+        return arg.expressions.length === 0;
+    return false;
+}
 function detectLoopIssues(filePath, content, ast) {
     if (!ast)
         return [];
@@ -1744,15 +2250,18 @@ function detectLoopIssues(filePath, content, ast) {
                 if (!loc)
                     return;
                 issues.push({
-                    id: '', rule: 'loop/regex-in-loop', category: 'loop', severity: 'high',
+                    id: '', rule: 'loop/regex-in-loop', category: 'loop', severity: 'low',
                     file: filePath, line: loc.line, column: loc.column,
                     title: 'Regex literal inside loop',
-                    description: 'Regex is recompiled on every iteration. Hoist outside the loop.',
+                    description: 'A new RegExp object is allocated on each iteration, but V8 caches the compiled ' +
+                        'pattern for this literal, so it is not recompiled. Hoisting it removes the ' +
+                        'allocation only — Study 04 measured 1.03× in V8. Worth doing in a hot loop, ' +
+                        'not worth restructuring code for.',
                     snippet: snippetAt(content, loc.line),
-                    recommendation: 'Move the regex to a constant outside the loop.',
+                    recommendation: 'Move the regex to a constant outside the loop if this is a hot path.',
                     studyReference: 'Study 04, BM-01',
-                    empiricalSpeedup: '1.03× in V8, 2× in CPython',
-                    confidence: 0.85,
+                    empiricalSpeedup: '1.03× in V8',
+                    confidence: 0.5,
                 });
             },
             NewExpression(path) {
@@ -1763,16 +2272,27 @@ function detectLoopIssues(filePath, content, ast) {
                 const loc = path.node.loc?.start;
                 if (!loc)
                     return;
+                const staticPattern = isStaticPattern(path.node.arguments?.[0]);
                 issues.push({
-                    id: '', rule: 'loop/regex-in-loop', category: 'loop', severity: 'high',
+                    id: '', rule: 'loop/regex-in-loop', category: 'loop',
+                    severity: staticPattern ? 'low' : 'medium',
                     file: filePath, line: loc.line, column: loc.column,
-                    title: 'new RegExp() inside loop',
-                    description: 'RegExp constructor called on every iteration. Hoist outside the loop.',
+                    title: staticPattern
+                        ? 'new RegExp() with a fixed pattern inside loop'
+                        : 'new RegExp() with a computed pattern inside loop',
+                    description: staticPattern
+                        ? 'The pattern is constant, so V8 serves it from the regexp compilation cache. ' +
+                            'Hoisting removes the allocation only.'
+                        : 'The pattern string is built from loop data, so a new regex is compiled on every ' +
+                            'iteration — this one cannot be served from the compilation cache. Compilation is ' +
+                            'far more expensive than matching.',
                     snippet: snippetAt(content, loc.line),
-                    recommendation: 'Move `new RegExp(...)` to a constant outside the loop.',
+                    recommendation: staticPattern
+                        ? 'Move `new RegExp(...)` to a constant outside the loop if this is a hot path.'
+                        : 'Build the pattern before the loop, or memoise compiled RegExp objects keyed by pattern string.',
                     studyReference: 'Study 04, BM-01',
-                    empiricalSpeedup: '1.03× in V8, 2× in CPython',
-                    confidence: 0.85,
+                    empiricalSpeedup: staticPattern ? '1.03× in V8' : 'Compilation cost per iteration',
+                    confidence: staticPattern ? 0.5 : 0.75,
                 });
             },
             CallExpression(path) {
@@ -1875,7 +2395,7 @@ function detectLoopIssues(filePath, content, ast) {
 // ---------------------------------------------------------------------------
 exports.loopRules = [
     {
-        id: 'loop/regex-in-loop', name: 'Regex in Loop', category: 'loop', severity: 'high',
+        id: 'loop/regex-in-loop', name: 'Regex in Loop', category: 'loop', severity: 'medium',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectLoopIssues,
     },
     {
@@ -2234,26 +2754,27 @@ exports.memoryRules = [
  * write-side N+1 — one `update`/`upsert`/`create` per item — was invisible
  * because the method list held only readers.
  *
- * Seven rounds of fixes against that corpus produced the structure below:
+ * Seven rounds of fixes against that corpus produced the structure below. The
+ * half that answers "is this a database call at all" now lives in
+ * `db-call-heuristics.ts`, shared with any other rule that needs it. What is
+ * left here is the half about loops:
  *
- *   1. Method names are split into DISTINCTIVE (evidence on their own; no
- *      Map, Set, Array or Promise has them) and AMBIGUOUS (only reported when
- *      something else corroborates: an ORM import, a query-builder chain, a
- *      known database handle, or a data-access receiver).
- *   2. A query in a nested loop belongs to the innermost loop that contains
- *      it, so one N+1 is not reported once per enclosing loop.
- *   3. Retry and polling loops are skipped — their iterations are attempts at
- *      one operation, not items in a collection.
- *   4. Pagination loops are skipped — one query per page of rows is the fix,
- *      not the bug.
- *   5. Loops over pre-chunked batches are skipped, and so is a query whose
- *      filter consumes the whole iterated item (`where: { id: { in: batch } }`).
- *   6. Bulk flushes (a write whose payload is a buffered array) are skipped.
- *   7. Drivers that stage writes and commit once (Firestore, DynamoDB) are
- *      skipped for transaction/batch receivers.
+ *   - A query in a nested loop belongs to the innermost loop that contains it,
+ *     so one N+1 is not reported once per enclosing loop.
+ *   - Retry and polling loops are skipped — their iterations are attempts at
+ *     one operation, not items in a collection.
+ *   - Pagination loops are skipped — one query per page of rows is the fix,
+ *     not the bug.
+ *   - Loops over pre-chunked batches are skipped, and so is a query whose
+ *     filter consumes the whole iterated item (`where: { id: { in: batch } }`).
+ *   - Bulk flushes (a write whose payload is a buffered array) are skipped.
+ *   - Fallback chains that return on the first success are skipped.
+ *   - Drivers that stage writes and commit once (Firestore, DynamoDB) are
+ *     skipped for transaction/batch receivers.
  *
- * Changing any list or veto here changes published study results. The reduced
- * corpus cases live in the study repository; keep them in sync.
+ * Changing any list or veto here — or in the shared module — changes published
+ * study results. The reduced corpus cases are in
+ * `__tests__/n1-rules.test.ts`; keep them in sync with the study repository.
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -2261,89 +2782,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.n1Rules = void 0;
 const traverse_1 = __importDefault(__nccwpck_require__(8254));
+const db_call_heuristics_1 = __nccwpck_require__(7601);
 const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
-/**
- * Method names specific enough to ORMs that seeing one is strong evidence on
- * its own. None of these exist on Map, Set, Array, or Promise.
- */
-const DISTINCTIVE_DB_METHODS = new Set([
-    'findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
-    'findOne',
-    'findByPk', 'findAll', 'findAndCountAll', 'findOrCreate',
-    'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
-    'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
-    'executeTakeFirst', 'executeTakeFirstOrThrow',
-    'createMany', 'updateMany', 'deleteMany', 'bulkCreate',
-    'upsert', 'aggregate', 'groupBy',
-]);
-/**
- * Method names ORMs use that collide constantly with ordinary JavaScript. A
- * match on one of these is only reported when something else confirms it.
- */
-const AMBIGUOUS_DB_METHODS = new Set([
-    'find', 'get', 'all', 'run', 'query', 'execute', 'exec', 'raw',
-    'create', 'update', 'delete', 'destroy', 'save', 'insert', 'count',
-]);
-/** Array/iterable methods whose first argument is a callback. */
-const CALLBACK_FIRST_METHODS = new Set([
-    'find', 'findIndex', 'findLast', 'findLastIndex', 'filter', 'some', 'every',
-    'map', 'forEach', 'flatMap', 'reduce', 'sort',
-]);
-/** Receivers that are never a database handle. */
-const NON_DB_RECEIVERS = new Set([
-    'Promise', 'Object', 'JSON', 'Math', 'Array', 'Number', 'String', 'Boolean',
-    'Reflect', 'Symbol', 'Date', 'RegExp', 'Set', 'Map', 'WeakMap', 'WeakSet',
-    'console', 'process', 'crypto', 'localStorage', 'sessionStorage',
-    'res', 'req', 'request', 'response', 'headers', 'searchParams', 'params',
-    'cookies', 'logger', 'log', 'config', 'env', 'i18n', 'router',
-    'redis', 'cache', 'memcached', 'kv', 'socket', 'socketio', 'io', 'emitter',
-]);
-/** Receiver names that identify a database handle or ORM client. */
-const DB_HANDLE_NAMES = new Map([
-    ['prisma', 'Prisma'],
-    ['prismaClient', 'Prisma'],
-    ['knex', 'Knex'],
-    ['sequelize', 'Sequelize'],
-    ['mongoose', 'Mongoose'],
-    ['kysely', 'SQL Builder'],
-    ['db', 'Database'],
-    ['database', 'Database'],
-    ['orm', 'Database'],
-    ['tx', 'Database'],
-    ['trx', 'Database'],
-    ['transaction', 'Database'],
-    ['pg', 'Raw SQL'],
-    ['sql', 'Raw SQL'],
-    ['datasource', 'Database'],
-    ['dataSource', 'Database'],
-    ['em', 'TypeORM'],
-    ['entityManager', 'TypeORM'],
-    ['queryRunner', 'TypeORM'],
-    ['models', 'Database'],
-]);
-/** Receiver names that identify a data-access layer wrapping the database. */
-const DATA_ACCESS_RECEIVER = /(repository|repositories|repo|dao|store|model)s?$/i;
-/** Variable names that almost always hold an in-memory collection. */
-const COLLECTION_NAME_HINT = /(map|set|cache|registry|lookup|index|dict|counts|byId|byKey|byName|byType)$/i;
-/** Query-builder methods that mark a chain as SQL, not a plain method call. */
-const SQL_BUILDER_METHODS = new Set([
-    'selectFrom', 'insertInto', 'updateTable', 'deleteFrom', 'selectAll',
-    'createQueryBuilder', 'getMany', 'getOne', 'getRawMany', 'getRawOne',
-    'innerJoin', 'leftJoin', 'returningAll', 'from', 'into',
-]);
 /** Helpers that split a collection into fixed-size batches. */
 const BATCH_PRODUCERS = /^(chunk|chunked|chunks|batch|batched|batches|partition|paginate|splitIntoChunks|toChunks)$/i;
-const SQL_KEYWORD = /\b(select|insert\s+into|update\s+\w|delete\s+from|with\s+\w+\s+as|truncate|(drop|create|alter)\s+(table|index|publication|schema|database|view|subscription))\b/i;
-/** Packages whose imported bindings identify an ORM. */
-const ORM_PACKAGES = [
-    [/^@prisma\/client$|^\.prisma\//, 'Prisma'],
-    [/^sequelize($|\/)/, 'Sequelize'],
-    [/^mongoose$/, 'Mongoose'],
-    [/^typeorm($|\/)/, 'TypeORM'],
-    [/^knex$/, 'Knex'],
-    [/^kysely($|\/)/, 'SQL Builder'],
-    [/^(pg|mysql|mysql2|postgres|better-sqlite3|sqlite3)$/, 'Raw SQL'],
-];
 const STAGED_WRITE_DRIVER = /(firebase|firestore|@google-cloud\/firestore|dynamodb|@aws-sdk\/lib-dynamodb)/i;
 // ---------------------------------------------------------------------------
 // Small AST helpers
@@ -2353,48 +2795,6 @@ function snippetAt(code, line) {
 }
 function hasRange(node) {
     return typeof node?.start === 'number' && typeof node?.end === 'number';
-}
-/** `foo.bar.baz()` -> "foo"; `this.userRepo.get()` -> "userRepo". */
-function rootIdentifierName(node) {
-    let current = node;
-    let depth = 0;
-    while (current && depth < 12) {
-        depth++;
-        if (current.type === 'Identifier')
-            return current.name;
-        if (current.type === 'ThisExpression')
-            return null;
-        if (current.type === 'MemberExpression') {
-            if (current.object?.type === 'ThisExpression') {
-                return current.property?.type === 'Identifier' ? current.property.name : null;
-            }
-            current = current.object;
-        }
-        else if (current.type === 'CallExpression') {
-            current = current.callee;
-        }
-        else if (current.type === 'TSNonNullExpression' || current.type === 'TSAsExpression') {
-            current = current.expression;
-        }
-        else {
-            return null;
-        }
-    }
-    return null;
-}
-/** The immediate receiver name: `this.userRepository.get()` -> "userRepository". */
-function receiverName(node) {
-    if (!node)
-        return null;
-    if (node.type === 'Identifier')
-        return node.name;
-    if (node.type === 'TSNonNullExpression' || node.type === 'TSAsExpression') {
-        return receiverName(node.expression);
-    }
-    if (node.type === 'MemberExpression' && node.property?.type === 'Identifier') {
-        return node.property.name;
-    }
-    return null;
 }
 /** True when any identifier inside `node` matches `pattern`. */
 function mentionsIdentifier(node, pattern) {
@@ -2444,122 +2844,38 @@ function containsPaginationArguments(node) {
     walk(node, 0);
     return found;
 }
-/** The literal text of a string expression, including templates and `'a' + b`. */
-function flattenStringLiteral(node, depth = 0) {
-    if (!node || depth > 8)
-        return '';
-    if (node.type === 'StringLiteral')
-        return node.value;
-    if (node.type === 'TemplateLiteral') {
-        return node.quasis.map((q) => q.value?.raw ?? '').join(' ');
-    }
-    if (node.type === 'BinaryExpression' && node.operator === '+') {
-        return flattenStringLiteral(node.left, depth + 1) + ' ' + flattenStringLiteral(node.right, depth + 1);
-    }
-    return '';
-}
 // ---------------------------------------------------------------------------
 // Pass A — file-level facts
 // ---------------------------------------------------------------------------
 function collectFileFacts(ast) {
-    const collectionVars = new Set();
     const batchVars = new Set();
-    const ormBindings = new Map();
-    const detectedORMs = new Set();
     let hasStagedWriteDriver = false;
-    const arrayProducing = new Set([
-        'map', 'filter', 'slice', 'concat', 'split', 'flat', 'flatMap',
-        'sort', 'reverse', 'keys', 'values', 'entries', 'from', 'chunk',
-    ]);
-    const collectionConstructors = new Set(['Map', 'Set', 'WeakMap', 'WeakSet']);
-    const isCollectionInit = (init) => {
-        if (!init)
-            return false;
-        if (init.type === 'NewExpression') {
-            return init.callee?.type === 'Identifier' && collectionConstructors.has(init.callee.name);
-        }
-        if (init.type === 'ArrayExpression')
-            return true;
-        if (init.type === 'CallExpression') {
-            const method = init.callee?.property?.name;
-            if (method && arrayProducing.has(method))
-                return true;
-            const objectName = init.callee?.object?.name;
-            if ((objectName === 'Object' || objectName === 'Array') && method)
-                return true;
-        }
-        if (init.type === 'TSAsExpression' || init.type === 'TSNonNullExpression') {
-            return isCollectionInit(init.expression);
-        }
-        return false;
-    };
-    const ormFor = (source) => {
-        for (const [pattern, label] of ORM_PACKAGES) {
-            if (pattern.test(source))
-                return label;
-        }
-        return null;
-    };
     (0, traverse_1.default)(ast, {
         noScope: true,
         ImportDeclaration(path) {
-            const source = path.node.source?.value ?? '';
-            if (STAGED_WRITE_DRIVER.test(source))
+            if (STAGED_WRITE_DRIVER.test(path.node.source?.value ?? ''))
                 hasStagedWriteDriver = true;
-            const label = ormFor(source);
-            if (!label)
-                return;
-            detectedORMs.add(label);
-            for (const spec of path.node.specifiers ?? []) {
-                if (spec.local?.type === 'Identifier')
-                    ormBindings.set(spec.local.name, label);
-            }
         },
         VariableDeclarator(path) {
             const id = path.node.id;
             let init = path.node.init;
-            if (id?.type === 'Identifier' && isCollectionInit(init)) {
-                collectionVars.add(id.name);
-            }
             if (init?.type === 'AwaitExpression')
                 init = init.argument;
-            if (init?.type === 'CallExpression') {
-                const fn = init.callee?.name || init.callee?.property?.name;
-                if (id?.type === 'Identifier' && fn && BATCH_PRODUCERS.test(fn)) {
-                    batchVars.add(id.name);
-                }
-                // const prisma = new PrismaClient() / require('mongoose')
-                if (init.callee?.name === 'require') {
-                    const arg = init.arguments?.[0];
-                    if (arg?.type === 'StringLiteral') {
-                        if (STAGED_WRITE_DRIVER.test(arg.value))
-                            hasStagedWriteDriver = true;
-                        const label = ormFor(arg.value);
-                        if (label) {
-                            detectedORMs.add(label);
-                            if (id?.type === 'Identifier')
-                                ormBindings.set(id.name, label);
-                        }
-                    }
-                }
+            if (init?.type !== 'CallExpression')
+                return;
+            const fn = init.callee?.name || init.callee?.property?.name;
+            if (id?.type === 'Identifier' && fn && BATCH_PRODUCERS.test(fn)) {
+                batchVars.add(id.name);
             }
-        },
-        ClassProperty(path) {
-            if (path.node.key?.type === 'Identifier' && isCollectionInit(path.node.value)) {
-                collectionVars.add(path.node.key.name);
-            }
-        },
-        AssignmentExpression(path) {
-            const left = path.node.left;
-            if (left?.type === 'MemberExpression' &&
-                left.object?.type === 'ThisExpression' &&
-                left.property?.type === 'Identifier' &&
-                isCollectionInit(path.node.right)) {
-                collectionVars.add(left.property.name);
+            if (init.callee?.name === 'require') {
+                const arg = init.arguments?.[0];
+                if (arg?.type === 'StringLiteral' && STAGED_WRITE_DRIVER.test(arg.value)) {
+                    hasStagedWriteDriver = true;
+                }
             }
         },
     });
-    return { collectionVars, batchVars, ormBindings, detectedORMs, hasStagedWriteDriver };
+    return { ...(0, db_call_heuristics_1.collectDbContext)(ast), batchVars, hasStagedWriteDriver };
 }
 // ---------------------------------------------------------------------------
 // Pass B — loops
@@ -2606,10 +2922,8 @@ function isBatchLoop(node, kind, batchVars) {
                 return true;
         }
     }
-    if (kind === 'while' || kind === 'for') {
-        if (containsPaginationArguments(node))
-            return true;
-    }
+    if ((kind === 'while' || kind === 'for') && containsPaginationArguments(node))
+        return true;
     // for (let i = 0; i < ids.length; i += PAGE_SIZE) — fixed-size windows.
     if (kind === 'for' && node.update?.type === 'AssignmentExpression' && node.update.operator === '+=') {
         const step = node.update.right;
@@ -2646,9 +2960,7 @@ function collectLoops(ast, batchVars) {
             return;
         loops.push({
             kind,
-            node,
             start: node.start,
-            end: node.end,
             line: loc.line,
             column: loc.column,
             scanRanges: scanNodesOf(node, kind)
@@ -2726,7 +3038,7 @@ function collectCandidateCalls(ast) {
             const method = node.callee?.property?.name;
             if (typeof method !== 'string')
                 return;
-            if (!DISTINCTIVE_DB_METHODS.has(method) && !AMBIGUOUS_DB_METHODS.has(method))
+            if (!db_call_heuristics_1.DISTINCTIVE_DB_METHODS.has(method) && !db_call_heuristics_1.AMBIGUOUS_DB_METHODS.has(method))
                 return;
             if (!hasRange(node))
                 return;
@@ -2743,8 +3055,9 @@ function collectCandidateCalls(ast) {
     return calls;
 }
 // ---------------------------------------------------------------------------
-// Vetoes and classification
+// Loop-specific vetoes
 // ---------------------------------------------------------------------------
+/** `insertInto(t).values(buffer).execute()` or `createMany({ data: rows })`. */
 function isBulkOperation(callExpr, collectionVars) {
     const isCollectionArg = (arg) => {
         if (!arg)
@@ -2831,127 +3144,15 @@ function queryConsumesWholeItem(callExpr, itemName) {
     return found;
 }
 /**
- * Hard vetoes — calls that look like queries by name but demonstrably are
- * not. In the study corpus these accounted for most of the false positives.
+ * Firestore and friends stage writes on a transaction/batch object and commit
+ * once, so `transaction.delete(ref)` is not a round trip per item. The
+ * receiver name alone is therefore not evidence for those files.
  */
-function isNotADatabaseCall(callExpr, method, facts) {
-    const receiver = callExpr.callee.object;
-    // Promise.all(...), Object.keys(...), res.get(...) etc.
-    const rootName = rootIdentifierName(receiver);
-    if (rootName && NON_DB_RECEIVERS.has(rootName))
-        return true;
-    // Array.prototype.find(cb) / .some(cb): an ORM finder never takes a
-    // callback as its first argument — it takes a filter object or an id.
-    if (CALLBACK_FIRST_METHODS.has(method)) {
-        const firstArg = callExpr.arguments?.[0];
-        if (firstArg && (firstArg.type === 'ArrowFunctionExpression' || firstArg.type === 'FunctionExpression')) {
-            return true;
-        }
-    }
-    // The receiver is a variable this file initialised with new Map()/[]/.map().
-    const recvName = receiverName(receiver);
-    if (recvName && facts.collectionVars.has(recvName))
-        return true;
-    // someMap.get(k) / countsByKey.set(k, v) — name-shaped in-memory lookups.
-    if (recvName && COLLECTION_NAME_HINT.test(recvName)) {
-        if (['get', 'set', 'has', 'delete', 'keys', 'values', 'find'].includes(method))
-            return true;
-    }
-    // A write whose payload is a whole buffered array is a bulk flush.
-    if (isBulkOperation(callExpr, facts.collectionVars))
-        return true;
-    return false;
-}
-/** True for chains like `tx.deleteFrom('x').where(...).execute()`. */
-function isQueryBuilderChain(callExpr) {
-    let current = callExpr.callee;
-    let depth = 0;
-    while (current && depth < 12) {
-        depth++;
-        if (current.type === 'MemberExpression') {
-            const method = current.property?.name;
-            if (method && SQL_BUILDER_METHODS.has(method))
-                return true;
-            current = current.object;
-        }
-        else if (current.type === 'CallExpression') {
-            const method = current.callee?.property?.name;
-            if (method && SQL_BUILDER_METHODS.has(method))
-                return true;
-            current = current.callee;
-        }
-        else {
-            break;
-        }
-    }
-    return false;
-}
-function ormByMethodName(method) {
-    if (['findOne', 'findAll', 'findByPk', 'findAndCountAll', 'findOrCreate', 'bulkCreate'].includes(method)) {
-        return 'Sequelize';
-    }
-    if (['findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
-        'createMany', 'updateMany', 'deleteMany', 'upsert', 'groupBy'].includes(method)) {
-        return 'Prisma';
-    }
-    if (['find', 'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
-        'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace'].includes(method)) {
-        return 'Mongoose';
-    }
-    if (['executeTakeFirst', 'executeTakeFirstOrThrow'].includes(method))
-        return 'SQL Builder';
-    if (['query', 'execute', 'exec', 'raw'].includes(method))
-        return 'Raw SQL';
-    return 'Database';
-}
-/**
- * Positive identification. Returns the ORM/driver label, or null when there
- * is not enough evidence that this call reaches a database. Staying quiet
- * beats another false positive.
- */
-function classifyDatabaseCall(call, facts) {
-    const { node: callExpr, method } = call;
-    // 1. The receiver traces back to an imported ORM binding.
-    const rootName = rootIdentifierName(callExpr.callee.object);
-    if (rootName && facts.ormBindings.has(rootName)) {
-        return facts.ormBindings.get(rootName);
-    }
-    // 2. A SQL query-builder chain: tx.deleteFrom(...).where(...).execute()
-    if (isQueryBuilderChain(callExpr))
-        return 'SQL Builder';
-    // 3. A raw SQL string passed to query()/raw()/execute().
-    if (['query', 'raw', 'execute', 'exec'].includes(method)) {
-        const firstArg = callExpr.arguments?.[0];
-        if (firstArg && SQL_KEYWORD.test(flattenStringLiteral(firstArg)))
-            return 'Raw SQL';
-    }
-    // 4. The receiver is a recognised database handle: prisma.*, db.*, tx.*
-    if (rootName && DB_HANDLE_NAMES.has(rootName)) {
-        // Firestore and friends stage writes on a transaction/batch object and
-        // commit once, so `transaction.delete(ref)` is not a round trip per item.
-        const isStagedWrite = rootName === 'transaction' || rootName === 'tx' || rootName === 'batch';
-        if (!(facts.hasStagedWriteDriver && isStagedWrite)) {
-            return DB_HANDLE_NAMES.get(rootName);
-        }
-    }
-    // 5. The receiver is a data-access object: userRepository.get(id). Only
-    // when the result is awaited or returned — a plain Map that happens to be
-    // called `repositories` is not a data-access layer.
-    const recvName = receiverName(callExpr.callee.object);
-    if (recvName && DATA_ACCESS_RECEIVER.test(recvName)) {
-        if (DISTINCTIVE_DB_METHODS.has(method) || call.promiseContext)
-            return 'Repository';
-    }
-    // 6. A method name that only ORMs use is evidence by itself.
-    if (DISTINCTIVE_DB_METHODS.has(method))
-        return ormByMethodName(method);
-    // 7. An ambiguous method name, but this file imports the matching ORM.
-    if (facts.detectedORMs.size > 0) {
-        const fallback = ormByMethodName(method);
-        if (facts.detectedORMs.has(fallback))
-            return fallback;
-    }
-    return null;
+function classifyForLoop(call, facts) {
+    const rootName = (0, db_call_heuristics_1.rootIdentifierName)(call.node.callee?.object);
+    const isStagedWrite = rootName === 'transaction' || rootName === 'tx' || rootName === 'batch';
+    const allowDbHandle = !(facts.hasStagedWriteDriver && isStagedWrite);
+    return (0, db_call_heuristics_1.classifyDatabaseCall)(call.node, call.method, facts, call.promiseContext, allowDbHandle);
 }
 // ---------------------------------------------------------------------------
 // Detector
@@ -2990,11 +3191,13 @@ function detectN1Issues(filePath, content, ast) {
                 continue;
             if (call.fallbackChainExit)
                 continue;
-            if (isNotADatabaseCall(call.node, call.method, facts))
+            if ((0, db_call_heuristics_1.isDefinitelyNotADatabaseCall)(call.node, call.method, facts))
+                continue;
+            if (isBulkOperation(call.node, facts.collectionVars))
                 continue;
             if (queryConsumesWholeItem(call.node, owner.itemName))
                 continue;
-            const orm = classifyDatabaseCall(call, facts);
+            const orm = classifyForLoop(call, facts);
             if (!orm)
                 continue;
             const list = byLoop.get(owner);
@@ -3050,6 +3253,18 @@ exports.n1Rules = [
  * Detects 2 anti-patterns using Babel AST traversal:
  *   payload/unbounded-query — findAll/findMany without field selection or a row limit
  *   payload/large-return    — returning unbounded query results directly from a function
+ *
+ * The first version of these rules matched on the method name alone, with
+ * `find` in the list and nothing to corroborate it. That is the same mistake
+ * the N+1 rule made in its first round: `Array.prototype.find(cb)`,
+ * `Map.get()` and a plain object named `store` all match. Scanning this very
+ * package reported `find() without field selection and a row limit` against an
+ * in-memory array lookup.
+ *
+ * Both rules now go through the shared heuristics in `db-call-heuristics.ts`:
+ * distinctive ORM method names are evidence on their own, ambiguous ones need
+ * an ORM import, a query-builder chain, a database handle or a data-access
+ * receiver before anything is reported.
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
@@ -3057,8 +3272,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.payloadRules = void 0;
 const traverse_1 = __importDefault(__nccwpck_require__(8254));
+const db_call_heuristics_1 = __nccwpck_require__(7601);
 const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
-const DB_METHODS = new Set(['findAll', 'findMany', 'find']);
+/**
+ * Finders that return a collection. A payload rule is about rows coming back,
+ * so `findUnique` and friends are irrelevant here even though they are
+ * database calls.
+ */
+const COLLECTION_FINDERS = new Set(['findAll', 'findMany', 'find', 'getMany', 'findAndCountAll']);
 function snippetAt(code, line) {
     return (code.split('\n')[line - 1] ?? '').trim().slice(0, 120);
 }
@@ -3084,27 +3305,50 @@ function optionsHaveSelectAndLimit(optionsNode) {
     }
     return { hasSelect, hasLimit };
 }
+/**
+ * True when this call is a database query returning a collection. Returns
+ * false for anything that only looks like one by name.
+ */
+function isCollectionQuery(callExpr, method, ctx, resultIsAwaited) {
+    if (!COLLECTION_FINDERS.has(method))
+        return false;
+    if (!db_call_heuristics_1.DISTINCTIVE_DB_METHODS.has(method) && !db_call_heuristics_1.AMBIGUOUS_DB_METHODS.has(method))
+        return false;
+    if ((0, db_call_heuristics_1.isDefinitelyNotADatabaseCall)(callExpr, method, ctx))
+        return false;
+    return (0, db_call_heuristics_1.classifyDatabaseCall)(callExpr, method, ctx, resultIsAwaited) !== null;
+}
+const PROMISE_CONTEXT = new Set([
+    'AwaitExpression', 'ReturnStatement', 'ArrowFunctionExpression',
+    'ArrayExpression', 'CallExpression', 'YieldExpression',
+]);
 function detectPayloadIssues(filePath, content, ast) {
     if (!ast)
         return [];
     const issues = [];
     try {
+        const ctx = (0, db_call_heuristics_1.collectDbContext)(ast);
         (0, traverse_1.default)(ast, {
             noScope: true,
             CallExpression(path) {
                 const node = path.node;
                 const methodName = node.callee?.property?.name;
                 const loc = node.loc?.start;
-                if (!loc || !methodName || !DB_METHODS.has(methodName))
+                if (!loc || !methodName)
                     return;
                 // A ReturnStatement wrapping this call is handled by the ReturnStatement
                 // visitor below (more specific "returning unbounded results" framing).
                 if (path.parent?.type === 'ReturnStatement')
                     return;
+                const awaited = PROMISE_CONTEXT.has(path.parent?.type ?? '');
+                if (!isCollectionQuery(node, methodName, ctx, awaited))
+                    return;
                 const { hasSelect, hasLimit } = optionsHaveSelectAndLimit(node.arguments?.[0]);
                 if (hasSelect && hasLimit)
                     return;
-                const missing = [!hasSelect ? 'field selection' : null, !hasLimit ? 'a row limit' : null].filter(Boolean).join(' and ');
+                const missing = [!hasSelect ? 'field selection' : null, !hasLimit ? 'a row limit' : null]
+                    .filter(Boolean)
+                    .join(' and ');
                 issues.push({
                     id: '', rule: 'payload/unbounded-query', category: 'payload', severity: 'medium',
                     file: filePath, line: loc.line, column: loc.column,
@@ -3119,11 +3363,15 @@ function detectPayloadIssues(filePath, content, ast) {
             ReturnStatement(path) {
                 const node = path.node;
                 const loc = node.loc?.start;
-                const argument = node.argument;
+                let argument = node.argument;
+                if (argument?.type === 'AwaitExpression')
+                    argument = argument.argument;
                 if (!loc || argument?.type !== 'CallExpression')
                     return;
                 const methodName = argument.callee?.property?.name;
-                if (!methodName || !DB_METHODS.has(methodName))
+                if (!methodName)
+                    return;
+                if (!isCollectionQuery(argument, methodName, ctx, true))
                     return;
                 const { hasLimit } = optionsHaveSelectAndLimit(argument.arguments?.[0]);
                 if (hasLimit)
@@ -3181,40 +3429,78 @@ exports.redosRules = void 0;
 const traverse_1 = __importDefault(__nccwpck_require__(8254));
 const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
 const USER_INPUT_INDICATORS = new Set(['req', 'request', 'body', 'query', 'params', 'input', 'data', 'user']);
-const DANGEROUS_PATTERNS = [
+/**
+ * Catastrophic backtracking needs *ambiguity* — two ways for the engine to
+ * match the same input, multiplied by a quantifier. Three structures produce
+ * it, and nothing else in a regex's surface text does:
+ *
+ *   1. A nested quantifier: `(a+)+`, `(a*)*`. The classic case.
+ *   2. Two unbounded quantifiers over the same character class next to each
+ *      other: `.*.*`, `\w+\w+`. The engine has to try every split point.
+ *   3. A quantified group containing alternation: `(a|ab)+`. Alternatives that
+ *      can match the same text give the engine a choice to backtrack through.
+ *
+ * The previous version scored regex *complexity* instead: two points per
+ * quantifier, two per group, three per alternation branch, report above ten.
+ * That measures length, not backtracking. A flat anchored alternation like
+ * `/^(chunk|chunked|batch|batches|partition)$/` scored 17 and was reported as
+ * a ReDoS vulnerability despite matching in linear time — this package's own
+ * constants produced 28 such findings, every one of them wrong.
+ *
+ * Length is not risk. Only these three structures are reported now.
+ */
+const NESTED_QUANTIFIER = [
     /\(\.\*\)\+/, /\(\.\+\)\+/, /\([^)]*\+\)\+/, /\([^)]*\*\)\+/,
     /\([^)]*\+\)\*/, /\([^)]*\*\)\*/, /\(\[.*?\]\+\)\+/, /\(\[.*?\]\*\)\+/,
     /\(\.\*\?\)\+/, /\(\.\+\?\)\+/,
 ];
+/** `.*.*`, `\w+\w+`, `[a-z]+[a-z]*` — same class, both unbounded. */
+const REPEATED_SAME_CLASS = /(\.|\\w|\\d|\\s|\\S|\\D|\\W|\[[^\]]+\])\s*[+*]\s*\1\s*[+*]/;
+/** `(a|ab)+` — alternation inside something quantified. */
+const QUANTIFIED_ALTERNATION = /\([^()]*\|[^()]*\)\s*(?:[+*]|\{\d+,\})/;
 function snippetAt(code, line) {
     return (code.split('\n')[line - 1] ?? '').trim().slice(0, 120);
 }
-function complexityScore(pattern) {
-    let score = 0;
-    score += ((pattern.match(/[+*?]|\{\d+,?\d*\}/g) || []).length) * 2;
-    score += ((pattern.match(/\(/g) || []).length) * 2;
-    score += ((pattern.match(/\|/g) || []).length) * 3;
-    if (/\([^)]*[+*][^)]*\)[+*]/.test(pattern))
-        score += 10;
-    if (/[+*].*[+*]/.test(pattern))
-        score += 5;
-    return score;
+function backtrackingRisk(pattern) {
+    if (NESTED_QUANTIFIER.some(p => p.test(pattern)))
+        return 'nested-quantifier';
+    if (REPEATED_SAME_CLASS.test(pattern))
+        return 'repeated-class';
+    if (QUANTIFIED_ALTERNATION.test(pattern))
+        return 'quantified-alternation';
+    return null;
 }
+const RISK_DETAIL = {
+    'nested-quantifier': {
+        severity: 'critical',
+        confidence: 0.85,
+        why: 'contains a nested quantifier, the classic catastrophic-backtracking shape',
+    },
+    'repeated-class': {
+        severity: 'high',
+        confidence: 0.7,
+        why: 'repeats the same character class with two unbounded quantifiers, so the engine must try every split point',
+    },
+    'quantified-alternation': {
+        severity: 'medium',
+        confidence: 0.5,
+        why: 'quantifies a group containing alternation; if the branches can match the same text the engine can backtrack through every combination',
+    },
+};
 function analyzeRegex(pattern, flags, loc, content, filePath, issues) {
-    const isDangerous = DANGEROUS_PATTERNS.some(p => p.test(pattern));
-    const score = complexityScore(pattern);
-    if (!isDangerous && score <= 10)
+    const kind = backtrackingRisk(pattern);
+    if (!kind)
         return;
-    const severity = isDangerous ? 'critical' : score > 20 ? 'high' : 'medium';
+    const { severity, confidence, why } = RISK_DETAIL[kind];
     issues.push({
         id: '', rule: 'redos/dangerous-pattern', category: 'redos', severity,
         file: filePath, line: loc.line, column: loc.column,
         title: 'Potential ReDoS vulnerability',
-        description: `Regex /${pattern}/${flags} ${isDangerous ? 'contains a nested-quantifier pattern known to cause catastrophic backtracking' : `has a high complexity score (${score})`}.`,
+        description: `Regex /${pattern}/${flags} ${why}.`,
         snippet: snippetAt(content, loc.line),
-        recommendation: 'Avoid nested quantifiers like (a+)+ or (.*)+; replace .* with a specific character class; consider a regex timeout or input length limit.',
+        recommendation: 'Avoid nested quantifiers like (a+)+; make alternation branches mutually exclusive; replace .* with a specific character class; cap input length before matching.',
         studyReference: 'Study 10',
-        confidence: isDangerous ? 0.85 : 0.6,
+        confidence,
     });
 }
 function looksLikeUserInput(node) {
@@ -3265,6 +3551,13 @@ function detectRedosIssues(filePath, content, ast) {
                 const loc = node.loc?.start;
                 if (!loc || !['match', 'test', 'exec', 'replace', 'replaceAll', 'search', 'split'].includes(methodName))
                     return;
+                // `str.split(',')` and `str.replace('a', 'b')` take strings, not
+                // regexes, and cannot backtrack at all.
+                if (['replace', 'replaceAll', 'split'].includes(methodName)) {
+                    const first = node.arguments?.[0];
+                    if (!first || first.type === 'StringLiteral' || first.type === 'TemplateLiteral')
+                        return;
+                }
                 const target = methodName === 'test' || methodName === 'exec' ? node.arguments?.[0] : node.callee?.object;
                 if (looksLikeUserInput(target)) {
                     issues.push({

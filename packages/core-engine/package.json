@@ -1,11 +1,18 @@
 {
   "name": "@code-evolution/core-engine",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Unified detection engine for empirical software diagnostics",
-  "repository": { "type": "git", "url": "git+https://github.com/liangk/code-evolution-lab.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/liangk/code-evolution-lab.git"
+  },
   "homepage": "https://github.com/liangk/code-evolution-lab#readme",
-  "bugs": { "url": "https://github.com/liangk/code-evolution-lab/issues" },
-  "engines": { "node": ">=18" },
+  "bugs": {
+    "url": "https://github.com/liangk/code-evolution-lab/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -29,6 +36,8 @@
     "ts-jest": "^29.1.0",
     "typescript": "^5.7.3"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "license": "MIT"
 }

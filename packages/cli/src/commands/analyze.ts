@@ -9,7 +9,7 @@ import {
   writeScoreFile,
 } from '@code-evolution/core-engine';
 import type { DiagnosticCategory, Severity } from '@code-evolution/core-engine';
-import { resolveScanTargets } from '../target';
+import { resolveScanTargets, warnIfNothingScanned } from '../target';
 
 interface AnalyzeOptions {
   severity?: string;
@@ -38,6 +38,8 @@ export async function analyzeCommand(pathArgs: string[] | undefined, options: An
     minSeverity: (options.severity as Severity) ?? 'low',
     categories,
   }, registry);
+
+  warnIfNothingScanned(report.summary.filesScanned, includePaths ?? [targetPath]);
 
   // Console output (unless --json)
   if (!options.json) {

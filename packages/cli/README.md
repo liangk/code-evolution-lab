@@ -68,10 +68,10 @@ npm install -g code-evolution-lab
 ### `analyze` — Scan a project
 
 ```bash
-code-evolution-lab analyze [path]
+code-evolution-lab analyze [paths...]
 ```
 
-Analyzes the target directory (default: current directory) and produces:
+Analyzes the target directories (default: current directory) and produces:
 
 - A colored console summary with rule IDs, file locations, severity, and empirical speedup data
 - `.codeevolution/results.json` — full machine-readable findings
@@ -114,6 +114,9 @@ code-evolution-lab analyze
 
 # Focus on a specific project path
 code-evolution-lab analyze ~/projects/my-app
+
+# Scan several sibling directories as one scope
+code-evolution-lab analyze server/routes server/commands server/queues
 
 # High-severity issues only — ideal for CI gates
 code-evolution-lab analyze . --severity high
@@ -189,8 +192,8 @@ Baseline scan comparison
   Unchanged:      40
 
   New issues (2):
-    HIGH     loop/nested-loops  src/services/matcher.ts:89
-             Nested for-loop at depth 2 — 64× cost at n=10,000
+    MEDIUM   loop/nested-loops  src/services/matcher.ts:89
+             Nested for-of at depth 2 over an independent collection
 
   Resolved issues (1):
     ✓ memory/missing-effect-cleanup  src/hooks/useData.ts:45
@@ -286,15 +289,15 @@ All output is written to `.codeevolution/` by default (override with `--output`)
       "id": "a1b2c3d4e5f6",
       "rule": "loop/nested-loops",
       "category": "loop",
-      "severity": "high",
+      "severity": "medium",
       "file": "src/services/matcher.ts",
       "line": 89,
-      "title": "Nested for-loop at depth 2",
-      "description": "Potential O(n²) — consider Map/Set lookup for O(n).",
-      "recommendation": "Replace inner loop scan with a Map or Set lookup.",
+      "title": "Nested for-of at depth 2 over an independent collection",
+      "description": "The inner collection does not derive from the outer loop variable, so it is re-scanned once per outer element — O(n^2).",
+      "recommendation": "Index the inner collection into a Map or Set before the outer loop, then look up by key.",
       "studyReference": "Study 04, BM-04",
       "empiricalSpeedup": "64× at n=10,000",
-      "confidence": 0.8
+      "confidence": 0.6
     }
   ]
 }
@@ -302,7 +305,7 @@ All output is written to `.codeevolution/` by default (override with `--output`)
 
 ### Confidence Score
 
-The confidence score (0–100) is a composite measure of your codebase's structural health. It factors in the number of detected issues weighted by severity and the proportion of scanned files affected.
+The confidence score (0–100) is **penalty density**: each issue contributes a penalty weighted by severity and by the rule's own confidence, and the total is divided by the number of files scanned. Dividing by scan size is what makes the number comparable between a 300-file package and a 300,000-line monolith, and what makes `compare` able to detect improvement at all — an absolute penalty saturates at zero after roughly twenty-five high-severity findings, which left every non-trivial project sitting at 0 with a permanently flat delta.
 
 | Score | Interpretation |
 |-------|---------------|
@@ -310,6 +313,8 @@ The confidence score (0–100) is a composite measure of your codebase's structu
 | **70–89** | Good — minor issues unlikely to impact production at current scale |
 | **50–69** | Needs attention — several patterns with measurable performance impact |
 | **0–49** | Critical — patterns that cause significant degradation at realistic data sizes |
+
+A score of 100 with zero files scanned means nothing was found to scan, not that nothing is wrong. The CLI warns when that happens.
 
 Track this score over time as a team health metric. A declining score across PRs is an early signal of accruing performance debt.
 
@@ -323,10 +328,10 @@ These patterns were derived from the loop-performance study in the research repo
 
 | Rule | Severity | What it detects | Measured cost |
 |------|----------|----------------|--------------|
-| `loop/regex-in-loop` | high | `RegExp` literal or constructor called inside a loop body | 1.03× V8, 2× CPython — cost compounds with iterations |
+| `loop/regex-in-loop` | low–medium | A regex built inside a loop body | Low for a literal or fixed pattern — V8 serves those from its compilation cache, and Study 04 measured **1.03×** in V8. Medium when the pattern is computed from loop data, which genuinely recompiles each iteration |
 | `loop/json-parse-in-loop` | high | `JSON.parse()` or `JSON.stringify()` called per iteration | **46× slower** at n=100,000 vs. hoisting outside the loop |
 | `loop/sequential-await` | high | `await` inside a `for`/`while` loop serializing parallel work | Linear cost; parallelizing with `Promise.all` eliminates it |
-| `loop/nested-loops` | high | `for`/`while` loop nested inside another | **64× cost** at n=10,000 (O(n²) growth) |
+| `loop/nested-loops` | medium–high | An inner loop whose collection does **not** derive from the outer loop variable, so it is re-scanned once per outer element | **64× cost** at n=10,000 (O(n²) growth). Walking nested data — `for (const child of node.children)` — is linear in total elements and is not reported |
 | `loop/nested-array-methods` | medium | `.map()`, `.filter()`, `.find()` nested inside each other | 6× at large n |
 | `loop/chained-array-methods` | medium | Multiple `.filter().map().reduce()` chains on the same array | 1.5–2× — each pass rebuilds an intermediate array |
 
@@ -358,15 +363,15 @@ These patterns are detected from **Prisma schema files** combined with query cal
 
 | Rule | Severity | What it detects | Measured cost |
 |------|----------|----------------|--------------|
-| `n1/query-in-loop` | high–critical | ORM/DB finder method (`findUnique`, `findMany`, `query`, etc.) called inside a loop | **10–100× slower** at 100K rows vs. a single batched query |
+| `n1/query-in-loop` | medium–critical | ORM/DB call made once per loop iteration. Distinctive ORM method names count on their own; ambiguous ones (`find`, `get`, `query`) need corroboration from an ORM import, a query-builder chain or a database handle, so `Map.get()` and `Array.find(cb)` are not reported | **10–100× slower** at 100K rows vs. a single batched query |
 
 ### Blocking I/O Rules (Study 02 — Blocking I/O)
 
 | Rule | Severity | What it detects | Measured cost |
 |------|----------|----------------|--------------|
-| `blocking-io/sync-file-operation` | medium–critical | `readFileSync`/`writeFileSync`/etc. blocking the event loop | **5–15× slower** under concurrent load |
-| `blocking-io/sync-crypto-operation` | medium–high | `pbkdf2Sync`, `scryptSync`, `randomBytes`, etc. | CPU-intensive, blocks the event loop |
-| `blocking-io/sync-child-process` | high | `execSync`, `execFileSync`, `spawnSync` | Blocks until the child process exits |
+| `blocking-io/sync-file-operation` | low–critical | `readFileSync`/`writeFileSync`/etc. blocking the event loop | **5–15× slower** under concurrent load. Severity depends on context: critical in a request handler inside a loop, low when the file shows no sign of belonging to a server — synchronous fs is usually the right call in a CLI or build script |
+| `blocking-io/sync-crypto-operation` | low–high | `pbkdf2Sync`, `scryptSync`, `generateKeyPairSync` | Key derivation is deliberately CPU-intensive and blocks for its whole duration. `randomBytes` is low severity; `createHash`/`createHmac` are not reported at all — constructing a hash object does no work |
+| `blocking-io/sync-child-process` | medium–high | `execSync`, `execFileSync`, `spawnSync` | Blocks until the child process exits |
 | `blocking-io/sync-database-operation` | critical | `querySync`/`runSync`-style DB calls | Blocks all concurrent requests |
 
 ### Resource Rules (Study 06 — Resource Leaks)
@@ -403,7 +408,7 @@ These patterns are detected from **Prisma schema files** combined with query cal
 
 | Rule | Severity | What it detects | Real-world impact |
 |------|----------|----------------|------------------|
-| `redos/dangerous-pattern` | medium–critical | Nested-quantifier regex patterns (e.g. `(a+)+`) or high complexity score | Catastrophic backtracking — denial of service |
+| `redos/dangerous-pattern` | medium–critical | Three structures that actually backtrack: a nested quantifier (`(a+)+`), two unbounded quantifiers over the same character class (`.*.*`), or alternation inside a quantified group (`(a\|ab)+`) | Catastrophic backtracking — denial of service. Length is not risk: an anchored flat alternation matches in linear time and is not reported |
 | `redos/regex-user-input` | high | Regex method applied to a value that looks like user input | Malicious input can trigger a hang |
 
 ### Caching Rules (Study 11 — Caching)
