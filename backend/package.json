@@ -1,6 +1,6 @@
 {
   "name": "code-evolution-lab",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "A hands-on lab for evolutionary approaches to code performance optimization.",
   "homepage": "https://github.com/liangk/code-evolution-lab#readme",
   "bugs": {

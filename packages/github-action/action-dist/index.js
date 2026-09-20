@@ -58,7 +58,19 @@ const crypto_1 = __nccwpck_require__(6982);
 const VERSION = '1.0.0';
 const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs']);
 const PRISMA_FILES = new Set(['schema.prisma']);
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__']);
+const SKIP_DIRS = new Set([
+    'node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__',
+    '__tests__', '__mocks__', 'e2e', '.turbo',
+]);
+// Test and spec files are excluded by default. A performance scan is about
+// code that runs in production: a deliberate N+1 in a fixture is not a finding,
+// and letting test files into the count skews the score against codebases that
+// are well tested.
+const TEST_FILE = /\.(test|spec|e2e)\.[cm]?[jt]sx?$/;
+// Points deducted per unit of penalty density (penalty per file scanned).
+// At 25, one high-severity finding in every file scores 0, one every four
+// files scores 75, and a clean tree scores 100.
+const DENSITY_SCALE = 25;
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 // ---------------------------------------------------------------------------
 // Issue hashing — stable across runs for the same issue
@@ -125,6 +137,8 @@ function collectFiles(dir, exclude = []) {
                 walk(full);
                 continue;
             }
+            if (TEST_FILE.test(entry))
+                continue;
             const ext = (0, path_1.extname)(entry);
             if (JS_EXTENSIONS.has(ext) || PRISMA_FILES.has(entry)) {
                 files.push(full);
@@ -194,13 +208,17 @@ function analyzeFile(filePath, targetRoot, rules) {
     return issues;
 }
 function analyzeDirectory(options, registry) {
-    const { targetPath, minSeverity, categories, rules: ruleFilter, exclude } = options;
+    const { targetPath, includePaths, minSeverity, categories, rules: ruleFilter, exclude } = options;
     let activeRules = registry.getAll();
     if (categories?.length)
         activeRules = activeRules.filter(r => categories.includes(r.category));
     if (ruleFilter?.length)
         activeRules = activeRules.filter(r => ruleFilter.includes(r.id));
-    const files = collectFiles(targetPath, exclude);
+    // A scan can cover several sibling directories rather than one tree. Walk
+    // each, but keep reported paths anchored at targetPath so they read the same
+    // either way, and deduplicate in case one root nests inside another.
+    const roots = includePaths?.length ? includePaths : [targetPath];
+    const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))];
     const allIssues = [];
     for (const file of files) {
         const issues = analyzeFile(file, targetPath, activeRules);
@@ -245,13 +263,26 @@ function buildSummary(filesScanned, issues) {
         issuesFound: issues.length,
         bySeverity,
         byCategory,
-        confidenceScore: calculateScore(issues),
+        confidenceScore: calculateScore(issues, filesScanned),
     };
 }
 // ---------------------------------------------------------------------------
-// Confidence score — weighted by severity and confidence per issue
+// Confidence score — penalty density, weighted by severity and confidence
 // ---------------------------------------------------------------------------
-function calculateScore(issues) {
+/**
+ * Score a scan from 0 (worst) to 100 (clean).
+ *
+ * The penalty is normalised by the number of files scanned. An absolute
+ * penalty saturates: at weight 5 and confidence 0.8, twenty-five
+ * high-severity findings already exceed 100, so every project past that point
+ * scores exactly 0. That makes the score identical for a 300-file package and
+ * a 300,000-line monolith, and — worse — makes `compareBaseline`'s scoreDelta
+ * permanently 0, so the CI guard in `compare` can never fire. Scoring density
+ * instead keeps the number responsive at any scan size.
+ *
+ * `filesScanned` is required: passing 0 or a negative number is treated as 1.
+ */
+function calculateScore(issues, filesScanned) {
     if (issues.length === 0)
         return 100;
     const weights = { critical: 10, high: 5, medium: 2, low: 1 };
@@ -259,8 +290,8 @@ function calculateScore(issues) {
     for (const i of issues) {
         totalPenalty += weights[i.severity] * i.confidence;
     }
-    // Score: 100 minus penalty, clamped to 0–100
-    const raw = 100 - totalPenalty;
+    const density = totalPenalty / Math.max(filesScanned, 1);
+    const raw = 100 - density * DENSITY_SCALE;
     return Math.max(0, Math.min(100, Math.round(raw)));
 }
 // ---------------------------------------------------------------------------
@@ -566,6 +597,11 @@ const fs_1 = __nccwpck_require__(9896);
 const path_1 = __nccwpck_require__(6928);
 function generateScoreText(report) {
     const { summary } = report;
+    // Same normalisation as calculateScore in engine.ts: penalty per file, not
+    // absolute penalty. Without it a category with 25 high-severity findings
+    // reads 0/100 whether the scan covered 30 files or 30,000.
+    const files = Math.max(summary.filesScanned, 1);
+    const DENSITY_SCALE = 25;
     let text = `${summary.confidenceScore}/100\n\nBreakdown:\n`;
     const categories = [
         'n1', 'blocking-io', 'memory', 'loop', 'index',
@@ -578,15 +614,15 @@ function generateScoreText(report) {
             continue;
         }
         const highConf = catIssues.filter(i => i.confidence >= 0.8).length;
-        // Category score: 100 minus weighted penalties, proportional to total
         const penalty = catIssues.reduce((sum, i) => {
             const w = i.severity === 'critical' ? 10 : i.severity === 'high' ? 5 : i.severity === 'medium' ? 2 : 1;
             return sum + w * i.confidence;
         }, 0);
-        const catScore = Math.max(0, Math.min(100, Math.round(100 - penalty)));
+        const catScore = Math.max(0, Math.min(100, Math.round(100 - (penalty / files) * DENSITY_SCALE)));
         text += `  ${cat.padEnd(18)} ${String(catScore).padStart(3)}/100 (${catIssues.length} issues, ${highConf} high-confidence)\n`;
     }
-    text += `\nBased on: 11 completed empirical studies, controlled benchmarks, and real-world corpus scans\n`;
+    text += `\nScanned ${summary.filesScanned} files. Scores are penalty density, so they stay comparable across scan sizes.\n`;
+    text += `Based on: 11 completed empirical studies, controlled benchmarks, and real-world corpus scans\n`;
     text += `Generated: ${report.timestamp}\n`;
     return text;
 }
@@ -1544,6 +1580,156 @@ function countLoopDepth(path) {
     }
     return depth;
 }
+// ---------------------------------------------------------------------------
+// Nested-loop analysis
+//
+// A loop inside a loop is not by itself a problem. Walking a tree or a
+// matrix — `for (const child of node.children)` inside `for (const node of
+// nodes)` — is linear in the total number of elements, not quadratic, and it
+// is how most recursive data structures get traversed. Reporting every such
+// loop as a HIGH O(n²) risk is what made this rule fire 86 times on one
+// dependency tree.
+//
+// What is actually quadratic is a *cross product*: an inner loop whose
+// iteration source owes nothing to the outer loop variable, so it replays the
+// whole inner collection once per outer element. That is the case a Map or Set
+// lookup collapses to O(n), and it is the only case this rule now reports.
+// ---------------------------------------------------------------------------
+const LOOP_STATEMENT_TYPES = ['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement'];
+function collectPatternNames(node, out) {
+    if (!node)
+        return;
+    if (t.isIdentifier(node)) {
+        out.add(node.name);
+        return;
+    }
+    if (t.isObjectPattern(node)) {
+        for (const prop of node.properties) {
+            collectPatternNames(t.isObjectProperty(prop) ? prop.value : prop.argument, out);
+        }
+        return;
+    }
+    if (t.isArrayPattern(node)) {
+        for (const el of node.elements)
+            collectPatternNames(el, out);
+        return;
+    }
+    if (t.isRestElement(node)) {
+        collectPatternNames(node.argument, out);
+        return;
+    }
+    if (t.isAssignmentPattern(node)) {
+        collectPatternNames(node.left, out);
+        return;
+    }
+}
+function loopBindingNames(node, out) {
+    if (t.isForOfStatement(node) || t.isForInStatement(node)) {
+        const left = node.left;
+        if (t.isVariableDeclaration(left)) {
+            for (const decl of left.declarations)
+                collectPatternNames(decl.id, out);
+        }
+        else {
+            collectPatternNames(left, out);
+        }
+        return;
+    }
+    if (t.isForStatement(node) && t.isVariableDeclaration(node.init)) {
+        for (const decl of node.init.declarations)
+            collectPatternNames(decl.id, out);
+    }
+}
+/** Names bound by every loop enclosing this one, including array-method callback params. */
+function enclosingLoopBindings(path) {
+    const names = new Set();
+    let p = path.parentPath;
+    while (p?.node) {
+        const type = p.node.type ?? '';
+        if (LOOP_STATEMENT_TYPES.includes(type))
+            loopBindingNames(p.node, names);
+        if (type === 'CallExpression') {
+            const callee = p.node.callee;
+            if (t.isMemberExpression(callee) && t.isIdentifier(callee.property) && ARRAY_METHODS.has(callee.property.name)) {
+                for (const arg of p.node.arguments) {
+                    if (t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg)) {
+                        for (const param of arg.params)
+                            collectPatternNames(param, names);
+                    }
+                }
+            }
+        }
+        p = p.parentPath;
+    }
+    return names;
+}
+/** Every identifier name appearing anywhere in an AST subtree. */
+function identifiersIn(node) {
+    const out = new Set();
+    const seen = new Set();
+    function visit(n) {
+        if (!n || typeof n !== 'object' || seen.has(n))
+            return;
+        seen.add(n);
+        if (Array.isArray(n)) {
+            for (const item of n)
+                visit(item);
+            return;
+        }
+        if (n.type === 'Identifier' && typeof n.name === 'string')
+            out.add(n.name);
+        for (const key of Object.keys(n)) {
+            if (key === 'loc' || key === 'start' || key === 'end' || key.endsWith('Comments'))
+                continue;
+            visit(n[key]);
+        }
+    }
+    visit(node);
+    return out;
+}
+/**
+ * The expression that decides how many times this loop runs: the iterable for
+ * for-of/for-in, the test condition for a counted for-loop.
+ */
+function iterationSourceOf(node) {
+    if (t.isForOfStatement(node) || t.isForInStatement(node))
+        return node.right;
+    if (t.isForStatement(node))
+        return node.test;
+    return null;
+}
+function nestedLoopIssue(path, content, filePath, label) {
+    const depth = countLoopDepth(path);
+    if (depth < 1)
+        return null;
+    const loc = path.node.loc?.start;
+    if (!loc)
+        return null;
+    // Derived from an enclosing loop variable → nested data, not a cross product.
+    const bindings = enclosingLoopBindings(path);
+    const source = iterationSourceOf(path.node);
+    if (!source)
+        return null;
+    for (const name of identifiersIn(source)) {
+        if (bindings.has(name))
+            return null;
+    }
+    const level = depth + 1;
+    return {
+        id: '', rule: 'loop/nested-loops', category: 'loop',
+        severity: level >= 3 ? 'high' : 'medium',
+        file: filePath, line: loc.line, column: loc.column,
+        title: `Nested ${label} at depth ${level} over an independent collection`,
+        description: `The inner collection does not derive from the outer loop variable, so it is ` +
+            `re-scanned once per outer element — O(n^${level}). Build a Map or Set from it ` +
+            `before the outer loop and look up instead of scanning.`,
+        snippet: snippetAt(content, loc.line),
+        recommendation: 'Index the inner collection into a Map or Set before the outer loop, then look up by key.',
+        studyReference: 'Study 04, BM-04',
+        empiricalSpeedup: '64× at n=10,000',
+        confidence: level >= 3 ? 0.7 : 0.6,
+    };
+}
 function detectLoopIssues(filePath, content, ast) {
     if (!ast)
         return [];
@@ -1668,42 +1854,14 @@ function detectLoopIssues(filePath, content, ast) {
                 }
             },
             ForStatement(path) {
-                const depth = countLoopDepth(path);
-                if (depth >= 1) {
-                    const loc = path.node.loc?.start;
-                    if (!loc)
-                        return;
-                    issues.push({
-                        id: '', rule: 'loop/nested-loops', category: 'loop', severity: 'high',
-                        file: filePath, line: loc.line, column: loc.column,
-                        title: `Nested for-loop at depth ${depth + 1}`,
-                        description: `Potential O(n²) — consider Map/Set lookup for O(n).`,
-                        snippet: snippetAt(content, loc.line),
-                        recommendation: 'Replace inner loop scan with a Map or Set lookup.',
-                        studyReference: 'Study 04, BM-04',
-                        empiricalSpeedup: '64× at n=10,000',
-                        confidence: 0.8,
-                    });
-                }
+                const issue = nestedLoopIssue(path, content, filePath, 'for-loop');
+                if (issue)
+                    issues.push(issue);
             },
             ForOfStatement(path) {
-                const depth = countLoopDepth(path);
-                if (depth >= 1) {
-                    const loc = path.node.loc?.start;
-                    if (!loc)
-                        return;
-                    issues.push({
-                        id: '', rule: 'loop/nested-loops', category: 'loop', severity: 'high',
-                        file: filePath, line: loc.line, column: loc.column,
-                        title: `Nested for-of at depth ${depth + 1}`,
-                        description: `Potential O(n²) — consider Map/Set lookup for O(n).`,
-                        snippet: snippetAt(content, loc.line),
-                        recommendation: 'Replace inner loop scan with a Map or Set lookup.',
-                        studyReference: 'Study 04, BM-04',
-                        empiricalSpeedup: '64× at n=10,000',
-                        confidence: 0.8,
-                    });
-                }
+                const issue = nestedLoopIssue(path, content, filePath, 'for-of');
+                if (issue)
+                    issues.push(issue);
             },
         });
     }
@@ -1729,7 +1887,7 @@ exports.loopRules = [
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectLoopIssues,
     },
     {
-        id: 'loop/nested-loops', name: 'Nested Loops', category: 'loop', severity: 'high',
+        id: 'loop/nested-loops', name: 'Nested Loops', category: 'loop', severity: 'medium',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectLoopIssues,
     },
     {
@@ -2063,125 +2221,813 @@ exports.memoryRules = [
 "use strict";
 
 /**
- * N+1 query rule — derived from Study 01 (n1-query-detector.ts)
+ * N+1 query rule — ported from the study detector in
+ * `backend/src/detectors/n1-query-detector.ts`.
  *
  * Detects 1 anti-pattern using Babel AST traversal:
  *   n1/query-in-loop — ORM/DB call made once per loop iteration instead of a batched query
+ *
+ * The naive version of this rule (any method name from a flat list, called
+ * inside any loop) produced a 60.3% false-positive rate on three real
+ * codebases and 88.6% across twenty more: `Map.get()`, `Array.find(cb)` and
+ * `Promise.all()` were all being reported as database queries, while every
+ * write-side N+1 — one `update`/`upsert`/`create` per item — was invisible
+ * because the method list held only readers.
+ *
+ * Seven rounds of fixes against that corpus produced the structure below:
+ *
+ *   1. Method names are split into DISTINCTIVE (evidence on their own; no
+ *      Map, Set, Array or Promise has them) and AMBIGUOUS (only reported when
+ *      something else corroborates: an ORM import, a query-builder chain, a
+ *      known database handle, or a data-access receiver).
+ *   2. A query in a nested loop belongs to the innermost loop that contains
+ *      it, so one N+1 is not reported once per enclosing loop.
+ *   3. Retry and polling loops are skipped — their iterations are attempts at
+ *      one operation, not items in a collection.
+ *   4. Pagination loops are skipped — one query per page of rows is the fix,
+ *      not the bug.
+ *   5. Loops over pre-chunked batches are skipped, and so is a query whose
+ *      filter consumes the whole iterated item (`where: { id: { in: batch } }`).
+ *   6. Bulk flushes (a write whose payload is a buffered array) are skipped.
+ *   7. Drivers that stage writes and commit once (Firestore, DynamoDB) are
+ *      skipped for transaction/batch receivers.
+ *
+ * Changing any list or veto here changes published study results. The reduced
+ * corpus cases live in the study repository; keep them in sync.
  */
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.n1Rules = void 0;
 const traverse_1 = __importDefault(__nccwpck_require__(8254));
-const t = __importStar(__nccwpck_require__(9185));
 const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
-const LOOP_TYPES = new Set(['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement']);
-const LOOP_METHODS = new Set(['forEach', 'map']);
-const DB_METHODS = new Set([
-    'findOne', 'findAll', 'findByPk', 'findAndCountAll',
-    'findUnique', 'findMany', 'findFirst',
-    'find', 'findById', 'findByIdAndUpdate',
-    'query', 'execute',
+/**
+ * Method names specific enough to ORMs that seeing one is strong evidence on
+ * its own. None of these exist on Map, Set, Array, or Promise.
+ */
+const DISTINCTIVE_DB_METHODS = new Set([
+    'findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
+    'findOne',
+    'findByPk', 'findAll', 'findAndCountAll', 'findOrCreate',
+    'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
+    'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace',
+    'executeTakeFirst', 'executeTakeFirstOrThrow',
+    'createMany', 'updateMany', 'deleteMany', 'bulkCreate',
+    'upsert', 'aggregate', 'groupBy',
 ]);
+/**
+ * Method names ORMs use that collide constantly with ordinary JavaScript. A
+ * match on one of these is only reported when something else confirms it.
+ */
+const AMBIGUOUS_DB_METHODS = new Set([
+    'find', 'get', 'all', 'run', 'query', 'execute', 'exec', 'raw',
+    'create', 'update', 'delete', 'destroy', 'save', 'insert', 'count',
+]);
+/** Array/iterable methods whose first argument is a callback. */
+const CALLBACK_FIRST_METHODS = new Set([
+    'find', 'findIndex', 'findLast', 'findLastIndex', 'filter', 'some', 'every',
+    'map', 'forEach', 'flatMap', 'reduce', 'sort',
+]);
+/** Receivers that are never a database handle. */
+const NON_DB_RECEIVERS = new Set([
+    'Promise', 'Object', 'JSON', 'Math', 'Array', 'Number', 'String', 'Boolean',
+    'Reflect', 'Symbol', 'Date', 'RegExp', 'Set', 'Map', 'WeakMap', 'WeakSet',
+    'console', 'process', 'crypto', 'localStorage', 'sessionStorage',
+    'res', 'req', 'request', 'response', 'headers', 'searchParams', 'params',
+    'cookies', 'logger', 'log', 'config', 'env', 'i18n', 'router',
+    'redis', 'cache', 'memcached', 'kv', 'socket', 'socketio', 'io', 'emitter',
+]);
+/** Receiver names that identify a database handle or ORM client. */
+const DB_HANDLE_NAMES = new Map([
+    ['prisma', 'Prisma'],
+    ['prismaClient', 'Prisma'],
+    ['knex', 'Knex'],
+    ['sequelize', 'Sequelize'],
+    ['mongoose', 'Mongoose'],
+    ['kysely', 'SQL Builder'],
+    ['db', 'Database'],
+    ['database', 'Database'],
+    ['orm', 'Database'],
+    ['tx', 'Database'],
+    ['trx', 'Database'],
+    ['transaction', 'Database'],
+    ['pg', 'Raw SQL'],
+    ['sql', 'Raw SQL'],
+    ['datasource', 'Database'],
+    ['dataSource', 'Database'],
+    ['em', 'TypeORM'],
+    ['entityManager', 'TypeORM'],
+    ['queryRunner', 'TypeORM'],
+    ['models', 'Database'],
+]);
+/** Receiver names that identify a data-access layer wrapping the database. */
+const DATA_ACCESS_RECEIVER = /(repository|repositories|repo|dao|store|model)s?$/i;
+/** Variable names that almost always hold an in-memory collection. */
+const COLLECTION_NAME_HINT = /(map|set|cache|registry|lookup|index|dict|counts|byId|byKey|byName|byType)$/i;
+/** Query-builder methods that mark a chain as SQL, not a plain method call. */
+const SQL_BUILDER_METHODS = new Set([
+    'selectFrom', 'insertInto', 'updateTable', 'deleteFrom', 'selectAll',
+    'createQueryBuilder', 'getMany', 'getOne', 'getRawMany', 'getRawOne',
+    'innerJoin', 'leftJoin', 'returningAll', 'from', 'into',
+]);
+/** Helpers that split a collection into fixed-size batches. */
+const BATCH_PRODUCERS = /^(chunk|chunked|chunks|batch|batched|batches|partition|paginate|splitIntoChunks|toChunks)$/i;
+const SQL_KEYWORD = /\b(select|insert\s+into|update\s+\w|delete\s+from|with\s+\w+\s+as|truncate|(drop|create|alter)\s+(table|index|publication|schema|database|view|subscription))\b/i;
+/** Packages whose imported bindings identify an ORM. */
+const ORM_PACKAGES = [
+    [/^@prisma\/client$|^\.prisma\//, 'Prisma'],
+    [/^sequelize($|\/)/, 'Sequelize'],
+    [/^mongoose$/, 'Mongoose'],
+    [/^typeorm($|\/)/, 'TypeORM'],
+    [/^knex$/, 'Knex'],
+    [/^kysely($|\/)/, 'SQL Builder'],
+    [/^(pg|mysql|mysql2|postgres|better-sqlite3|sqlite3)$/, 'Raw SQL'],
+];
+const STAGED_WRITE_DRIVER = /(firebase|firestore|@google-cloud\/firestore|dynamodb|@aws-sdk\/lib-dynamodb)/i;
+// ---------------------------------------------------------------------------
+// Small AST helpers
+// ---------------------------------------------------------------------------
 function snippetAt(code, line) {
     return (code.split('\n')[line - 1] ?? '').trim().slice(0, 120);
 }
-function isLoopNode(node) {
+function hasRange(node) {
+    return typeof node?.start === 'number' && typeof node?.end === 'number';
+}
+/** `foo.bar.baz()` -> "foo"; `this.userRepo.get()` -> "userRepo". */
+function rootIdentifierName(node) {
+    let current = node;
+    let depth = 0;
+    while (current && depth < 12) {
+        depth++;
+        if (current.type === 'Identifier')
+            return current.name;
+        if (current.type === 'ThisExpression')
+            return null;
+        if (current.type === 'MemberExpression') {
+            if (current.object?.type === 'ThisExpression') {
+                return current.property?.type === 'Identifier' ? current.property.name : null;
+            }
+            current = current.object;
+        }
+        else if (current.type === 'CallExpression') {
+            current = current.callee;
+        }
+        else if (current.type === 'TSNonNullExpression' || current.type === 'TSAsExpression') {
+            current = current.expression;
+        }
+        else {
+            return null;
+        }
+    }
+    return null;
+}
+/** The immediate receiver name: `this.userRepository.get()` -> "userRepository". */
+function receiverName(node) {
+    if (!node)
+        return null;
+    if (node.type === 'Identifier')
+        return node.name;
+    if (node.type === 'TSNonNullExpression' || node.type === 'TSAsExpression') {
+        return receiverName(node.expression);
+    }
+    if (node.type === 'MemberExpression' && node.property?.type === 'Identifier') {
+        return node.property.name;
+    }
+    return null;
+}
+/** True when any identifier inside `node` matches `pattern`. */
+function mentionsIdentifier(node, pattern) {
     if (!node)
         return false;
-    if (LOOP_TYPES.has(node.type))
+    let found = false;
+    const walk = (current, depth) => {
+        if (!current || typeof current !== 'object' || found || depth > 8)
+            return;
+        if (current.type === 'Identifier' && pattern.test(current.name)) {
+            found = true;
+            return;
+        }
+        for (const key of Object.keys(current)) {
+            if (key === 'loc' || key.endsWith('Comments'))
+                continue;
+            const value = current[key];
+            if (Array.isArray(value))
+                value.forEach(v => walk(v, depth + 1));
+            else if (value && typeof value.type === 'string')
+                walk(value, depth + 1);
+        }
+    };
+    walk(node, 0);
+    return found;
+}
+function containsPaginationArguments(node) {
+    const pagingKeys = new Set(['skip', 'take', 'offset', 'limit', 'cursor', 'lastId', 'after']);
+    let found = false;
+    const walk = (current, depth) => {
+        if (!current || typeof current !== 'object' || found || depth > 14)
+            return;
+        if (current.type === 'ObjectProperty' && current.key?.type === 'Identifier' && pagingKeys.has(current.key.name)) {
+            found = true;
+            return;
+        }
+        for (const key of Object.keys(current)) {
+            if (key === 'loc' || key.endsWith('Comments'))
+                continue;
+            const value = current[key];
+            if (Array.isArray(value))
+                value.forEach(v => walk(v, depth + 1));
+            else if (value && typeof value.type === 'string')
+                walk(value, depth + 1);
+        }
+    };
+    walk(node, 0);
+    return found;
+}
+/** The literal text of a string expression, including templates and `'a' + b`. */
+function flattenStringLiteral(node, depth = 0) {
+    if (!node || depth > 8)
+        return '';
+    if (node.type === 'StringLiteral')
+        return node.value;
+    if (node.type === 'TemplateLiteral') {
+        return node.quasis.map((q) => q.value?.raw ?? '').join(' ');
+    }
+    if (node.type === 'BinaryExpression' && node.operator === '+') {
+        return flattenStringLiteral(node.left, depth + 1) + ' ' + flattenStringLiteral(node.right, depth + 1);
+    }
+    return '';
+}
+// ---------------------------------------------------------------------------
+// Pass A — file-level facts
+// ---------------------------------------------------------------------------
+function collectFileFacts(ast) {
+    const collectionVars = new Set();
+    const batchVars = new Set();
+    const ormBindings = new Map();
+    const detectedORMs = new Set();
+    let hasStagedWriteDriver = false;
+    const arrayProducing = new Set([
+        'map', 'filter', 'slice', 'concat', 'split', 'flat', 'flatMap',
+        'sort', 'reverse', 'keys', 'values', 'entries', 'from', 'chunk',
+    ]);
+    const collectionConstructors = new Set(['Map', 'Set', 'WeakMap', 'WeakSet']);
+    const isCollectionInit = (init) => {
+        if (!init)
+            return false;
+        if (init.type === 'NewExpression') {
+            return init.callee?.type === 'Identifier' && collectionConstructors.has(init.callee.name);
+        }
+        if (init.type === 'ArrayExpression')
+            return true;
+        if (init.type === 'CallExpression') {
+            const method = init.callee?.property?.name;
+            if (method && arrayProducing.has(method))
+                return true;
+            const objectName = init.callee?.object?.name;
+            if ((objectName === 'Object' || objectName === 'Array') && method)
+                return true;
+        }
+        if (init.type === 'TSAsExpression' || init.type === 'TSNonNullExpression') {
+            return isCollectionInit(init.expression);
+        }
+        return false;
+    };
+    const ormFor = (source) => {
+        for (const [pattern, label] of ORM_PACKAGES) {
+            if (pattern.test(source))
+                return label;
+        }
+        return null;
+    };
+    (0, traverse_1.default)(ast, {
+        noScope: true,
+        ImportDeclaration(path) {
+            const source = path.node.source?.value ?? '';
+            if (STAGED_WRITE_DRIVER.test(source))
+                hasStagedWriteDriver = true;
+            const label = ormFor(source);
+            if (!label)
+                return;
+            detectedORMs.add(label);
+            for (const spec of path.node.specifiers ?? []) {
+                if (spec.local?.type === 'Identifier')
+                    ormBindings.set(spec.local.name, label);
+            }
+        },
+        VariableDeclarator(path) {
+            const id = path.node.id;
+            let init = path.node.init;
+            if (id?.type === 'Identifier' && isCollectionInit(init)) {
+                collectionVars.add(id.name);
+            }
+            if (init?.type === 'AwaitExpression')
+                init = init.argument;
+            if (init?.type === 'CallExpression') {
+                const fn = init.callee?.name || init.callee?.property?.name;
+                if (id?.type === 'Identifier' && fn && BATCH_PRODUCERS.test(fn)) {
+                    batchVars.add(id.name);
+                }
+                // const prisma = new PrismaClient() / require('mongoose')
+                if (init.callee?.name === 'require') {
+                    const arg = init.arguments?.[0];
+                    if (arg?.type === 'StringLiteral') {
+                        if (STAGED_WRITE_DRIVER.test(arg.value))
+                            hasStagedWriteDriver = true;
+                        const label = ormFor(arg.value);
+                        if (label) {
+                            detectedORMs.add(label);
+                            if (id?.type === 'Identifier')
+                                ormBindings.set(id.name, label);
+                        }
+                    }
+                }
+            }
+        },
+        ClassProperty(path) {
+            if (path.node.key?.type === 'Identifier' && isCollectionInit(path.node.value)) {
+                collectionVars.add(path.node.key.name);
+            }
+        },
+        AssignmentExpression(path) {
+            const left = path.node.left;
+            if (left?.type === 'MemberExpression' &&
+                left.object?.type === 'ThisExpression' &&
+                left.property?.type === 'Identifier' &&
+                isCollectionInit(path.node.right)) {
+                collectionVars.add(left.property.name);
+            }
+        },
+    });
+    return { collectionVars, batchVars, ormBindings, detectedORMs, hasStagedWriteDriver };
+}
+// ---------------------------------------------------------------------------
+// Pass B — loops
+// ---------------------------------------------------------------------------
+function iterationVariable(node, kind) {
+    if (kind === 'forEach') {
+        const callback = (node.arguments ?? []).find((a) => a?.type === 'ArrowFunctionExpression' || a?.type === 'FunctionExpression');
+        const first = callback?.params?.[0];
+        return first?.type === 'Identifier' ? first.name : null;
+    }
+    const left = node.left;
+    if (left?.type === 'VariableDeclaration') {
+        const id = left.declarations?.[0]?.id;
+        return id?.type === 'Identifier' ? id.name : null;
+    }
+    if (left?.type === 'Identifier')
+        return left.name;
+    return null;
+}
+/**
+ * The parts of a loop that run once per iteration. Deliberately excludes the
+ * expression being iterated: in `(await Model.findAll()).map(...)` the query
+ * produces the collection, it does not run per item.
+ */
+function scanNodesOf(node, kind) {
+    if (kind === 'forEach') {
+        return (node.arguments ?? []).filter((arg) => arg?.type === 'ArrowFunctionExpression' || arg?.type === 'FunctionExpression');
+    }
+    return node.body ? [node.body] : [];
+}
+/**
+ * Loops that walk pre-chunked batches, paginate, retry, or poll are the cure
+ * for N+1 rather than a case of it. Reporting them would mean telling people
+ * to undo the optimisation they already made.
+ */
+function isBatchLoop(node, kind, batchVars) {
+    const iterable = kind === 'forEach' ? node.callee?.object : node.right;
+    if (iterable) {
+        if (iterable.type === 'Identifier' && batchVars.has(iterable.name))
+            return true;
+        if (iterable.type === 'CallExpression') {
+            const fnName = iterable.callee?.name || iterable.callee?.property?.name;
+            if (fnName && BATCH_PRODUCERS.test(fnName))
+                return true;
+        }
+    }
+    if (kind === 'while' || kind === 'for') {
+        if (containsPaginationArguments(node))
+            return true;
+    }
+    // for (let i = 0; i < ids.length; i += PAGE_SIZE) — fixed-size windows.
+    if (kind === 'for' && node.update?.type === 'AssignmentExpression' && node.update.operator === '+=') {
+        const step = node.update.right;
+        const isSingleStep = step?.type === 'NumericLiteral' && step.value === 1;
+        if (!isSingleStep)
+            return true;
+    }
+    // for (;;) / while (true): retry or polling, no collection being walked.
+    if (kind === 'for' && !node.init && !node.test)
         return true;
-    if (node.type === 'CallExpression' && t.isMemberExpression(node.callee) && t.isIdentifier(node.callee.property)) {
-        return LOOP_METHODS.has(node.callee.property.name);
+    if (kind === 'while' && node.test?.type === 'BooleanLiteral' && node.test.value === true)
+        return true;
+    // Bounded retry loops — iterations are attempts at one operation.
+    if (kind === 'while' || kind === 'for') {
+        const RETRY_NAME = /retr(y|ies)|attempt/i;
+        if (mentionsIdentifier(node.test, RETRY_NAME))
+            return true;
+        if (mentionsIdentifier(node.init, RETRY_NAME))
+            return true;
+    }
+    // Flag-driven batch loops — `while (hasMore) { ...deleteMany... }`.
+    if (kind === 'while' && mentionsIdentifier(node.test, /^(hasMore|hasNext|more|remaining|keepGoing|shouldContinue)$/i)) {
+        return true;
     }
     return false;
+}
+function collectLoops(ast, batchVars) {
+    const loops = [];
+    const push = (node, kind) => {
+        if (!hasRange(node))
+            return;
+        const loc = node.loc?.start;
+        if (!loc)
+            return;
+        loops.push({
+            kind,
+            node,
+            start: node.start,
+            end: node.end,
+            line: loc.line,
+            column: loc.column,
+            scanRanges: scanNodesOf(node, kind)
+                .filter(hasRange)
+                .map((n) => [n.start, n.end]),
+            itemName: iterationVariable(node, kind),
+            isBatch: isBatchLoop(node, kind, batchVars),
+        });
+    };
+    (0, traverse_1.default)(ast, {
+        noScope: true,
+        ForOfStatement: (path) => push(path.node, 'for-of'),
+        ForStatement: (path) => push(path.node, 'for'),
+        ForInStatement: (path) => push(path.node, 'for-in'),
+        WhileStatement: (path) => push(path.node, 'while'),
+        CallExpression: (path) => {
+            const prop = path.node.callee?.property?.name;
+            if (prop === 'forEach' || prop === 'map')
+                push(path.node, 'forEach');
+        },
+    });
+    return loops;
+}
+// ---------------------------------------------------------------------------
+// Pass C — candidate calls
+// ---------------------------------------------------------------------------
+/** Parent node types that mean "this call's result is used as a promise". */
+const PROMISE_CONTEXT = new Set([
+    'AwaitExpression', 'ReturnStatement', 'ArrowFunctionExpression',
+    'ArrayExpression', 'CallExpression', 'YieldExpression',
+]);
+/**
+ * True when the query's result is thrown away and the loop returns straight
+ * afterwards in the same block — a fallback chain, where iterations are
+ * alternatives to try rather than items to process:
+ *
+ *     for (const candidate of candidates) {
+ *       try {
+ *         await client.connect()
+ *         await client.query(`CREATE DATABASE ...`)
+ *         return                       // first success wins
+ *       } catch { lastError = error }
+ *     }
+ *
+ * At most one iteration does any work, the iteration count is a fixed list of
+ * alternatives rather than a data collection, and there is no batched form to
+ * rewrite it into. Round 3 already skipped loops whose counters are named
+ * `retry` or `attempt`; this catches the same shape when it is named after
+ * what it iterates instead.
+ *
+ * Deliberately narrow: a query whose result is assigned is not covered, so an
+ * early guard like `if (!user) return` inside a real N+1 still reports.
+ */
+function isFallbackChainExit(path) {
+    let p = path.parentPath;
+    while (p?.node && ['AwaitExpression', 'TSNonNullExpression', 'TSAsExpression'].includes(p.node.type)) {
+        p = p.parentPath;
+    }
+    if (p?.node?.type !== 'ExpressionStatement')
+        return false;
+    const block = p.parentPath?.node;
+    if (!block || !Array.isArray(block.body))
+        return false;
+    const index = block.body.indexOf(p.node);
+    if (index < 0)
+        return false;
+    return block.body.slice(index + 1).some((s) => s?.type === 'ReturnStatement');
+}
+function collectCandidateCalls(ast) {
+    const calls = [];
+    (0, traverse_1.default)(ast, {
+        noScope: true,
+        CallExpression(path) {
+            const node = path.node;
+            const method = node.callee?.property?.name;
+            if (typeof method !== 'string')
+                return;
+            if (!DISTINCTIVE_DB_METHODS.has(method) && !AMBIGUOUS_DB_METHODS.has(method))
+                return;
+            if (!hasRange(node))
+                return;
+            calls.push({
+                node,
+                method,
+                start: node.start,
+                end: node.end,
+                promiseContext: PROMISE_CONTEXT.has(path.parent?.type ?? ''),
+                fallbackChainExit: isFallbackChainExit(path),
+            });
+        },
+    });
+    return calls;
+}
+// ---------------------------------------------------------------------------
+// Vetoes and classification
+// ---------------------------------------------------------------------------
+function isBulkOperation(callExpr, collectionVars) {
+    const isCollectionArg = (arg) => {
+        if (!arg)
+            return false;
+        if (arg.type === 'Identifier')
+            return collectionVars.has(arg.name);
+        if (arg.type === 'ArrayExpression')
+            return true;
+        if (arg.type === 'SpreadElement')
+            return true;
+        if (arg.type === 'ObjectExpression') {
+            return arg.properties.some((prop) => prop.type === 'ObjectProperty' && prop.key?.name === 'data' && isCollectionArg(prop.value));
+        }
+        return false;
+    };
+    if ((callExpr.arguments ?? []).some(isCollectionArg))
+        return true;
+    let current = callExpr.callee;
+    let depth = 0;
+    while (current && depth < 12) {
+        depth++;
+        if (current.type === 'CallExpression') {
+            const method = current.callee?.property?.name;
+            if (method && ['values', 'insert', 'addValues', 'createMany'].includes(method)) {
+                if ((current.arguments ?? []).some(isCollectionArg))
+                    return true;
+            }
+            current = current.callee;
+        }
+        else if (current.type === 'MemberExpression') {
+            current = current.object;
+        }
+        else {
+            break;
+        }
+    }
+    return false;
+}
+/**
+ * True when the query consumes the whole iterated item as a set, as in
+ * `where: { id: { in: batch } }` — one query per batch of rows, which is the
+ * batching we would recommend rather than a query per row.
+ */
+function queryConsumesWholeItem(callExpr, itemName) {
+    if (!itemName)
+        return false;
+    let found = false;
+    const isItem = (node) => node?.type === 'Identifier' && node.name === itemName;
+    const referencesItem = (node, depth) => {
+        if (!node || typeof node !== 'object' || depth > 4)
+            return false;
+        if (isItem(node))
+            return true;
+        if (node.type === 'SpreadElement')
+            return referencesItem(node.argument, depth + 1);
+        if (node.type === 'ArrayExpression')
+            return node.elements.some((e) => referencesItem(e, depth + 1));
+        if (node.type === 'CallExpression') {
+            return node.callee?.type === 'MemberExpression' && isItem(node.callee.object);
+        }
+        return false;
+    };
+    const walk = (node, depth) => {
+        if (!node || typeof node !== 'object' || found || depth > 12)
+            return;
+        if (node.type === 'ObjectProperty' &&
+            node.key?.type === 'Identifier' &&
+            (node.key.name === 'in' || node.key.name === 'notIn' || node.key.name === 'hasSome') &&
+            referencesItem(node.value, 0)) {
+            found = true;
+            return;
+        }
+        for (const key of Object.keys(node)) {
+            if (key === 'loc' || key.endsWith('Comments'))
+                continue;
+            const value = node[key];
+            if (Array.isArray(value))
+                value.forEach(v => walk(v, depth + 1));
+            else if (value && typeof value.type === 'string')
+                walk(value, depth + 1);
+        }
+    };
+    (callExpr.arguments ?? []).forEach((arg) => walk(arg, 0));
+    return found;
+}
+/**
+ * Hard vetoes — calls that look like queries by name but demonstrably are
+ * not. In the study corpus these accounted for most of the false positives.
+ */
+function isNotADatabaseCall(callExpr, method, facts) {
+    const receiver = callExpr.callee.object;
+    // Promise.all(...), Object.keys(...), res.get(...) etc.
+    const rootName = rootIdentifierName(receiver);
+    if (rootName && NON_DB_RECEIVERS.has(rootName))
+        return true;
+    // Array.prototype.find(cb) / .some(cb): an ORM finder never takes a
+    // callback as its first argument — it takes a filter object or an id.
+    if (CALLBACK_FIRST_METHODS.has(method)) {
+        const firstArg = callExpr.arguments?.[0];
+        if (firstArg && (firstArg.type === 'ArrowFunctionExpression' || firstArg.type === 'FunctionExpression')) {
+            return true;
+        }
+    }
+    // The receiver is a variable this file initialised with new Map()/[]/.map().
+    const recvName = receiverName(receiver);
+    if (recvName && facts.collectionVars.has(recvName))
+        return true;
+    // someMap.get(k) / countsByKey.set(k, v) — name-shaped in-memory lookups.
+    if (recvName && COLLECTION_NAME_HINT.test(recvName)) {
+        if (['get', 'set', 'has', 'delete', 'keys', 'values', 'find'].includes(method))
+            return true;
+    }
+    // A write whose payload is a whole buffered array is a bulk flush.
+    if (isBulkOperation(callExpr, facts.collectionVars))
+        return true;
+    return false;
+}
+/** True for chains like `tx.deleteFrom('x').where(...).execute()`. */
+function isQueryBuilderChain(callExpr) {
+    let current = callExpr.callee;
+    let depth = 0;
+    while (current && depth < 12) {
+        depth++;
+        if (current.type === 'MemberExpression') {
+            const method = current.property?.name;
+            if (method && SQL_BUILDER_METHODS.has(method))
+                return true;
+            current = current.object;
+        }
+        else if (current.type === 'CallExpression') {
+            const method = current.callee?.property?.name;
+            if (method && SQL_BUILDER_METHODS.has(method))
+                return true;
+            current = current.callee;
+        }
+        else {
+            break;
+        }
+    }
+    return false;
+}
+function ormByMethodName(method) {
+    if (['findOne', 'findAll', 'findByPk', 'findAndCountAll', 'findOrCreate', 'bulkCreate'].includes(method)) {
+        return 'Sequelize';
+    }
+    if (['findUnique', 'findUniqueOrThrow', 'findMany', 'findFirst', 'findFirstOrThrow',
+        'createMany', 'updateMany', 'deleteMany', 'upsert', 'groupBy'].includes(method)) {
+        return 'Prisma';
+    }
+    if (['find', 'findById', 'findByIdAndUpdate', 'findByIdAndDelete',
+        'findOneAndUpdate', 'findOneAndDelete', 'findOneAndReplace'].includes(method)) {
+        return 'Mongoose';
+    }
+    if (['executeTakeFirst', 'executeTakeFirstOrThrow'].includes(method))
+        return 'SQL Builder';
+    if (['query', 'execute', 'exec', 'raw'].includes(method))
+        return 'Raw SQL';
+    return 'Database';
+}
+/**
+ * Positive identification. Returns the ORM/driver label, or null when there
+ * is not enough evidence that this call reaches a database. Staying quiet
+ * beats another false positive.
+ */
+function classifyDatabaseCall(call, facts) {
+    const { node: callExpr, method } = call;
+    // 1. The receiver traces back to an imported ORM binding.
+    const rootName = rootIdentifierName(callExpr.callee.object);
+    if (rootName && facts.ormBindings.has(rootName)) {
+        return facts.ormBindings.get(rootName);
+    }
+    // 2. A SQL query-builder chain: tx.deleteFrom(...).where(...).execute()
+    if (isQueryBuilderChain(callExpr))
+        return 'SQL Builder';
+    // 3. A raw SQL string passed to query()/raw()/execute().
+    if (['query', 'raw', 'execute', 'exec'].includes(method)) {
+        const firstArg = callExpr.arguments?.[0];
+        if (firstArg && SQL_KEYWORD.test(flattenStringLiteral(firstArg)))
+            return 'Raw SQL';
+    }
+    // 4. The receiver is a recognised database handle: prisma.*, db.*, tx.*
+    if (rootName && DB_HANDLE_NAMES.has(rootName)) {
+        // Firestore and friends stage writes on a transaction/batch object and
+        // commit once, so `transaction.delete(ref)` is not a round trip per item.
+        const isStagedWrite = rootName === 'transaction' || rootName === 'tx' || rootName === 'batch';
+        if (!(facts.hasStagedWriteDriver && isStagedWrite)) {
+            return DB_HANDLE_NAMES.get(rootName);
+        }
+    }
+    // 5. The receiver is a data-access object: userRepository.get(id). Only
+    // when the result is awaited or returned — a plain Map that happens to be
+    // called `repositories` is not a data-access layer.
+    const recvName = receiverName(callExpr.callee.object);
+    if (recvName && DATA_ACCESS_RECEIVER.test(recvName)) {
+        if (DISTINCTIVE_DB_METHODS.has(method) || call.promiseContext)
+            return 'Repository';
+    }
+    // 6. A method name that only ORMs use is evidence by itself.
+    if (DISTINCTIVE_DB_METHODS.has(method))
+        return ormByMethodName(method);
+    // 7. An ambiguous method name, but this file imports the matching ORM.
+    if (facts.detectedORMs.size > 0) {
+        const fallback = ormByMethodName(method);
+        if (facts.detectedORMs.has(fallback))
+            return fallback;
+    }
+    return null;
+}
+// ---------------------------------------------------------------------------
+// Detector
+// ---------------------------------------------------------------------------
+function severityFor(queryCount) {
+    if (queryCount >= 3)
+        return 'critical';
+    if (queryCount >= 2)
+        return 'high';
+    return 'medium';
 }
 function detectN1Issues(filePath, content, ast) {
     if (!ast)
         return [];
-    const issues = [];
     try {
-        (0, traverse_1.default)(ast, {
-            noScope: true,
-            enter(path) {
-                if (!isLoopNode(path.node))
-                    return;
-                const loopLoc = path.node.loc?.start;
-                if (!loopLoc)
-                    return;
-                const dbCalls = [];
-                (0, traverse_1.default)(path.node, {
-                    noScope: true,
-                    CallExpression(inner) {
-                        // Don't descend into a nested loop — that loop reports its own finding.
-                        if (inner.node !== path.node && isLoopNode(inner.node)) {
-                            inner.skip();
-                            return;
-                        }
-                        const callee = inner.node.callee;
-                        if (!t.isMemberExpression(callee) || !t.isIdentifier(callee.property))
-                            return;
-                        if (DB_METHODS.has(callee.property.name)) {
-                            dbCalls.push(callee.property.name);
-                        }
-                    },
-                });
-                if (dbCalls.length === 0)
-                    return;
-                const severity = dbCalls.length >= 3 ? 'critical' : dbCalls.length >= 2 ? 'high' : 'medium';
-                const queriesAt100 = dbCalls.length * 100 + 1;
-                issues.push({
-                    id: '', rule: 'n1/query-in-loop', category: 'n1', severity,
-                    file: filePath, line: loopLoc.line, column: loopLoc.column,
-                    title: 'N+1 query in loop',
-                    description: `Found ${dbCalls.length} database ${dbCalls.length === 1 ? 'call' : 'calls'} (${[...new Set(dbCalls)].join(', ')}) inside a loop. This makes ${queriesAt100} queries for 100 items instead of 1 batched query.`,
-                    snippet: snippetAt(content, loopLoc.line),
-                    recommendation: 'Batch the lookup before the loop (e.g. findMany/findAll with an `in` filter) or use eager loading / includes.',
-                    studyReference: 'Study 01',
-                    empiricalSpeedup: '10\u2013100\u00d7 slower at 100K rows',
-                    confidence: 0.8,
-                });
-            },
-        });
+        const facts = collectFileFacts(ast);
+        const loops = collectLoops(ast, facts.batchVars);
+        if (loops.length === 0)
+            return [];
+        const candidates = collectCandidateCalls(ast);
+        const byLoop = new Map();
+        for (const call of candidates) {
+            // Attribute the call to the innermost loop whose per-iteration body
+            // contains it. Without this, one N+1 is reported once per enclosing
+            // loop. Skipped batch loops still own their calls, so a query inside a
+            // pagination loop is not pushed up to the loop around it.
+            let owner = null;
+            for (const loop of loops) {
+                const inside = loop.scanRanges.some(([s, e]) => call.start >= s && call.end <= e);
+                if (!inside)
+                    continue;
+                if (!owner || loop.start > owner.start)
+                    owner = loop;
+            }
+            if (!owner || owner.isBatch)
+                continue;
+            if (call.fallbackChainExit)
+                continue;
+            if (isNotADatabaseCall(call.node, call.method, facts))
+                continue;
+            if (queryConsumesWholeItem(call.node, owner.itemName))
+                continue;
+            const orm = classifyDatabaseCall(call, facts);
+            if (!orm)
+                continue;
+            const list = byLoop.get(owner);
+            if (list)
+                list.push(`${orm}.${call.method}()`);
+            else
+                byLoop.set(owner, [`${orm}.${call.method}()`]);
+        }
+        const issues = [];
+        for (const [loop, queries] of byLoop) {
+            const severity = severityFor(queries.length);
+            const queriesIfN100 = queries.length * 100 + 1;
+            issues.push({
+                id: '', rule: 'n1/query-in-loop', category: 'n1', severity,
+                file: filePath, line: loop.line, column: loop.column,
+                title: 'N+1 query in loop',
+                description: `Found ${queries.length} database ${queries.length === 1 ? 'query' : 'queries'} ` +
+                    `(${queries.join(', ')}) inside a ${loop.kind} loop. This creates an N+1 query problem ` +
+                    `where each iteration makes a separate database call. This makes ${queriesIfN100} queries ` +
+                    `for 100 items instead of 1 batched query.`,
+                snippet: snippetAt(content, loop.line),
+                recommendation: 'Batch the lookup before the loop (e.g. findMany/findAll with an `in` filter) or use eager loading / includes.',
+                studyReference: 'Study 01',
+                empiricalSpeedup: '98\u00d7 at 1,000 items on a 5ms round trip',
+                confidence: 0.85,
+            });
+        }
+        return issues;
     }
     catch {
         // AST traversal failed — skip
+        return [];
     }
-    return issues;
 }
 exports.n1Rules = [
     {

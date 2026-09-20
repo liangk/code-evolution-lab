@@ -52,6 +52,139 @@ function countLoopDepth(path: any): number {
   return depth;
 }
 
+// ---------------------------------------------------------------------------
+// Nested-loop analysis
+//
+// A loop inside a loop is not by itself a problem. Walking a tree or a
+// matrix — `for (const child of node.children)` inside `for (const node of
+// nodes)` — is linear in the total number of elements, not quadratic, and it
+// is how most recursive data structures get traversed. Reporting every such
+// loop as a HIGH O(n²) risk is what made this rule fire 86 times on one
+// dependency tree.
+//
+// What is actually quadratic is a *cross product*: an inner loop whose
+// iteration source owes nothing to the outer loop variable, so it replays the
+// whole inner collection once per outer element. That is the case a Map or Set
+// lookup collapses to O(n), and it is the only case this rule now reports.
+// ---------------------------------------------------------------------------
+
+const LOOP_STATEMENT_TYPES = ['ForStatement', 'ForInStatement', 'ForOfStatement', 'WhileStatement', 'DoWhileStatement'];
+
+function collectPatternNames(node: any, out: Set<string>): void {
+  if (!node) return;
+  if (t.isIdentifier(node)) { out.add(node.name); return; }
+  if (t.isObjectPattern(node)) {
+    for (const prop of node.properties) {
+      collectPatternNames(t.isObjectProperty(prop) ? prop.value : (prop as any).argument, out);
+    }
+    return;
+  }
+  if (t.isArrayPattern(node)) {
+    for (const el of node.elements) collectPatternNames(el, out);
+    return;
+  }
+  if (t.isRestElement(node)) { collectPatternNames(node.argument, out); return; }
+  if (t.isAssignmentPattern(node)) { collectPatternNames(node.left, out); return; }
+}
+
+function loopBindingNames(node: any, out: Set<string>): void {
+  if (t.isForOfStatement(node) || t.isForInStatement(node)) {
+    const left = node.left;
+    if (t.isVariableDeclaration(left)) {
+      for (const decl of left.declarations) collectPatternNames(decl.id, out);
+    } else {
+      collectPatternNames(left, out);
+    }
+    return;
+  }
+  if (t.isForStatement(node) && t.isVariableDeclaration(node.init)) {
+    for (const decl of node.init.declarations) collectPatternNames(decl.id, out);
+  }
+}
+
+/** Names bound by every loop enclosing this one, including array-method callback params. */
+function enclosingLoopBindings(path: any): Set<string> {
+  const names = new Set<string>();
+  let p = path.parentPath;
+  while (p?.node) {
+    const type = p.node.type ?? '';
+    if (LOOP_STATEMENT_TYPES.includes(type)) loopBindingNames(p.node, names);
+    if (type === 'CallExpression') {
+      const callee = p.node.callee;
+      if (t.isMemberExpression(callee) && t.isIdentifier(callee.property) && ARRAY_METHODS.has(callee.property.name)) {
+        for (const arg of p.node.arguments) {
+          if (t.isArrowFunctionExpression(arg) || t.isFunctionExpression(arg)) {
+            for (const param of arg.params) collectPatternNames(param, names);
+          }
+        }
+      }
+    }
+    p = p.parentPath;
+  }
+  return names;
+}
+
+/** Every identifier name appearing anywhere in an AST subtree. */
+function identifiersIn(node: any): Set<string> {
+  const out = new Set<string>();
+  const seen = new Set<any>();
+  function visit(n: any): void {
+    if (!n || typeof n !== 'object' || seen.has(n)) return;
+    seen.add(n);
+    if (Array.isArray(n)) { for (const item of n) visit(item); return; }
+    if (n.type === 'Identifier' && typeof n.name === 'string') out.add(n.name);
+    for (const key of Object.keys(n)) {
+      if (key === 'loc' || key === 'start' || key === 'end' || key.endsWith('Comments')) continue;
+      visit(n[key]);
+    }
+  }
+  visit(node);
+  return out;
+}
+
+/**
+ * The expression that decides how many times this loop runs: the iterable for
+ * for-of/for-in, the test condition for a counted for-loop.
+ */
+function iterationSourceOf(node: any): any {
+  if (t.isForOfStatement(node) || t.isForInStatement(node)) return node.right;
+  if (t.isForStatement(node)) return node.test;
+  return null;
+}
+
+function nestedLoopIssue(path: any, content: string, filePath: string, label: string): DiagnosticIssue | null {
+  const depth = countLoopDepth(path);
+  if (depth < 1) return null;
+
+  const loc = path.node.loc?.start;
+  if (!loc) return null;
+
+  // Derived from an enclosing loop variable → nested data, not a cross product.
+  const bindings = enclosingLoopBindings(path);
+  const source = iterationSourceOf(path.node);
+  if (!source) return null;
+  for (const name of identifiersIn(source)) {
+    if (bindings.has(name)) return null;
+  }
+
+  const level = depth + 1;
+  return {
+    id: '', rule: 'loop/nested-loops', category: 'loop',
+    severity: level >= 3 ? 'high' : 'medium',
+    file: filePath, line: loc.line, column: loc.column,
+    title: `Nested ${label} at depth ${level} over an independent collection`,
+    description:
+      `The inner collection does not derive from the outer loop variable, so it is ` +
+      `re-scanned once per outer element — O(n^${level}). Build a Map or Set from it ` +
+      `before the outer loop and look up instead of scanning.`,
+    snippet: snippetAt(content, loc.line),
+    recommendation: 'Index the inner collection into a Map or Set before the outer loop, then look up by key.',
+    studyReference: 'Study 04, BM-04',
+    empiricalSpeedup: '64× at n=10,000',
+    confidence: level >= 3 ? 0.7 : 0.6,
+  };
+}
+
 function detectLoopIssues(filePath: string, content: string, ast: any): DiagnosticIssue[] {
   if (!ast) return [];
   const issues: DiagnosticIssue[] = [];
@@ -183,41 +316,13 @@ function detectLoopIssues(filePath: string, content: string, ast: any): Diagnost
       },
 
       ForStatement(path: any) {
-        const depth = countLoopDepth(path);
-        if (depth >= 1) {
-          const loc = path.node.loc?.start;
-          if (!loc) return;
-          issues.push({
-            id: '', rule: 'loop/nested-loops', category: 'loop', severity: 'high',
-            file: filePath, line: loc.line, column: loc.column,
-            title: `Nested for-loop at depth ${depth + 1}`,
-            description: `Potential O(n²) — consider Map/Set lookup for O(n).`,
-            snippet: snippetAt(content, loc.line),
-            recommendation: 'Replace inner loop scan with a Map or Set lookup.',
-            studyReference: 'Study 04, BM-04',
-            empiricalSpeedup: '64× at n=10,000',
-            confidence: 0.8,
-          });
-        }
+        const issue = nestedLoopIssue(path, content, filePath, 'for-loop');
+        if (issue) issues.push(issue);
       },
 
       ForOfStatement(path: any) {
-        const depth = countLoopDepth(path);
-        if (depth >= 1) {
-          const loc = path.node.loc?.start;
-          if (!loc) return;
-          issues.push({
-            id: '', rule: 'loop/nested-loops', category: 'loop', severity: 'high',
-            file: filePath, line: loc.line, column: loc.column,
-            title: `Nested for-of at depth ${depth + 1}`,
-            description: `Potential O(n²) — consider Map/Set lookup for O(n).`,
-            snippet: snippetAt(content, loc.line),
-            recommendation: 'Replace inner loop scan with a Map or Set lookup.',
-            studyReference: 'Study 04, BM-04',
-            empiricalSpeedup: '64× at n=10,000',
-            confidence: 0.8,
-          });
-        }
+        const issue = nestedLoopIssue(path, content, filePath, 'for-of');
+        if (issue) issues.push(issue);
       },
     });
   } catch {
@@ -245,7 +350,7 @@ export const loopRules: RuleDefinition[] = [
     filePatterns: JS_PATTERNS, needsAst: true, detect: detectLoopIssues,
   },
   {
-    id: 'loop/nested-loops', name: 'Nested Loops', category: 'loop', severity: 'high',
+    id: 'loop/nested-loops', name: 'Nested Loops', category: 'loop', severity: 'medium',
     filePatterns: JS_PATTERNS, needsAst: true, detect: detectLoopIssues,
   },
   {

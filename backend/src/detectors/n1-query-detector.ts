@@ -534,11 +534,47 @@ export class N1QueryDetector extends BaseDetector {
     return found;
   }
 
+  /**
+   * True when the query's result is thrown away and the loop returns straight
+   * afterwards in the same block — a fallback chain, where iterations are
+   * alternatives to try rather than items to process:
+   *
+   *     for (const candidate of candidates) {
+   *       try {
+   *         await client.connect()
+   *         await client.query(`CREATE DATABASE ...`)
+   *         return                       // first success wins
+   *       } catch { lastError = error }
+   *     }
+   *
+   * At most one iteration does any work, the iteration count is a fixed list of
+   * alternatives rather than a data collection, and there is no batched form to
+   * rewrite it into. The retry-loop veto above keys on counters named `retry`
+   * or `attempt`; this catches the same shape when the loop is named after what
+   * it iterates instead.
+   *
+   * Deliberately narrow: it requires the call to be a discarded expression
+   * statement, so an early guard like `if (!user) return` after an assigned
+   * query still reports.
+   */
+  private isFallbackChainExit(path: any): boolean {
+    const stmtPath = path?.parentPath;
+    if (stmtPath?.node?.type !== 'ExpressionStatement') return false;
+
+    const block = stmtPath.parentPath?.node;
+    if (!block || !Array.isArray(block.body)) return false;
+
+    const index = block.body.indexOf(stmtPath.node);
+    if (index < 0) return false;
+
+    return block.body.slice(index + 1).some((s: any) => s?.type === 'ReturnStatement');
+  }
+
   private findDatabaseQueries(loop: Loop, context: AnalysisContext): DatabaseCall[] {
     const dbCalls: DatabaseCall[] = [];
     const itemName = this.getIterationVariable(loop);
 
-    const consider = (callExpr: any, node: any) => {
+    const consider = (callExpr: any, node: any, path: any) => {
       const callee = callExpr.callee;
       if (!callee?.property) return;
 
@@ -548,6 +584,7 @@ export class N1QueryDetector extends BaseDetector {
       }
 
       if (this.isNotADatabaseCall(callExpr, methodName)) return;
+      if (this.isFallbackChainExit(path)) return;
       if (this.queryConsumesWholeItem(callExpr, itemName)) return;
 
       const orm = this.classifyDatabaseCall(callExpr, methodName, context.ormContext);
@@ -576,7 +613,7 @@ export class N1QueryDetector extends BaseDetector {
         const callExpr = path.node.argument;
         if (callExpr?.type !== 'CallExpression') return;
         this.awaitedCalls.add(callExpr);
-        consider(callExpr, path.node);
+        consider(callExpr, path.node, path);
       },
 
       CallExpression: (path: any) => {
@@ -584,7 +621,7 @@ export class N1QueryDetector extends BaseDetector {
         if (PROMISE_CONTEXT.has(path.parent?.type)) {
           this.awaitedCalls.add(path.node);
         }
-        consider(path.node, path.node);
+        consider(path.node, path.node, path);
       },
     };
 

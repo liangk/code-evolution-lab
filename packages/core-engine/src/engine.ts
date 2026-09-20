@@ -14,7 +14,21 @@ import type {
 const VERSION = '1.0.0';
 const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs']);
 const PRISMA_FILES = new Set(['schema.prisma']);
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__']);
+const SKIP_DIRS = new Set([
+  'node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__',
+  '__tests__', '__mocks__', 'e2e', '.turbo',
+]);
+
+// Test and spec files are excluded by default. A performance scan is about
+// code that runs in production: a deliberate N+1 in a fixture is not a finding,
+// and letting test files into the count skews the score against codebases that
+// are well tested.
+const TEST_FILE = /\.(test|spec|e2e)\.[cm]?[jt]sx?$/;
+
+// Points deducted per unit of penalty density (penalty per file scanned).
+// At 25, one high-severity finding in every file scores 0, one every four
+// files scores 75, and a clean tree scores 100.
+const DENSITY_SCALE = 25;
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
@@ -74,6 +88,7 @@ function collectFiles(dir: string, exclude: string[] = []): string[] {
       let stat;
       try { stat = statSync(full); } catch { continue; }
       if (stat.isDirectory()) { walk(full); continue; }
+      if (TEST_FILE.test(entry)) continue;
       const ext = extname(entry);
       if (JS_EXTENSIONS.has(ext) || PRISMA_FILES.has(entry)) {
         files.push(full);
@@ -150,13 +165,17 @@ export function analyzeFile(
 }
 
 export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): AnalysisReport {
-  const { targetPath, minSeverity, categories, rules: ruleFilter, exclude } = options;
+  const { targetPath, includePaths, minSeverity, categories, rules: ruleFilter, exclude } = options;
 
   let activeRules = registry.getAll();
   if (categories?.length) activeRules = activeRules.filter(r => categories.includes(r.category));
   if (ruleFilter?.length) activeRules = activeRules.filter(r => ruleFilter.includes(r.id));
 
-  const files = collectFiles(targetPath, exclude);
+  // A scan can cover several sibling directories rather than one tree. Walk
+  // each, but keep reported paths anchored at targetPath so they read the same
+  // either way, and deduplicate in case one root nests inside another.
+  const roots = includePaths?.length ? includePaths : [targetPath];
+  const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))];
   const allIssues: DiagnosticIssue[] = [];
 
   for (const file of files) {
@@ -208,15 +227,28 @@ function buildSummary(filesScanned: number, issues: DiagnosticIssue[]): Analysis
     issuesFound: issues.length,
     bySeverity,
     byCategory,
-    confidenceScore: calculateScore(issues),
+    confidenceScore: calculateScore(issues, filesScanned),
   };
 }
 
 // ---------------------------------------------------------------------------
-// Confidence score — weighted by severity and confidence per issue
+// Confidence score — penalty density, weighted by severity and confidence
 // ---------------------------------------------------------------------------
 
-export function calculateScore(issues: DiagnosticIssue[]): number {
+/**
+ * Score a scan from 0 (worst) to 100 (clean).
+ *
+ * The penalty is normalised by the number of files scanned. An absolute
+ * penalty saturates: at weight 5 and confidence 0.8, twenty-five
+ * high-severity findings already exceed 100, so every project past that point
+ * scores exactly 0. That makes the score identical for a 300-file package and
+ * a 300,000-line monolith, and — worse — makes `compareBaseline`'s scoreDelta
+ * permanently 0, so the CI guard in `compare` can never fire. Scoring density
+ * instead keeps the number responsive at any scan size.
+ *
+ * `filesScanned` is required: passing 0 or a negative number is treated as 1.
+ */
+export function calculateScore(issues: DiagnosticIssue[], filesScanned: number): number {
   if (issues.length === 0) return 100;
 
   const weights: Record<Severity, number> = { critical: 10, high: 5, medium: 2, low: 1 };
@@ -225,8 +257,8 @@ export function calculateScore(issues: DiagnosticIssue[]): number {
     totalPenalty += weights[i.severity] * i.confidence;
   }
 
-  // Score: 100 minus penalty, clamped to 0–100
-  const raw = 100 - totalPenalty;
+  const density = totalPenalty / Math.max(filesScanned, 1);
+  const raw = 100 - density * DENSITY_SCALE;
   return Math.max(0, Math.min(100, Math.round(raw)));
 }
 

@@ -12,8 +12,21 @@ program
   .version(packageJson.version);
 
 program
-  .command('analyze [path]')
+  .command('analyze [paths...]')
   .description('Analyze a project for performance anti-patterns')
+  .addHelpText('after', `
+
+Arguments:
+  paths                    One or more directories to scan (default: current
+                           directory). Globs are not supported — pass
+                           directories. With several, reported file paths stay
+                           relative to the current directory.
+
+Examples:
+  $ code-evolution-lab analyze
+  $ code-evolution-lab analyze src/server --severity high
+  $ code-evolution-lab analyze server/routes server/commands server/queues
+`)
   .option('-s, --severity <level>', 'Minimum severity: critical|high|medium|low', 'low')
   .option('-c, --category <cat>', 'Filter by category: loop|memory|index')
   .option('-o, --output <dir>', 'Output directory', '.codeevolution')
@@ -22,9 +35,14 @@ program
   .action(analyzeCommand);
 
 program
-  .command('scan')
-  .description('Scan the current project and save a performance snapshot to .codeevolution/baseline.json')
+  .command('scan [paths...]')
+  .description('Scan a project and save a performance snapshot to .codeevolution/baseline.json')
   .addHelpText('after', `
+
+Arguments:
+  paths                    One or more directories to scan (default: current
+                           directory). Globs are not supported — pass
+                           directories.
 
 Outputs:
   - baseline.json in the selected output directory
@@ -36,15 +54,20 @@ Behavior:
 
 Examples:
   $ code-evolution-lab scan
-  $ code-evolution-lab scan --output .codeevolution
+  $ code-evolution-lab scan src/server
+  $ code-evolution-lab scan server/routes server/commands
 `)
   .option('-o, --output <dir>', 'Output directory', '.codeevolution')
-  .action(opts => baselineCommand('create', opts));
+  .action((paths, opts) => baselineCommand('create', paths, opts));
 
 program
-  .command('compare')
-  .description('Re-scan the current project and compare it against the saved scan snapshot')
+  .command('compare [paths...]')
+  .description('Re-scan a project and compare it against the saved scan snapshot')
   .addHelpText('after', `
+
+Arguments:
+  paths                    One or more directories to scan (default: current
+                           directory). Use the same paths you passed to 'scan'.
 
 Behavior:
   - compares the latest scan against baseline.json
@@ -52,10 +75,10 @@ Behavior:
 
 Examples:
   $ code-evolution-lab compare
-  $ code-evolution-lab compare --output .codeevolution
+  $ code-evolution-lab compare src/server
 `)
   .option('-o, --output <dir>', 'Output directory', '.codeevolution')
-  .action(opts => baselineCommand('compare', opts));
+  .action((paths, opts) => baselineCommand('compare', paths, opts));
 
 program
   .command('replay [study]')

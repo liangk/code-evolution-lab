@@ -1,19 +1,24 @@
-import { CodeParser } from '../analyzer/parser';
-import { ImportAnalyzer } from '../analyzer/import-analyzer';
-import { N1QueryDetector } from '../detectors/n1-query-detector';
-import { AnalysisContext } from '../types';
-
 /**
- * Regression corpus for the N+1 Query Detector.
+ * Regression corpus for the N+1 query rule.
  *
- * Every case here is distilled from real open-source code that was read and
- * classified during a scan of 28 repositories. The MUST_DETECT cases come
- * from confirmed N+1 patterns; the MUST_NOT_DETECT cases come from code the
- * detector used to report and shouldn't — each one cost a round of fixes to get
- * right, and this file is what stops them coming back.
+ * Ported case-for-case from the study detector's corpus at
+ * `backend/src/__tests__/n1-query-detector.corpus.test.ts`. Every case here is
+ * distilled from real open-source code that was read and classified during a
+ * scan of 28 repositories. The MUST_DETECT cases come from confirmed N+1
+ * patterns; the MUST_NOT_DETECT cases come from code the detector used to
+ * report and shouldn't — each one cost a round of fixes to get right, and this
+ * file is what stops them coming back.
  *
  * `source` names the repository and file the case was reduced from.
+ *
+ * These cases gate the rule but do not replace the corpus scan: re-scanning
+ * outline, cal.com and immich must still return 27, 7 and 8 findings, with
+ * severity splits of 0/9/18, 0/0/7 and 0/1/7.
  */
+
+import * as parser from '@babel/parser';
+import { n1Rules } from '../rules/n1-rules';
+import type { DiagnosticIssue } from '../types';
 
 interface Case {
   name: string;
@@ -21,6 +26,15 @@ interface Case {
   code: string;
   /** Expected number of reported issues. */
   expected: number;
+}
+
+function analyze(code: string): DiagnosticIssue[] {
+  const ast = parser.parse(code, {
+    sourceType: 'unambiguous',
+    plugins: ['jsx', 'typescript', 'decorators-legacy'],
+    errorRecovery: true,
+  });
+  return n1Rules[0].detect('case.ts', code, ast);
 }
 
 const MUST_DETECT: Case[] = [
@@ -173,7 +187,7 @@ const MUST_DETECT: Case[] = [
     expected: 1,
     code: `
       import { Client } from 'pg';
-      async function dropAll(client: Client, publications) {
+      async function dropAll(client, publications) {
         for (const pub of publications.rows) {
           await client.query(\`DROP PUBLICATION IF EXISTS \${pub.pubname}\`);
         }
@@ -270,7 +284,7 @@ const MUST_DETECT: Case[] = [
     `,
   },
   {
-    name: 'Query batched over the item\'s children is still one query per item',
+    name: "Query batched over the item's children is still one query per item",
     source: 'baptisteArno/typebot.io scripts/helpers/trackAndReportYesterdaysResults.ts',
     expected: 1,
     code: `
@@ -630,25 +644,11 @@ const NESTED_LOOP_CASE = {
   `,
 };
 
-function analyze(code: string) {
-  const parser = new CodeParser();
-  const importAnalyzer = new ImportAnalyzer();
-  const detector = new N1QueryDetector();
-  const ast = parser.parse(code);
-  const context: AnalysisContext = {
-    sourceCode: code,
-    filePath: 'case.ts',
-    ast,
-    ormContext: importAnalyzer.buildORMContext(ast),
-  } as AnalysisContext;
-  return detector.detect(ast, context);
-}
-
-describe('N1QueryDetector regression corpus', () => {
+describe('n1/query-in-loop regression corpus', () => {
   describe('patterns that must be detected', () => {
-    test.each(MUST_DETECT.map((c) => [c.name, c] as [string, Case]))('%s', async (_name, testCase) => {
-      const result = await analyze(testCase.code);
-      expect({ case: testCase.source, issues: result.issues.length }).toEqual({
+    test.each(MUST_DETECT.map(c => [c.name, c] as [string, Case]))('%s', (_name, testCase) => {
+      const issues = analyze(testCase.code);
+      expect({ case: testCase.source, issues: issues.length }).toEqual({
         case: testCase.source,
         issues: testCase.expected,
       });
@@ -656,26 +656,28 @@ describe('N1QueryDetector regression corpus', () => {
   });
 
   describe('patterns that must not be reported', () => {
-    test.each(MUST_NOT_DETECT.map((c) => [c.name, c] as [string, Case]))('%s', async (_name, testCase) => {
-      const result = await analyze(testCase.code);
-      expect({ case: testCase.source, issues: result.issues.length }).toEqual({
+    test.each(MUST_NOT_DETECT.map(c => [c.name, c] as [string, Case]))('%s', (_name, testCase) => {
+      const issues = analyze(testCase.code);
+      expect({ case: testCase.source, issues: issues.length }).toEqual({
         case: testCase.source,
         issues: testCase.expected,
       });
     });
   });
 
-  test(NESTED_LOOP_CASE.name, async () => {
-    const result = await analyze(NESTED_LOOP_CASE.code);
-    expect(result.issues.length).toBe(1);
-    // the inner loop owns the query, so the reported line is the inner `for`
-    expect(result.issues[0].lineNumber).toBe(5);
+  test(NESTED_LOOP_CASE.name, () => {
+    const issues = analyze(NESTED_LOOP_CASE.code);
+    expect(issues).toHaveLength(1);
+    // The inner loop owns the query, so the reported line is the inner `for`.
+    const innerLoopLine =
+      NESTED_LOOP_CASE.code.split('\n').findIndex(l => l.includes('for (const member')) + 1;
+    expect(issues[0].line).toBe(innerLoopLine);
   });
 
-  test('severity rises with the number of queries in the loop', async () => {
-    const one = await analyze(MUST_DETECT[0].code);
-    const three = await analyze(MUST_DETECT[5].code);
-    expect(one.issues[0].severity).toBe('medium');
-    expect(three.issues[0].severity).toBe('critical');
+  test('severity rises with the number of queries in the loop', () => {
+    const one = analyze(MUST_DETECT[0].code);
+    const three = analyze(MUST_DETECT[5].code);
+    expect(one[0].severity).toBe('medium');
+    expect(three[0].severity).toBe('critical');
   });
 });

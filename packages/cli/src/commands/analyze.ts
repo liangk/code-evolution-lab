@@ -9,6 +9,7 @@ import {
   writeScoreFile,
 } from '@code-evolution/core-engine';
 import type { DiagnosticCategory, Severity } from '@code-evolution/core-engine';
+import { resolveScanTargets } from '../target';
 
 interface AnalyzeOptions {
   severity?: string;
@@ -18,11 +19,11 @@ interface AnalyzeOptions {
   files?: boolean;
 }
 
-export async function analyzeCommand(pathArg: string | undefined, options: AnalyzeOptions): Promise<void> {
-  const targetPath = resolve(pathArg ?? '.');
+export async function analyzeCommand(pathArgs: string[] | undefined, options: AnalyzeOptions): Promise<void> {
+  const { targetPath, includePaths } = resolveScanTargets(pathArgs ?? []);
   const outputDir = resolve(options.output ?? '.codeevolution');
 
-  console.log(`\nScanning: ${targetPath}\n`);
+  console.log(`\nScanning: ${(includePaths ?? [targetPath]).join(', ')}\n`);
 
   const registry = new RuleRegistry();
   registry.registerAll(getAllRules());
@@ -33,6 +34,7 @@ export async function analyzeCommand(pathArg: string | undefined, options: Analy
 
   const report = analyzeDirectory({
     targetPath,
+    includePaths,
     minSeverity: (options.severity as Severity) ?? 'low',
     categories,
   }, registry);

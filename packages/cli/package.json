@@ -1,7 +1,11 @@
 {
   "name": "code-evolution-lab",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Evolution-Aware Static Analysis — empirical software diagnostics as code",
+  "repository": { "type": "git", "url": "git+https://github.com/liangk/code-evolution-lab.git" },
+  "homepage": "https://github.com/liangk/code-evolution-lab#readme",
+  "bugs": { "url": "https://github.com/liangk/code-evolution-lab/issues" },
+  "engines": { "node": ">=18" },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -18,7 +22,7 @@
     "@babel/parser": "^7.28.5",
     "@babel/traverse": "^7.28.5",
     "@babel/types": "^7.28.5",
-    "@code-evolution/core-engine": "1.1.0",
+    "@code-evolution/core-engine": "1.2.0",
     "@code-evolution/replay": "1.0.0",
     "commander": "^12.1.0",
     "glob": "^10.3.0"

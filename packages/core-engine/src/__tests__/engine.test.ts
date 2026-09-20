@@ -1,7 +1,7 @@
 import { join } from 'path';
-import { RuleRegistry, analyzeDirectory } from '../engine';
+import { RuleRegistry, analyzeDirectory, calculateScore } from '../engine';
 import { getAllRules } from '../rules';
-import type { DiagnosticCategory } from '../types';
+import type { DiagnosticCategory, DiagnosticIssue, Severity } from '../types';
 
 const FIXTURES_DIR = join(__dirname, 'fixtures');
 
@@ -79,5 +79,63 @@ describe('core-engine integration', () => {
       i => i.file.includes('nested-loop.js') && i.rule === 'loop/nested-loops'
     );
     expect(nestedLoopIssues.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scoring
+// ---------------------------------------------------------------------------
+
+function makeIssues(count: number, severity: Severity = 'high', confidence = 0.8): DiagnosticIssue[] {
+  return Array.from({ length: count }, (_, n) => ({
+    id: `issue-${n}`,
+    rule: 'loop/nested-loops',
+    category: 'loop' as DiagnosticCategory,
+    severity,
+    file: `src/file-${n}.ts`,
+    line: n + 1,
+    title: 'Nested loop',
+    description: 'test fixture',
+    recommendation: 'test fixture',
+    confidence,
+  }));
+}
+
+describe('calculateScore', () => {
+  it('scores a clean scan 100', () => {
+    expect(calculateScore([], 250)).toBe(100);
+  });
+
+  it('is scale-invariant: the same issue density scores the same at any scan size', () => {
+    // Regression test for the absolute-penalty formula, which saturated at 0
+    // after ~25 high-severity findings and so gave every non-trivial project
+    // the same score regardless of size.
+    const small = calculateScore(makeIssues(10), 100);
+    const large = calculateScore(makeIssues(100), 1000);
+    expect(small).toBe(large);
+  });
+
+  it('does not bottom out at 0 on a large scan with many findings', () => {
+    // 200 high-severity findings across 1,000 files is bad but not hopeless;
+    // the old formula returned 0 here, and also for 2,000 findings.
+    expect(calculateScore(makeIssues(200), 1000)).toBeGreaterThan(0);
+  });
+
+  it('moves when issues are fixed, so a baseline diff can detect improvement', () => {
+    // This is what makes the `compare` CI guard work: both sides used to clamp
+    // to 0, leaving scoreDelta permanently 0 no matter how much was fixed.
+    const before = calculateScore(makeIssues(300), 500);
+    const after = calculateScore(makeIssues(150), 500);
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it('weights severity: criticals cost more than mediums at equal count', () => {
+    const criticals = calculateScore(makeIssues(20, 'critical'), 200);
+    const mediums = calculateScore(makeIssues(20, 'medium'), 200);
+    expect(criticals).toBeLessThan(mediums);
+  });
+
+  it('treats a zero file count as one file instead of dividing by zero', () => {
+    expect(Number.isFinite(calculateScore(makeIssues(3), 0))).toBe(true);
   });
 });

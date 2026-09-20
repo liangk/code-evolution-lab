@@ -13,33 +13,43 @@ import {
   writeScoreFile,
 } from '@code-evolution/core-engine';
 import type { BaselineSnapshot } from '@code-evolution/core-engine';
+import { resolveScanTargets } from '../target';
 
 interface BaselineOptions {
   output?: string;
 }
 
-export async function baselineCommand(action: string, options: BaselineOptions): Promise<void> {
+export async function baselineCommand(
+  action: string,
+  pathArgs: string[] | undefined,
+  options: BaselineOptions,
+): Promise<void> {
   const outputDir = resolve(options.output ?? '.codeevolution');
   const baselinePath = join(outputDir, 'baseline.json');
+  const { targetPath, includePaths } = resolveScanTargets(pathArgs ?? []);
 
   if (action === 'create') {
-    await createBaselineSnapshot(outputDir, baselinePath);
+    await createBaselineSnapshot(targetPath, includePaths, outputDir, baselinePath);
   } else if (action === 'compare') {
-    await compareBaselineSnapshot(outputDir, baselinePath);
+    await compareBaselineSnapshot(targetPath, includePaths, outputDir, baselinePath);
   } else {
     console.error(`Unknown action: ${action}. Use 'scan' or 'compare'.`);
     process.exit(1);
   }
 }
 
-async function createBaselineSnapshot(outputDir: string, baselinePath: string): Promise<void> {
-  const targetPath = resolve('.');
-  console.log(`\nScanning workspace for baseline snapshot: ${targetPath}\n`);
+async function createBaselineSnapshot(
+  targetPath: string,
+  includePaths: string[] | undefined,
+  outputDir: string,
+  baselinePath: string,
+): Promise<void> {
+  console.log(`\nScanning workspace for baseline snapshot: ${(includePaths ?? [targetPath]).join(', ')}\n`);
 
   const registry = new RuleRegistry();
   registry.registerAll(getAllRules());
 
-  const report = analyzeDirectory({ targetPath }, registry);
+  const report = analyzeDirectory({ targetPath, includePaths }, registry);
   const baseline = createBaseline(report);
 
   mkdirSync(outputDir, { recursive: true });
@@ -55,22 +65,31 @@ async function createBaselineSnapshot(outputDir: string, baselinePath: string): 
   console.log(`Issues: ${baseline.summary.issuesFound}\n`);
 }
 
-async function compareBaselineSnapshot(outputDir: string, baselinePath: string): Promise<void> {
+async function compareBaselineSnapshot(
+  targetPath: string,
+  includePaths: string[] | undefined,
+  outputDir: string,
+  baselinePath: string,
+): Promise<void> {
   if (!existsSync(baselinePath)) {
     console.error(`No scan snapshot found at: ${baselinePath}`);
     console.error(`Run 'code-evolution-lab scan' first.`);
     process.exit(1);
   }
 
-  const targetPath = resolve('.');
   console.log(`\nComparing workspace against scan snapshot: ${baselinePath}\n`);
 
   const baseline: BaselineSnapshot = JSON.parse(readFileSync(baselinePath, 'utf-8'));
 
+  if (baseline.target && baseline.target !== targetPath) {
+    console.warn(`Warning: the snapshot was taken against ${baseline.target},`);
+    console.warn(`but this run is scanning ${targetPath}. The diff will be meaningless.\n`);
+  }
+
   const registry = new RuleRegistry();
   registry.registerAll(getAllRules());
 
-  const report = analyzeDirectory({ targetPath }, registry);
+  const report = analyzeDirectory({ targetPath, includePaths }, registry);
   const diff = compareBaseline(baseline, report);
 
   printBaselineDiff(diff);

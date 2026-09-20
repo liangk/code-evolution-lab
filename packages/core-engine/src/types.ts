@@ -82,8 +82,14 @@ export interface RuleDefinition {
 // ---------------------------------------------------------------------------
 
 export interface ScanOptions {
-  /** Root directory to scan. */
+  /** Root directory to scan, and the anchor for relative file paths. */
   targetPath: string;
+  /**
+   * Directories to actually walk, when the scan covers several sibling
+   * directories rather than one tree — `server/{routes,commands,queues}`.
+   * Reported paths stay relative to `targetPath`. Omit to walk `targetPath`.
+   */
+  includePaths?: string[];
   /** Minimum severity to include in results. */
   minSeverity?: Severity;
   /** Filter by category. */
