@@ -3,6 +3,7 @@ import {
   RuleRegistry,
   getAllRules,
   analyzeDirectory,
+  attachSolutions,
   printReport,
   writeJsonReport,
   writeMarkdownReport,
@@ -17,6 +18,7 @@ interface AnalyzeOptions {
   output?: string;
   json?: boolean;
   files?: boolean;
+  solutions?: boolean;
 }
 
 export async function analyzeCommand(pathArgs: string[] | undefined, options: AnalyzeOptions): Promise<void> {
@@ -40,6 +42,12 @@ export async function analyzeCommand(pathArgs: string[] | undefined, options: An
   }, registry);
 
   warnIfNothingScanned(report.summary.filesScanned, includePaths ?? [targetPath]);
+
+  // Suggested rewrites are opt-in: they need the whole construct re-parsed per
+  // finding, and they are only useful if you are going to read them.
+  if (options.solutions) {
+    report.issues = await attachSolutions(report.issues);
+  }
 
   // Console output (unless --json)
   if (!options.json) {

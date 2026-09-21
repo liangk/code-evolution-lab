@@ -60,6 +60,7 @@ type LoopKind = 'for-of' | 'for' | 'for-in' | 'while' | 'forEach';
 interface LoopInfo {
   kind: LoopKind;
   start: number;
+  end: number;
   line: number;
   column: number;
   /** Ranges that actually run once per iteration. */
@@ -261,6 +262,7 @@ function collectLoops(ast: any, batchVars: Set<string>): LoopInfo[] {
     loops.push({
       kind,
       start: node.start,
+      end: node.end,
       line: loc.line,
       column: loc.column,
       scanRanges: scanNodesOf(node, kind)
@@ -518,6 +520,9 @@ function detectN1Issues(filePath: string, content: string, ast: any): Diagnostic
           `where each iteration makes a separate database call. This makes ${queriesIfN100} queries ` +
           `for 100 items instead of 1 batched query.`,
         snippet: snippetAt(content, loop.line),
+        // The whole loop, so a solution generator can preserve its structure
+        // and variable names when rewriting it as a batched query.
+        codeBefore: content.slice(loop.start, loop.end),
         recommendation:
           'Batch the lookup before the loop (e.g. findMany/findAll with an `in` filter) or use eager loading / includes.',
         studyReference: 'Study 01',

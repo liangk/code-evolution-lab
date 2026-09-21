@@ -103,6 +103,7 @@ Full per-rule detail for every category is in [Detection Rules](#detection-rules
 | `-s, --severity <level>` | Minimum severity to report: `critical\|high\|medium\|low` | `low` |
 | `-c, --category <cat>` | Filter to one category: `n1\|blocking-io\|loop\|memory\|index\|resource\|bundle\|dom\|payload\|redos\|caching` | all |
 | `-o, --output <dir>` | Directory for output files | `.codeevolution/` |
+| `--solutions` | Generate a suggested rewrite for each finding, written into `results.json`. Currently N+1 only; a finding with no applicable rewrite gets none rather than a template | false |
 | `--json` | Output JSON to stdout only (suppresses console output) | false |
 | `--no-files` | Skip writing output files to disk | false |
 
@@ -352,12 +353,16 @@ These patterns cause heap growth that doesn't recover across component mount/unm
 
 These patterns are detected from **Prisma schema files** combined with query call-site analysis. Missing indexes at scale produce full table scans that grow linearly with row count — the single most common cause of slow API responses in data-heavy applications.
 
+Prisma does not create indexes for foreign keys — unlike Rails and Django, which do it automatically. A [scan of 2,890 public Prisma schemas](https://github.com/liangk/empirical-study/tree/main/stories/02-missing-index) found the typical one leaves 40% of its foreign keys unindexed.
+
+Coverage follows Postgres: an index serves a column only when that column **leads** it, so `@@index([projectId, createdAt])` covers `projectId` but not `createdAt` alone. `@id`, `@unique`, `@@id` and `@@unique` count as indexes, because they create one. The schema parser agrees with Prisma's own on every model, foreign key and index across 2,961 public schemas.
+
 | Rule | Severity | What it detects | Real-world impact |
 |------|----------|----------------|------------------|
-| `index/missing-fk-index` | high | Foreign key field (`@relation`) with no `@@index` | JOIN and cascade operations scan the full child table |
-| `index/missing-filter-index` | high | Field used in `.where()` query with no `@@index` | Full table scan on every filtered query — cost grows with row count |
-| `index/missing-sort-index` | medium | Field used in `.orderBy()` with no `@@index` | Database sorts the full result set in memory instead of using an index |
-| `index/missing-composite` | medium | Multiple fields used together in `.where()` with no `@@index([a, b])` | Two separate single-column indexes are far less efficient than one composite |
+| `index/missing-fk-index` | high | A foreign key from `@relation(fields: [...])` that no index leads with. A composite foreign key counts once and is covered only by an index leading with all of its columns. Models marked `@@ignore` are skipped | JOIN and cascade operations scan the full child table |
+| `index/missing-filter-index` | high | A field in a query's `where` that no index leads with. Operators (`in`, `gte`, `contains`) and Prisma's compound-key selector (`projectId_email`) are not mistaken for fields, and a multi-field filter fully served by a composite index is not reported | Full table scan on every filtered query — cost grows with row count |
+| `index/missing-sort-index` | medium | A field in an actual `orderBy` that no index leads with | Database sorts the matched rows in memory instead of reading them in index order |
+| `index/missing-composite` | medium | Several fields filtered together with no index leading with all of them | One index is used and the rest are re-checked row by row |
 
 ### N+1 Rules (Study 01 — N+1 Query)
 

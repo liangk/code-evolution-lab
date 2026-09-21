@@ -25,11 +25,13 @@ Arguments:
 Examples:
   $ code-evolution-lab analyze
   $ code-evolution-lab analyze src/server --severity high
+  $ code-evolution-lab analyze src/server --category n1 --solutions
   $ code-evolution-lab analyze server/routes server/commands server/queues
 `)
   .option('-s, --severity <level>', 'Minimum severity: critical|high|medium|low', 'low')
   .option('-c, --category <cat>', 'Filter by category: loop|memory|index')
   .option('-o, --output <dir>', 'Output directory', '.codeevolution')
+  .option('--solutions', 'Generate a suggested rewrite for each finding (written to results.json)')
   .option('--json', 'Output JSON only (no console)')
   .option('--no-files', 'Skip writing output files')
   .action(analyzeCommand);

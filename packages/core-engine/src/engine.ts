@@ -11,7 +11,13 @@ import type {
 // Constants
 // ---------------------------------------------------------------------------
 
-const VERSION = '1.0.0';
+// Read from package.json rather than written here. This was a literal '1.0.0'
+// that was never bumped, so every results.json from 1.2.x claimed to come
+// from 1.0.0 — and a result that cannot say which rules produced it cannot be
+// reproduced. `../package.json` resolves from both src/ (tests) and dist/
+// (published), and npm always ships package.json regardless of `files`.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const VERSION: string = require('../package.json').version;
 const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs']);
 const PRISMA_FILES = new Set(['schema.prisma']);
 const SKIP_DIRS = new Set([
@@ -164,6 +170,21 @@ export function analyzeFile(
   return issues;
 }
 
+/**
+ * Schema files first.
+ *
+ * The index rules read `schema.prisma` to learn which models and indexes
+ * exist, then use that while scanning query call sites. Directory order
+ * decided whether the schema was seen first, so on a project laid out as
+ * `src/` before `prisma/` the query rules silently found nothing — no error,
+ * no warning, just zero findings.
+ */
+function schemaFirst(a: string, b: string): number {
+  const aSchema = a.endsWith('.prisma') ? 0 : 1;
+  const bSchema = b.endsWith('.prisma') ? 0 : 1;
+  return aSchema - bSchema || a.localeCompare(b);
+}
+
 export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): AnalysisReport {
   const { targetPath, includePaths, minSeverity, categories, rules: ruleFilter, exclude } = options;
 
@@ -171,11 +192,14 @@ export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): 
   if (categories?.length) activeRules = activeRules.filter(r => categories.includes(r.category));
   if (ruleFilter?.length) activeRules = activeRules.filter(r => ruleFilter.includes(r.id));
 
+  // Rules that accumulate state across files start each scan clean.
+  for (const rule of activeRules) rule.reset?.();
+
   // A scan can cover several sibling directories rather than one tree. Walk
   // each, but keep reported paths anchored at targetPath so they read the same
   // either way, and deduplicate in case one root nests inside another.
   const roots = includePaths?.length ? includePaths : [targetPath];
-  const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))];
+  const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))].sort(schemaFirst);
   const allIssues: DiagnosticIssue[] = [];
 
   for (const file of files) {
@@ -197,11 +221,26 @@ export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): 
 
   const summary = buildSummary(files.length, filtered);
 
+  // Denominators from the rules that ran. Collected after the scan, since a
+  // rule can only say how much it examined once it has examined it.
+  const metrics: Record<string, number> = {};
+  const seenMetricFns = new Set<() => Record<string, number>>();
+  for (const rule of activeRules) {
+    if (!rule.metrics || seenMetricFns.has(rule.metrics)) continue;
+    seenMetricFns.add(rule.metrics);
+    try {
+      Object.assign(metrics, rule.metrics());
+    } catch {
+      // A rule that cannot report its denominators does not fail the scan.
+    }
+  }
+
   return {
     version: VERSION,
     timestamp: new Date().toISOString(),
     target: targetPath,
     summary,
+    ...(Object.keys(metrics).length > 0 ? { metrics } : {}),
     issues: filtered,
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "code-evolution-lab",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "Evolution-Aware Static Analysis — empirical software diagnostics as code",
   "repository": {
     "type": "git",
@@ -26,11 +26,12 @@
     "postpack": "node scripts/clean-workspace-deps.js"
   },
   "dependencies": {
+    "@babel/generator": "^7.28.5",
     "@babel/parser": "^7.28.5",
     "@babel/traverse": "^7.28.5",
     "@babel/types": "^7.28.5",
-    "@code-evolution/core-engine": "1.2.1",
-    "@code-evolution/replay": "1.2.1",
+    "@code-evolution/core-engine": "1.3.0",
+    "@code-evolution/replay": "1.3.0",
     "commander": "^12.1.0",
     "glob": "^10.3.0"
   },
@@ -44,7 +45,8 @@
   },
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "CHANGELOG.md"
   ],
   "keywords": [
     "performance",

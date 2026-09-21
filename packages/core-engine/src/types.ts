@@ -44,8 +44,15 @@ export interface DiagnosticIssue {
   title: string;
   /** Actionable explanation. */
   description: string;
-  /** Source code context. */
+  /** The single source line the finding points at, for console output. */
   snippet?: string;
+  /**
+   * The whole problematic construct — the loop body, the effect, the handler —
+   * not just the line the finding points at. Solution generators transform
+   * this, so a one-line snippet produces nothing useful: the loop structure and
+   * the variable names are what a batch rewrite has to preserve.
+   */
+  codeBefore?: string;
   /** How to fix. */
   recommendation: string;
   /** e.g. "Study 04, BM-04" */
@@ -73,6 +80,22 @@ export interface RuleDefinition {
   filePatterns: string[];
   /** Whether this rule needs a Babel AST (vs raw text). */
   needsAst: boolean;
+  /**
+   * Called once at the start of each scan, for rules that accumulate state
+   * across files. The index rules build a registry of Prisma models from
+   * `schema.prisma` and then consult it while scanning query call sites;
+   * without a reset, models leak between scans of different projects and
+   * produce findings naming fields the current schema does not have.
+   */
+  reset?: () => void;
+  /**
+   * Called once after each scan, for rules that can report how much they
+   * looked at. A finding count on its own has no denominator: "12 unindexed
+   * foreign keys" means something different across 20 foreign keys than
+   * across 400, and prevalence is the whole point of an application report.
+   * Keys should be namespaced by category, e.g. `index.foreignKeys`.
+   */
+  metrics?: () => Record<string, number>;
   /** The detection function. Receives file path, content, and optionally an AST. */
   detect(filePath: string, content: string, ast?: any): DiagnosticIssue[];
 }
@@ -117,6 +140,12 @@ export interface AnalysisReport {
   timestamp: string;
   target: string;
   summary: AnalysisSummary;
+  /**
+   * Denominators contributed by the rules that ran — how many foreign keys
+   * were examined, how many query sites, and so on. Absent when no active
+   * rule reports any.
+   */
+  metrics?: Record<string, number>;
   issues: DiagnosticIssue[];
 }
 

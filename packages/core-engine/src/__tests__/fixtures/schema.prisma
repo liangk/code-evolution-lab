@@ -1,5 +1,36 @@
+// Fixture for the index rules.
+//
+// Post.authorId is a real foreign key — it carries the @relation that declares
+// it — and nothing indexes it. Comment.postId is the same shape but covered by
+// @@index([postId, createdAt]), where it leads, so it must not be reported.
+//
+// The previous fixture was a single model with a bare `authorId Int` and no
+// relation at all. That is not a foreign key in Prisma: no constraint is
+// created for it. It only registered as one because the old rule guessed from
+// the field name and type.
+
+model User {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  posts Post[]
+}
+
 model Post {
-  id       Int    @id @default(autoincrement())
-  authorId Int
-  title    String
+  id        Int      @id @default(autoincrement())
+  authorId  Int
+  author    User     @relation(fields: [authorId], references: [id])
+  title     String
+  createdAt DateTime @default(now())
+
+  comments  Comment[]
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([postId, createdAt])
 }

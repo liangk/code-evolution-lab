@@ -11,8 +11,55 @@ permissions:
   id-token: write
 
 jobs:
+  publish-core-engine:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: packages
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org/
+          cache: npm
+          cache-dependency-path: packages/package-lock.json
+
+      - name: Verify npm auth
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "NPM_TOKEN secret is empty or not set"; exit 1
+          fi
+          npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build workspace packages
+        run: npm run build
+
+      - name: Test
+        run: npm test --workspace=core-engine
+
+      # The CLI bundles core-engine, but the backends consume it as a normal
+      # dependency, so it has to exist on the registry in its own right. This
+      # job runs first: publishing the CLI against a core-engine version that
+      # isn't there yet is the failure mode that broke the 1.2.0 release.
+      - name: Publish @code-evolution/core-engine
+        run: npm publish --workspace=core-engine --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   publish-cli:
     runs-on: ubuntu-latest
+    needs: publish-core-engine
 
     defaults:
       run:

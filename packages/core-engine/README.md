@@ -71,6 +71,16 @@ const report = analyzeDirectory({
   categories: ['loop', 'memory'],
 }, registry);
 
+// Or several sibling directories as one scope. Reported paths stay relative
+// to targetPath, so they read the same as a single-directory scan.
+const scoped = analyzeDirectory({
+  targetPath: '/path/to/project',
+  includePaths: ['/path/to/project/server/routes', '/path/to/project/server/queues'],
+}, registry);
+
+// Denominators from the rules that ran, e.g. { 'index.foreignKeys': 8, ... }
+console.log(report.metrics);
+
 // Output
 printReport(report);                          // Console
 writeJsonReport(report, '.codeevolution');     // JSON file
@@ -82,6 +92,47 @@ const baseline = createBaseline(report);
 // ... later ...
 const diff = compareBaseline(baseline, newReport);
 ```
+
+### Suggested rewrites
+
+```typescript
+import { attachSolutions } from '@code-evolution/core-engine';
+
+// Adds a ranked `solutions` array to each finding that has a generator.
+// A finding with no applicable rewrite gets no `solutions` key at all rather
+// than a generic template.
+const withSolutions = await attachSolutions(report.issues);
+```
+
+Generators transform `issue.codeBefore` — the whole loop or construct, not just
+the reported line — so a suggestion comes back with your own variable names in
+it. What comes out is a scaffold with a placeholder where the real batch query
+goes, not a patch to apply blind. Only N+1 has a generator so far.
+
+## Prisma schema analysis
+
+The schema parser behind the index rules is exported for use on its own:
+
+```typescript
+import { readFileSync } from 'fs';
+import { parseSchema, foreignKeyCoverage } from '@code-evolution/core-engine';
+
+const models = parseSchema(readFileSync('prisma/schema.prisma', 'utf8'));
+
+for (const fk of foreignKeyCoverage(models)) {
+  if (!fk.indexed) console.log(`${fk.model}(${fk.columns.join(', ')}) line ${fk.line}`);
+}
+```
+
+`foreignKeyCoverage` is the single place foreign-key coverage is decided: the
+detection rule and the scan metrics both call it. A foreign key is covered when
+some index leads with all of its columns — `@id`, `@unique`, `@@id`,
+`@@unique` and `@@index` all count, since each creates a real index. Models
+marked `@@ignore` are skipped, and views are not parsed.
+
+The parser agrees with Prisma's own on every model, foreign key and index
+across 2,961 public schemas; the cross-check is in
+[`stories/02-missing-index`](https://github.com/liangk/empirical-study/tree/main/stories/02-missing-index).
 
 ## Types
 
@@ -95,7 +146,8 @@ interface DiagnosticIssue {
   line: number;
   title: string;
   description: string;
-  snippet?: string;
+  snippet?: string;          // the reported line
+  codeBefore?: string;       // the whole construct, for solution generators
   recommendation: string;
   studyReference?: string;   // e.g. "Study 04, BM-04"
   empiricalSpeedup?: string; // e.g. "64× at n=10,000"
@@ -130,6 +182,12 @@ const myRule: RuleDefinition = {
 const registry = new RuleRegistry();
 registry.register(myRule);
 ```
+
+Two optional hooks exist for rules that work across files. `reset()` is called
+before every scan, so state from one project cannot leak into the next.
+`metrics()` is called after it and returns namespaced counters — what the rule
+examined, not just what it found — which the engine collects into
+`report.metrics`.
 
 ## License
 

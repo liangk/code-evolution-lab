@@ -339,7 +339,7 @@ function writeOutputFiles(report, outputDir) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.generateScoreText = exports.writeScoreFile = exports.printBaselineDiff = exports.printReport = exports.generateMarkdownReport = exports.writeMarkdownReport = exports.writeJsonReport = exports.cachingRules = exports.redosRules = exports.payloadRules = exports.domRules = exports.bundleRules = exports.resourceRules = exports.blockingIoRules = exports.n1Rules = exports.resetIndexRuleCache = exports.indexRules = exports.memoryRules = exports.loopRules = exports.getAllRules = exports.writeOutputFiles = exports.compareBaseline = exports.createBaseline = exports.calculateScore = exports.hashIssue = exports.analyzeDirectory = exports.analyzeFile = exports.RuleRegistry = void 0;
+exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = exports.hasSolutionGenerator = exports.attachSolutions = exports.generateSolutionsFor = exports.generateScoreText = exports.writeScoreFile = exports.printBaselineDiff = exports.printReport = exports.generateMarkdownReport = exports.writeMarkdownReport = exports.writeJsonReport = exports.cachingRules = exports.redosRules = exports.payloadRules = exports.domRules = exports.bundleRules = exports.resourceRules = exports.blockingIoRules = exports.n1Rules = exports.resetIndexRuleCache = exports.indexRules = exports.memoryRules = exports.loopRules = exports.getAllRules = exports.writeOutputFiles = exports.compareBaseline = exports.createBaseline = exports.calculateScore = exports.hashIssue = exports.analyzeDirectory = exports.analyzeFile = exports.RuleRegistry = void 0;
 // Core engine — public API
 var engine_1 = __nccwpck_require__(3606);
 Object.defineProperty(exports, "RuleRegistry", ({ enumerable: true, get: function () { return engine_1.RuleRegistry; } }));
@@ -374,6 +374,17 @@ Object.defineProperty(exports, "printReport", ({ enumerable: true, get: function
 Object.defineProperty(exports, "printBaselineDiff", ({ enumerable: true, get: function () { return reporter_1.printBaselineDiff; } }));
 Object.defineProperty(exports, "writeScoreFile", ({ enumerable: true, get: function () { return reporter_1.writeScoreFile; } }));
 Object.defineProperty(exports, "generateScoreText", ({ enumerable: true, get: function () { return reporter_1.generateScoreText; } }));
+// Solutions
+var solutions_1 = __nccwpck_require__(7653);
+Object.defineProperty(exports, "generateSolutionsFor", ({ enumerable: true, get: function () { return solutions_1.generateSolutionsFor; } }));
+Object.defineProperty(exports, "attachSolutions", ({ enumerable: true, get: function () { return solutions_1.attachSolutions; } }));
+Object.defineProperty(exports, "hasSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.hasSolutionGenerator; } }));
+Object.defineProperty(exports, "BaseSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.BaseSolutionGenerator; } }));
+Object.defineProperty(exports, "N1SolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.N1SolutionGenerator; } }));
+Object.defineProperty(exports, "FitnessCalculator", ({ enumerable: true, get: function () { return solutions_1.FitnessCalculator; } }));
+Object.defineProperty(exports, "WEIGHT_PRESETS", ({ enumerable: true, get: function () { return solutions_1.WEIGHT_PRESETS; } }));
+Object.defineProperty(exports, "analyzeCodePattern", ({ enumerable: true, get: function () { return solutions_1.analyzeCodePattern; } }));
+Object.defineProperty(exports, "generateTransformationCandidates", ({ enumerable: true, get: function () { return solutions_1.generateTransformationCandidates; } }));
 //# sourceMappingURL=index.js.map
 
 /***/ }),
@@ -2961,6 +2972,7 @@ function collectLoops(ast, batchVars) {
         loops.push({
             kind,
             start: node.start,
+            end: node.end,
             line: loc.line,
             column: loc.column,
             scanRanges: scanNodesOf(node, kind)
@@ -3219,6 +3231,9 @@ function detectN1Issues(filePath, content, ast) {
                     `where each iteration makes a separate database call. This makes ${queriesIfN100} queries ` +
                     `for 100 items instead of 1 batched query.`,
                 snippet: snippetAt(content, loop.line),
+                // The whole loop, so a solution generator can preserve its structure
+                // and variable names when rewriting it as a batched query.
+                codeBefore: content.slice(loop.start, loop.end),
                 recommendation: 'Batch the lookup before the loop (e.g. findMany/findAll with an `in` filter) or use eager loading / includes.',
                 studyReference: 'Study 01',
                 empiricalSpeedup: '98\u00d7 at 1,000 items on a 5ms round trip',
@@ -3723,6 +3738,1037 @@ exports.resourceRules = [
     },
 ];
 //# sourceMappingURL=resource-rules.js.map
+
+/***/ }),
+
+/***/ 8788:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Base Solution Generator
+ *
+ * Ported from `backend/src/generators/base-generator.ts` (private copy, which
+ * adds `description`, `explanation` and `generationMethod` to each solution).
+ *
+ * Solutions are produced by applying transformation strategies to the
+ * *original* problematic code, so variable names, loop structure and business
+ * logic survive into the suggestion. That is why `DiagnosticIssue.codeBefore`
+ * carries the whole construct and not just the reported line.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.BaseSolutionGenerator = void 0;
+const fitness_calculator_1 = __nccwpck_require__(318);
+const code_transformer_1 = __nccwpck_require__(6950);
+class BaseSolutionGenerator {
+    constructor(preset = 'balanced') {
+        this.fitnessCalculator = new fitness_calculator_1.FitnessCalculator(preset);
+    }
+    generateTransformationBasedSolutions(issue, context, strategies) {
+        const originalCode = issue.codeBefore || '';
+        if (!originalCode.trim())
+            return [];
+        const pattern = (0, code_transformer_1.analyzeCodePattern)(originalCode);
+        const solutions = [];
+        for (const strategy of strategies) {
+            try {
+                const result = strategy.apply(originalCode, pattern, context);
+                if (result.success && this.isValidCode(result.code)) {
+                    solutions.push(this.createSolution(issue.id || '', solutions.length + 1, strategy.name, result.code, strategy.fitness, `${strategy.description}\nPreserved: ${result.preservedElements.join(', ')}`, this.assessRiskLevel(result)));
+                }
+            }
+            catch {
+                // A strategy that throws is skipped; the others still run.
+            }
+        }
+        // Generic transformations that apply regardless of category.
+        const genericTransforms = (0, code_transformer_1.generateTransformationCandidates)(originalCode);
+        for (const transform of genericTransforms) {
+            if (!solutions.some(s => s.type === transform.transformationType) && this.isValidCode(transform.code)) {
+                solutions.push(this.createSolution(issue.id || '', solutions.length + 1, transform.transformationType, transform.code, this.calculateTransformFitness(transform), transform.description, this.assessRiskLevel(transform)));
+            }
+        }
+        return solutions;
+    }
+    /** More preserved elements from the original code means a safer rewrite. */
+    assessRiskLevel(result) {
+        if (result.preservedElements.length >= 5)
+            return 'low';
+        if (result.preservedElements.length >= 2)
+            return 'medium';
+        return 'high';
+    }
+    calculateTransformFitness(result) {
+        const baseFitness = 70;
+        const preservationBonus = Math.min(result.preservedElements.length * 5, 20);
+        return baseFitness + preservationBonus;
+    }
+    analyzeOriginalCode(code) {
+        return (0, code_transformer_1.analyzeCodePattern)(code);
+    }
+    createSolution(issueId, rank, type, code, fitnessScore, reasoning, riskLevel) {
+        return {
+            id: this.generateId(),
+            issueId,
+            rank,
+            type,
+            code,
+            fitnessScore,
+            reasoning,
+            description: reasoning.split('\n')[0],
+            explanation: reasoning,
+            generationMethod: 'heuristic',
+            implementationTime: this.fitnessCalculator.estimateImplementationTime(code, type),
+            riskLevel,
+        };
+    }
+    generateId() {
+        return `sol-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    }
+    /**
+     * Reject output that is only commentary. A "solution" made entirely of
+     * comments reads as a suggestion but cannot be applied, and it is how the
+     * old pattern-analysis fallback got into published results.
+     */
+    isValidCode(code) {
+        const codeWithoutComments = code
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/\/\/.*/g, '')
+            .trim();
+        if (codeWithoutComments.length === 0)
+            return false;
+        return /[;{}()[\]=]|const|let|var|function|class|if|for|while|return|await|async/.test(codeWithoutComments);
+    }
+}
+exports.BaseSolutionGenerator = BaseSolutionGenerator;
+//# sourceMappingURL=base-generator.js.map
+
+/***/ }),
+
+/***/ 6950:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * Code Transformer
+ *
+ * AST-based analysis and transformation of the original problematic code.
+ * Ported from `backend/src/utils/code-transformer.ts`.
+ *
+ * Two transformations from the original are deliberately not ported:
+ *
+ *   `transformLoopQueryToBatch` detected a query inside a loop and then
+ *   returned a four-line comment header prepended to the *unchanged* original
+ *   code, marked `success: true`. It transformed nothing. The N+1 generator
+ *   has its own `batch-query-before-loop` strategy that does produce a
+ *   rewrite, so nothing is lost.
+ *
+ *   `transformBatchMethodCalls` replaced `form.get('x')?.value` with
+ *   `formValues.x` but never emitted the `const formValues = ...` declaration
+ *   — its own comment admitted it needed scope analysis it didn't do. The
+ *   result referenced an undefined variable and still reported success.
+ *
+ *   `transformMemoize` is likewise a prefix-plus-original, not a rewrite.
+ *
+ * What remains is `transformChainedToSinglePass`, which genuinely rewrites the
+ * AST. Adding a transformation here means adding one that changes the code.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parseCodeSafe = parseCodeSafe;
+exports.analyzeCodePattern = analyzeCodePattern;
+exports.extractVariables = extractVariables;
+exports.transformChainedToSinglePass = transformChainedToSinglePass;
+exports.generateTransformationCandidates = generateTransformationCandidates;
+const parser_1 = __nccwpck_require__(1755);
+const traverse_1 = __importDefault(__nccwpck_require__(8254));
+const generator_1 = __importDefault(__nccwpck_require__(7797));
+const t = __importStar(__nccwpck_require__(9185));
+/** Parse code with error handling. Returns null rather than throwing. */
+function parseCodeSafe(code) {
+    try {
+        return (0, parser_1.parse)(code, {
+            sourceType: 'module',
+            plugins: [
+                'typescript', 'jsx', 'decorators-legacy', 'classProperties',
+                'objectRestSpread', 'asyncGenerators', 'dynamicImport',
+                'optionalChaining', 'nullishCoalescingOperator',
+            ],
+        });
+    }
+    catch {
+        return null;
+    }
+}
+/** Analyze code to identify patterns that can be optimized. */
+function analyzeCodePattern(code) {
+    const ast = parseCodeSafe(code);
+    if (!ast) {
+        return { type: 'unknown', repeatedCalls: [], originalStructure: t.nullLiteral() };
+    }
+    const repeatedCalls = [];
+    const callCounts = new Map();
+    let loopVariable;
+    let iteratedCollection;
+    let patternType = 'unknown';
+    (0, traverse_1.default)(ast, {
+        ForOfStatement(path) {
+            patternType = 'loop-with-calls';
+            if (t.isIdentifier(path.node.left) ||
+                (t.isVariableDeclaration(path.node.left) && t.isIdentifier(path.node.left.declarations[0]?.id))) {
+                loopVariable = t.isIdentifier(path.node.left)
+                    ? path.node.left.name
+                    : (path.node.left.declarations[0]?.id).name;
+            }
+            if (t.isIdentifier(path.node.right)) {
+                iteratedCollection = path.node.right.name;
+            }
+        },
+        ForStatement(_path) {
+            patternType = 'loop-with-calls';
+        },
+        CallExpression(path) {
+            if (t.isMemberExpression(path.node.callee)) {
+                const methodName = t.isIdentifier(path.node.callee.property) ? path.node.callee.property.name : '';
+                const objectPath = (0, generator_1.default)(path.node.callee.object).code;
+                const args = path.node.arguments.map((arg) => (0, generator_1.default)(arg).code);
+                const isAsync = path.parentPath?.isAwaitExpression() || false;
+                const key = `${objectPath}.${methodName}`;
+                if (callCounts.has(key)) {
+                    callCounts.get(key).count++;
+                }
+                else {
+                    callCounts.set(key, {
+                        call: { methodName, objectPath, arguments: args, count: 1, isAsync },
+                        count: 1,
+                    });
+                }
+                // .forEach/.map/.filter callbacks carry the loop variable and collection.
+                if (['forEach', 'map', 'filter'].includes(methodName) && !loopVariable) {
+                    iteratedCollection = objectPath;
+                    const callback = path.node.arguments[0];
+                    if (callback && (t.isArrowFunctionExpression(callback) || t.isFunctionExpression(callback))) {
+                        const params = callback.params;
+                        if (params.length > 0 && t.isIdentifier(params[0])) {
+                            loopVariable = params[0].name;
+                        }
+                    }
+                    if (!patternType || patternType === 'unknown') {
+                        patternType = 'loop-with-calls';
+                    }
+                }
+            }
+        },
+    });
+    if (code.includes('.filter(') && code.includes('.map(')) {
+        patternType = 'chained-methods';
+    }
+    const getCallCount = Array.from(callCounts.values())
+        .filter(c => c.call.methodName === 'get')
+        .reduce((sum, c) => sum + c.count, 0);
+    if (getCallCount > 2) {
+        patternType = 'repeated-access';
+    }
+    callCounts.forEach(({ call, count }) => {
+        repeatedCalls.push({ ...call, count });
+    });
+    return {
+        type: patternType,
+        loopVariable,
+        iteratedCollection,
+        repeatedCalls,
+        originalStructure: ast,
+    };
+}
+/** Extract variable names and their rough types from code. */
+function extractVariables(code) {
+    const variables = new Map();
+    const ast = parseCodeSafe(code);
+    if (!ast)
+        return variables;
+    (0, traverse_1.default)(ast, {
+        VariableDeclarator(path) {
+            if (t.isIdentifier(path.node.id)) {
+                const name = path.node.id.name;
+                let type = 'unknown';
+                if (path.node.init) {
+                    if (t.isCallExpression(path.node.init))
+                        type = 'call-result';
+                    else if (t.isArrayExpression(path.node.init))
+                        type = 'array';
+                    else if (t.isObjectExpression(path.node.init))
+                        type = 'object';
+                    else if (t.isArrowFunctionExpression(path.node.init))
+                        type = 'function';
+                }
+                variables.set(name, type);
+            }
+        },
+    });
+    return variables;
+}
+/**
+ * Transform: convert chained array methods to a single pass.
+ *
+ *   items.filter(x => x.active).map(x => x.value)
+ *   -> items.reduce((acc, x) => { if (x.active) acc.push(x.value); return acc; }, [])
+ */
+function transformChainedToSinglePass(code, _pattern) {
+    const ast = parseCodeSafe(code);
+    if (!ast) {
+        return { success: false, code, description: 'Failed to parse code', transformationType: 'single-pass', preservedElements: [] };
+    }
+    const preservedElements = [];
+    let transformed = false;
+    let resultCode = code;
+    (0, traverse_1.default)(ast, {
+        CallExpression(path) {
+            // .map().filter()
+            if (t.isMemberExpression(path.node.callee) &&
+                t.isIdentifier(path.node.callee.property) &&
+                path.node.callee.property.name === 'filter') {
+                const mapCall = path.node.callee.object;
+                if (t.isCallExpression(mapCall) &&
+                    t.isMemberExpression(mapCall.callee) &&
+                    t.isIdentifier(mapCall.callee.property) &&
+                    mapCall.callee.property.name === 'map') {
+                    const originalCollection = (0, generator_1.default)(mapCall.callee.object).code;
+                    preservedElements.push(originalCollection);
+                    const mapTransform = mapCall.arguments[0];
+                    const filterPredicate = path.node.arguments[0];
+                    if (t.isArrowFunctionExpression(mapTransform) && t.isArrowFunctionExpression(filterPredicate)) {
+                        const mapParam = t.isIdentifier(mapTransform.params[0]) ? mapTransform.params[0].name : 'item';
+                        preservedElements.push(mapParam);
+                        const tempVar = t.identifier('mapped');
+                        const reduceBody = t.blockStatement([
+                            t.variableDeclaration('const', [t.variableDeclarator(tempVar, mapTransform.body)]),
+                            t.ifStatement(t.callExpression(filterPredicate, [tempVar]), t.expressionStatement(t.callExpression(t.memberExpression(t.identifier('acc'), t.identifier('push')), [tempVar]))),
+                            t.returnStatement(t.identifier('acc')),
+                        ]);
+                        const reduceArrow = t.arrowFunctionExpression([t.identifier('acc'), t.identifier(mapParam)], reduceBody);
+                        const reduceCall = t.callExpression(t.memberExpression(mapCall.callee.object, t.identifier('reduce')), [reduceArrow, t.arrayExpression([])]);
+                        path.replaceWith(reduceCall);
+                        transformed = true;
+                    }
+                }
+            }
+            // .filter().map()
+            else if (t.isMemberExpression(path.node.callee) &&
+                t.isIdentifier(path.node.callee.property) &&
+                path.node.callee.property.name === 'map') {
+                const filterCall = path.node.callee.object;
+                if (t.isCallExpression(filterCall) &&
+                    t.isMemberExpression(filterCall.callee) &&
+                    t.isIdentifier(filterCall.callee.property) &&
+                    filterCall.callee.property.name === 'filter') {
+                    const originalCollection = (0, generator_1.default)(filterCall.callee.object).code;
+                    preservedElements.push(originalCollection);
+                    const filterPredicate = filterCall.arguments[0];
+                    const mapTransform = path.node.arguments[0];
+                    if (t.isArrowFunctionExpression(filterPredicate) && t.isArrowFunctionExpression(mapTransform)) {
+                        const filterParam = t.isIdentifier(filterPredicate.params[0]) ? filterPredicate.params[0].name : 'item';
+                        preservedElements.push(filterParam);
+                        const reduceBody = t.blockStatement([
+                            t.ifStatement(filterPredicate.body, t.expressionStatement(t.callExpression(t.memberExpression(t.identifier('acc'), t.identifier('push')), [
+                                mapTransform.body,
+                            ]))),
+                            t.returnStatement(t.identifier('acc')),
+                        ]);
+                        const reduceArrow = t.arrowFunctionExpression([t.identifier('acc'), t.identifier(filterParam)], reduceBody);
+                        const reduceCall = t.callExpression(t.memberExpression(filterCall.callee.object, t.identifier('reduce')), [reduceArrow, t.arrayExpression([])]);
+                        path.replaceWith(reduceCall);
+                        transformed = true;
+                    }
+                }
+            }
+        },
+    });
+    if (transformed) {
+        resultCode = (0, generator_1.default)(ast).code;
+    }
+    return {
+        success: transformed,
+        code: resultCode,
+        description: transformed
+            ? 'Converted chained array methods to single reduce() pass'
+            : 'No applicable chain found',
+        transformationType: 'single-pass',
+        preservedElements,
+    };
+}
+/** Apply every generic transformation and return the ones that changed the code. */
+function generateTransformationCandidates(originalCode) {
+    const pattern = analyzeCodePattern(originalCode);
+    const candidates = [];
+    const transformations = [() => transformChainedToSinglePass(originalCode, pattern)];
+    for (const transform of transformations) {
+        try {
+            const result = transform();
+            if (result.success)
+                candidates.push(result);
+        }
+        catch {
+            // Skip failed transformations
+        }
+    }
+    return candidates;
+}
+//# sourceMappingURL=code-transformer.js.map
+
+/***/ }),
+
+/***/ 318:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/**
+ * Fitness Calculator
+ *
+ * Scores and ranks generated solutions. Ported from
+ * `backend/src/generators/fitness-calculator.ts` (private copy, which is a
+ * superset of the public one — it adds the per-dimension breakdown).
+ *
+ * Every number here is a heuristic, not a measurement. The scores order
+ * candidate rewrites against each other; they are not claims about real
+ * performance.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.FitnessCalculator = exports.WEIGHT_PRESETS = void 0;
+exports.WEIGHT_PRESETS = {
+    balanced: { performance: 0.35, complexity: 0.25, maintainability: 0.25, compatibility: 0.15 },
+    performance: { performance: 0.55, complexity: 0.15, maintainability: 0.15, compatibility: 0.15 },
+    maintainability: { performance: 0.20, complexity: 0.20, maintainability: 0.45, compatibility: 0.15 },
+    enterprise: { performance: 0.25, complexity: 0.20, maintainability: 0.35, compatibility: 0.20 },
+};
+class FitnessCalculator {
+    constructor(preset = 'balanced') {
+        this.weights = exports.WEIGHT_PRESETS[preset];
+    }
+    setWeights(weights) {
+        this.weights = weights;
+    }
+    calculateFitness(solution, issue, context) {
+        return this.calculateFitnessWithBreakdown(solution, issue, context).score;
+    }
+    calculateFitnessWithBreakdown(solution, _issue, context) {
+        const performanceScore = this.calculatePerformanceScore(solution);
+        const complexityScore = this.calculateComplexityScore(solution);
+        const maintainabilityScore = this.calculateMaintainabilityScore(solution);
+        const compatibilityScore = this.calculateCompatibilityScore(solution, context);
+        const score = performanceScore * this.weights.performance +
+            complexityScore * this.weights.complexity +
+            maintainabilityScore * this.weights.maintainability +
+            compatibilityScore * this.weights.compatibility;
+        const breakdown = {
+            performance: { score: performanceScore, weight: this.weights.performance },
+            complexity: { score: complexityScore, weight: this.weights.complexity },
+            maintainability: { score: maintainabilityScore, weight: this.weights.maintainability },
+            compatibility: { score: compatibilityScore, weight: this.weights.compatibility },
+            preset: this.getPresetName(),
+        };
+        return { score, breakdown };
+    }
+    getPresetName() {
+        for (const [name, weights] of Object.entries(exports.WEIGHT_PRESETS)) {
+            if (JSON.stringify(weights) === JSON.stringify(this.weights))
+                return name;
+        }
+        return 'custom';
+    }
+    estimateImplementationTime(code, solutionType) {
+        const lines = code.split('\n').filter(l => l.trim().length > 0).length;
+        const asyncOps = (code.match(/await|\.then\(/g) || []).length;
+        const conditionals = (code.match(/if|switch|case|\?/g) || []).length;
+        const loops = (code.match(/for|while|map|filter|reduce|forEach/g) || []).length;
+        const dbCalls = (code.match(/prisma\.|mongoose\.|findMany|findUnique|create|update|delete|aggregate/g) || []).length;
+        const functions = (code.match(/function|=>|\bconst\s+\w+\s*=\s*\(/g) || []).length;
+        const typeComplexity = {
+            raw_join: 30,
+            dataloader: 25,
+            batch_query: 20,
+            prisma_include: 10,
+            prisma_select: 8,
+            eager_loading: 12,
+            mongoose_populate: 15,
+        };
+        let baseTime = typeComplexity[solutionType] || 15;
+        baseTime += lines * 0.5;
+        baseTime += asyncOps * 3;
+        baseTime += conditionals * 2;
+        baseTime += loops * 4;
+        baseTime += dbCalls * 5;
+        baseTime += functions * 3;
+        return Math.round(Math.max(5, Math.min(180, baseTime)));
+    }
+    calculatePerformanceScore(solution) {
+        let score = 70;
+        const code = solution.code;
+        const dbCallCount = (code.match(/\.(find|findOne|findMany|findUnique|create|update|delete|aggregate|query|exec)\(/g) || []).length;
+        if (dbCallCount === 0)
+            score += 15;
+        else if (dbCallCount === 1)
+            score += 25;
+        else if (dbCallCount === 2)
+            score += 10;
+        else
+            score -= (dbCallCount - 2) * 5;
+        if (code.includes('include') || code.includes('populate') || code.includes('join'))
+            score += 10;
+        if (code.includes('select') || code.includes('projection'))
+            score += 5;
+        const loopCount = (code.match(/\bfor\s*\(|\bwhile\s*\(|\.forEach\(|\.map\(/g) || []).length;
+        if (loopCount === 0)
+            score += 5;
+        else
+            score -= loopCount * 3;
+        if (code.includes('Promise.all') || code.includes('await Promise.all'))
+            score += 8;
+        if (code.includes('cache') || code.includes('memoize'))
+            score += 10;
+        return Math.max(0, Math.min(100, score));
+    }
+    calculateComplexityScore(solution) {
+        const riskScores = { low: 90, medium: 70, high: 50 };
+        let score = riskScores[solution.riskLevel] || 60;
+        if (solution.implementationTime < 30)
+            score += 10;
+        else if (solution.implementationTime > 120)
+            score -= 20;
+        return Math.max(0, Math.min(100, score));
+    }
+    calculateMaintainabilityScore(solution) {
+        let score = 70;
+        const code = solution.code;
+        const lines = code.split('\n').filter(l => l.trim().length > 0);
+        const avgLineLength = lines.reduce((sum, line) => sum + line.trim().length, 0) / lines.length;
+        if (avgLineLength < 60)
+            score += 10;
+        else if (avgLineLength > 100)
+            score -= 10;
+        if (code.includes('//') || code.includes('/*'))
+            score += 5;
+        const cyclomaticComplexity = (code.match(/if|else|switch|case|for|while|\?|&&|\|\|/g) || []).length;
+        if (cyclomaticComplexity < 5)
+            score += 15;
+        else if (cyclomaticComplexity < 10)
+            score += 5;
+        else
+            score -= (cyclomaticComplexity - 10) * 2;
+        const usesORMAbstraction = code.match(/\.(findMany|findUnique|include|select|populate)\(/g);
+        if (usesORMAbstraction && usesORMAbstraction.length > 0)
+            score += 10;
+        const usesRawSQL = code.includes('$queryRaw') || code.includes('raw(') || code.includes('SELECT') || code.includes('FROM');
+        if (usesRawSQL)
+            score -= 15;
+        const functionCount = (code.match(/function\s+\w+|const\s+\w+\s*=\s*\(/g) || []).length;
+        if (functionCount > 3)
+            score -= 5;
+        const nestingLevel = this.calculateMaxNesting(code);
+        if (nestingLevel < 3)
+            score += 10;
+        else if (nestingLevel > 4)
+            score -= (nestingLevel - 4) * 5;
+        return Math.max(0, Math.min(100, score));
+    }
+    calculateMaxNesting(code) {
+        let maxNesting = 0;
+        let currentNesting = 0;
+        for (const char of code) {
+            if (char === '{') {
+                currentNesting++;
+                maxNesting = Math.max(maxNesting, currentNesting);
+            }
+            else if (char === '}') {
+                currentNesting--;
+            }
+        }
+        return maxNesting;
+    }
+    calculateCompatibilityScore(solution, context) {
+        let score = 80;
+        if (context?.existingPatterns?.includes(solution.type))
+            score += 20;
+        if (solution.type === 'dataloader' && !context?.dependencies?.includes('dataloader'))
+            score -= 15;
+        if (solution.type === 'raw_join')
+            score -= 10;
+        return Math.max(0, Math.min(100, score));
+    }
+    rankSolutions(solutions, issue, context) {
+        return solutions
+            .map(solution => ({ ...solution, fitnessScore: this.calculateFitness(solution, issue, context) }))
+            .sort((a, b) => b.fitnessScore - a.fitnessScore)
+            .map((solution, index) => ({ ...solution, rank: index + 1 }));
+    }
+}
+exports.FitnessCalculator = FitnessCalculator;
+//# sourceMappingURL=fitness-calculator.js.map
+
+/***/ }),
+
+/***/ 7653:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Solution generation.
+ *
+ * Attaches suggested rewrites to findings. One generator per category; only
+ * N+1 is ported so far, and a category without a generator simply gets no
+ * solutions rather than a generic template.
+ *
+ * Generators read `DiagnosticIssue.codeBefore` — the whole loop or construct,
+ * not the reported line — so the suggestion comes back with the reader's own
+ * variable names in it.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.extractVariables = exports.parseCodeSafe = exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = void 0;
+exports.hasSolutionGenerator = hasSolutionGenerator;
+exports.generateSolutionsFor = generateSolutionsFor;
+exports.attachSolutions = attachSolutions;
+const n1_generator_1 = __nccwpck_require__(6500);
+var base_generator_1 = __nccwpck_require__(8788);
+Object.defineProperty(exports, "BaseSolutionGenerator", ({ enumerable: true, get: function () { return base_generator_1.BaseSolutionGenerator; } }));
+var n1_generator_2 = __nccwpck_require__(6500);
+Object.defineProperty(exports, "N1SolutionGenerator", ({ enumerable: true, get: function () { return n1_generator_2.N1SolutionGenerator; } }));
+var fitness_calculator_1 = __nccwpck_require__(318);
+Object.defineProperty(exports, "FitnessCalculator", ({ enumerable: true, get: function () { return fitness_calculator_1.FitnessCalculator; } }));
+Object.defineProperty(exports, "WEIGHT_PRESETS", ({ enumerable: true, get: function () { return fitness_calculator_1.WEIGHT_PRESETS; } }));
+var code_transformer_1 = __nccwpck_require__(6950);
+Object.defineProperty(exports, "analyzeCodePattern", ({ enumerable: true, get: function () { return code_transformer_1.analyzeCodePattern; } }));
+Object.defineProperty(exports, "generateTransformationCandidates", ({ enumerable: true, get: function () { return code_transformer_1.generateTransformationCandidates; } }));
+Object.defineProperty(exports, "parseCodeSafe", ({ enumerable: true, get: function () { return code_transformer_1.parseCodeSafe; } }));
+Object.defineProperty(exports, "extractVariables", ({ enumerable: true, get: function () { return code_transformer_1.extractVariables; } }));
+const GENERATORS = {
+    n1: () => new n1_generator_1.N1SolutionGenerator(),
+};
+/** True when a generator exists for this finding's category. */
+function hasSolutionGenerator(category) {
+    return category in GENERATORS;
+}
+/**
+ * Generate ranked solutions for one finding. Returns an empty array when no
+ * generator covers the category, when the finding carries no `codeBefore`, or
+ * when no transformation applies to the code as written.
+ */
+async function generateSolutionsFor(issue, context = {}) {
+    const factory = GENERATORS[issue.category];
+    if (!factory)
+        return [];
+    try {
+        return await factory().generateSolutions(issue, context);
+    }
+    catch {
+        return [];
+    }
+}
+/**
+ * Attach solutions to every finding that has a generator. Findings are
+ * returned in the same order, with a `solutions` array added where anything
+ * was produced.
+ */
+async function attachSolutions(issues, context = {}) {
+    const out = [];
+    for (const issue of issues) {
+        const solutions = await generateSolutionsFor(issue, context);
+        out.push(solutions.length > 0 ? { ...issue, solutions } : issue);
+    }
+    return out;
+}
+//# sourceMappingURL=index.js.map
+
+/***/ }),
+
+/***/ 6500:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+/**
+ * N+1 Query Solution Generator
+ *
+ * Ported from `backend/src/generators/n1-solution-generator.ts` (private copy,
+ * which drops the pattern-analysis fallback — see below).
+ *
+ * Solutions are built by applying transformation strategies to the original
+ * loop, so the reader gets their own variable names back rather than a generic
+ * template. What comes out is a scaffold with a placeholder where the real
+ * batch query goes, not a patch to apply blind.
+ *
+ * Two things the backend version does that this one does not:
+ *
+ *   The public backend still has `generateContextAwareSolutions`, a fallback
+ *   that emits a "solution" made entirely of comments describing the detected
+ *   pattern. `base-generator` rejects comment-only output from strategies, but
+ *   the fallback bypassed that check, so non-actionable commentary reached
+ *   published scan results. When no strategy applies, this returns nothing.
+ *
+ *   The Angular reactive-forms strategies (`batch-form-reads`,
+ *   `form-batch-read`) are not ported. Batching `form.get('field')?.value`
+ *   calls is a real optimisation but has nothing to do with database queries,
+ *   and `detectORM` classifying any code containing both `.get(` and `form` as
+ *   `angular-forms` could hijack a genuine repository finding.
+ */
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.N1SolutionGenerator = void 0;
+const generator_1 = __importDefault(__nccwpck_require__(7797));
+const traverse_1 = __importDefault(__nccwpck_require__(8254));
+const t = __importStar(__nccwpck_require__(9185));
+const base_generator_1 = __nccwpck_require__(8788);
+const code_transformer_1 = __nccwpck_require__(6950);
+class N1SolutionGenerator extends base_generator_1.BaseSolutionGenerator {
+    constructor() {
+        super(...arguments);
+        this.name = 'N+1 Query Solution Generator';
+    }
+    async generateSolutions(issue, context) {
+        const originalCode = issue.codeBefore || '';
+        if (!originalCode.trim())
+            return [];
+        const pattern = (0, code_transformer_1.analyzeCodePattern)(originalCode);
+        const codeContext = this.analyzeCodeContext(originalCode);
+        const strategies = this.buildTransformationStrategies(pattern, codeContext);
+        const solutions = this.generateTransformationBasedSolutions(issue, context, strategies);
+        // No applicable transformation means no suggestion. Saying nothing beats
+        // emitting commentary that looks like a fix.
+        if (solutions.length === 0)
+            return [];
+        return solutions.sort((a, b) => b.fitnessScore - a.fitnessScore);
+    }
+    /** Extract ORM, variable names, loop structure and async calls. */
+    analyzeCodeContext(code) {
+        const context = {
+            orm: this.detectORM(code),
+            variables: new Map(),
+            methodCalls: [],
+            loopStructure: null,
+            asyncCalls: [],
+        };
+        const ast = (0, code_transformer_1.parseCodeSafe)(code);
+        if (!ast)
+            return context;
+        (0, traverse_1.default)(ast, {
+            VariableDeclarator(path) {
+                if (t.isIdentifier(path.node.id)) {
+                    context.variables.set(path.node.id.name, {
+                        name: path.node.id.name,
+                        type: path.node.init ? path.node.init.type : 'unknown',
+                    });
+                }
+            },
+            CallExpression(path) {
+                if (t.isMemberExpression(path.node.callee)) {
+                    const methodName = t.isIdentifier(path.node.callee.property) ? path.node.callee.property.name : '';
+                    const objectCode = (0, generator_1.default)(path.node.callee.object).code;
+                    context.methodCalls.push({
+                        methodName,
+                        object: objectCode,
+                        isAsync: path.parentPath?.isAwaitExpression() || false,
+                    });
+                }
+            },
+            ForOfStatement(path) {
+                let loopVar = '';
+                if (t.isVariableDeclaration(path.node.left) && t.isIdentifier(path.node.left.declarations[0]?.id)) {
+                    loopVar = path.node.left.declarations[0].id.name;
+                }
+                else if (t.isIdentifier(path.node.left)) {
+                    loopVar = path.node.left.name;
+                }
+                context.loopStructure = { type: 'for-of', variable: loopVar, collection: (0, generator_1.default)(path.node.right).code };
+            },
+            ForStatement(_path) {
+                context.loopStructure = { type: 'for', variable: '', collection: '' };
+            },
+            AwaitExpression(path) {
+                context.asyncCalls.push((0, generator_1.default)(path.node).code);
+            },
+        });
+        return context;
+    }
+    detectORM(code) {
+        if (code.includes('prisma.') || code.includes('findMany') || code.includes('findUnique'))
+            return 'prisma';
+        if (code.includes('findAll') || code.includes('findByPk'))
+            return 'sequelize';
+        if (code.includes('.find(') && (code.includes('mongoose') || code.includes('Model.')))
+            return 'mongoose';
+        if (code.includes('fetch(') || code.includes('axios'))
+            return 'http';
+        return 'unknown';
+    }
+    buildTransformationStrategies(pattern, codeContext) {
+        const strategies = [];
+        if (codeContext.loopStructure && codeContext.asyncCalls.length > 0) {
+            strategies.push(this.createBatchQueryStrategy(codeContext));
+        }
+        if (codeContext.orm === 'prisma') {
+            strategies.push(this.createPrismaIncludeStrategy());
+        }
+        else if (codeContext.orm === 'sequelize') {
+            strategies.push(this.createSequelizeIncludeStrategy());
+        }
+        if (pattern.repeatedCalls.some(c => c.isAsync && c.count > 1)) {
+            strategies.push(this.createMemoizationStrategy(pattern));
+        }
+        return strategies;
+    }
+    /** Extract the per-item query out of the loop and issue it once. */
+    createBatchQueryStrategy(codeContext) {
+        return {
+            name: 'batch-query-before-loop',
+            description: 'Extract queries from loop and batch them before iteration',
+            fitness: 92,
+            apply: (originalCode) => {
+                const preservedElements = [];
+                if (!codeContext.loopStructure) {
+                    return {
+                        success: false, code: originalCode, description: 'No loop structure found',
+                        transformationType: 'batch-query', preservedElements,
+                    };
+                }
+                const { variable: loopVar, collection } = codeContext.loopStructure;
+                preservedElements.push(loopVar, collection);
+                const asyncCallsInLoop = codeContext.asyncCalls;
+                if (asyncCallsInLoop.length === 0) {
+                    return {
+                        success: false, code: originalCode, description: 'No async calls in loop',
+                        transformationType: 'batch-query', preservedElements,
+                    };
+                }
+                const transformedCode = `// OPTIMIZED: Batch query before loop
+// Original: ${asyncCallsInLoop.length} async call(s) inside loop over ${collection}
+// Problem: N+1 queries where N = ${collection}.length
+
+// Step 1: Collect all IDs/keys needed
+const allIds = ${collection}.map(${loopVar} => ${loopVar}.id);
+
+// Step 2: Batch query (single database call)
+const allData = await batchQuery(allIds); // Replace with actual batch query
+const dataMap = new Map(allData.map(d => [d.id, d]));
+
+// Step 3: Original loop (now uses cached data)
+${originalCode.replace(/await\s+\w+\.\w+\([^)]*\)/g, `dataMap.get(${loopVar}.id)`)}
+
+// Performance: 1 query instead of N queries`;
+                return {
+                    success: true,
+                    code: transformedCode,
+                    description: `Extracted ${asyncCallsInLoop.length} queries from loop over ${collection}`,
+                    transformationType: 'batch-query-before-loop',
+                    preservedElements,
+                };
+            },
+        };
+    }
+    createPrismaIncludeStrategy() {
+        return {
+            name: 'prisma-include',
+            description: 'Use Prisma include for eager loading related data',
+            fitness: 95,
+            apply: (originalCode) => {
+                const preservedElements = [];
+                const modelMatch = originalCode.match(/prisma\.(\w+)\./);
+                const modelName = modelMatch ? modelMatch[1] : 'model';
+                preservedElements.push(modelName);
+                const relationMatches = originalCode.matchAll(/prisma\.(\w+)\.findMany\(\{[^}]*where:\s*\{\s*(\w+):/g);
+                const relations = [];
+                for (const match of relationMatches) {
+                    relations.push(match[1]);
+                    preservedElements.push(match[1]);
+                }
+                if (relations.length === 0) {
+                    const loopQueryMatch = originalCode.match(/for.*of\s+(\w+).*await.*prisma\.(\w+)/);
+                    if (loopQueryMatch) {
+                        relations.push(loopQueryMatch[2]);
+                        preservedElements.push(loopQueryMatch[1], loopQueryMatch[2]);
+                    }
+                }
+                const transformedCode = `// OPTIMIZED: Prisma eager loading with include
+// Original: Separate queries for ${modelName} and ${relations.join(', ') || 'related data'}
+// Optimized: Single query with include
+
+const ${modelName}WithRelations = await prisma.${modelName}.findMany({
+  include: {
+${relations.map(r => `    ${r}: true, // Eager load ${r}`).join('\n') || '    // Add relations here'}
+  }
+});
+
+// Original code reference:
+/*
+${originalCode}
+*/
+
+// Access related data directly: ${modelName}WithRelations[0].${relations[0] || 'relation'}`;
+                return {
+                    success: true,
+                    code: transformedCode,
+                    description: `Added Prisma include for ${relations.length} relation(s)`,
+                    transformationType: 'prisma-include',
+                    preservedElements,
+                };
+            },
+        };
+    }
+    createSequelizeIncludeStrategy() {
+        return {
+            name: 'sequelize-include',
+            description: 'Use Sequelize include for eager loading related data',
+            fitness: 93,
+            apply: (originalCode) => {
+                const preservedElements = [];
+                const modelMatches = originalCode.matchAll(/(\w+)\.findAll\(/g);
+                const models = [];
+                for (const match of modelMatches) {
+                    models.push(match[1]);
+                    preservedElements.push(match[1]);
+                }
+                const mainModel = models[0] || 'Model';
+                const relatedModels = models.slice(1);
+                const transformedCode = `// OPTIMIZED: Sequelize eager loading with include
+// Original: Separate findAll() calls for ${models.join(', ') || 'models'}
+// Optimized: Single query with include
+
+const ${mainModel.toLowerCase()}WithRelations = await ${mainModel}.findAll({
+  include: [
+${relatedModels.map(m => `    { model: ${m}, as: '${m.toLowerCase()}s' },`).join('\n') || '    // Add models here'}
+  ]
+});
+
+// Original code reference:
+/*
+${originalCode}
+*/
+
+// Access: ${mainModel.toLowerCase()}WithRelations[0].${relatedModels[0]?.toLowerCase() || 'relation'}s`;
+                return {
+                    success: true,
+                    code: transformedCode,
+                    description: `Added Sequelize include for ${relatedModels.length} model(s)`,
+                    transformationType: 'sequelize-include',
+                    preservedElements,
+                };
+            },
+        };
+    }
+    createMemoizationStrategy(pattern) {
+        return {
+            name: 'memoization',
+            description: 'Add memoization cache for repeated expensive calls',
+            fitness: 82,
+            apply: (originalCode) => {
+                const preservedElements = [];
+                const expensiveCalls = pattern.repeatedCalls.filter(c => c.isAsync && c.count > 1);
+                if (expensiveCalls.length === 0) {
+                    return {
+                        success: false, code: originalCode, description: 'No repeated expensive calls',
+                        transformationType: 'memoization', preservedElements,
+                    };
+                }
+                expensiveCalls.forEach(call => preservedElements.push(`${call.objectPath}.${call.methodName}`));
+                let transformedCode = `// OPTIMIZED: Memoization for repeated expensive calls
+// Found ${expensiveCalls.length} repeated async call(s)\n\n`;
+                expensiveCalls.forEach(call => {
+                    const cacheName = `${call.methodName}Cache`;
+                    const fnName = call.methodName.charAt(0).toUpperCase() + call.methodName.slice(1);
+                    transformedCode += `// Memoize ${call.objectPath}.${call.methodName} (called ${call.count}x)
+const ${cacheName} = new Map();
+async function memoized${fnName}(key) {
+  if (${cacheName}.has(key)) return ${cacheName}.get(key);
+  const result = await ${call.objectPath}.${call.methodName}(key);
+  ${cacheName}.set(key, result);
+  return result;
+}\n\n`;
+                });
+                transformedCode += `// Original code (replace calls with memoized versions):\n${originalCode}`;
+                return {
+                    success: true,
+                    code: transformedCode,
+                    description: `Added memoization for ${expensiveCalls.length} repeated call(s)`,
+                    transformationType: 'memoization',
+                    preservedElements,
+                };
+            },
+        };
+    }
+}
+exports.N1SolutionGenerator = N1SolutionGenerator;
+//# sourceMappingURL=n1-generator.js.map
 
 /***/ }),
 
