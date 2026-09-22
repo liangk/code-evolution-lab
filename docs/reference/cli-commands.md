@@ -2,6 +2,17 @@
 
 Command-line interface for Code Evolution Lab.
 
+> **The maintained reference is
+> [`packages/cli/README.md`](../../packages/cli/README.md).** That is the page
+> published on npm and it tracks the shipping CLI, including options added
+> since this file was written (`--solutions`, several directories in one
+> scan) and the rule severities as recalibrated in 1.2.1 and 1.3.0.
+>
+> This page also documents the older `backend/dist/cli.js`, which takes glob
+> patterns rather than directories and is frozen. Where the two disagree, the
+> package README is right about the npm CLI and this page is right about the
+> backend one.
+
 ## Overview
 
 The CLI allows you to analyze code directly from the terminal without running the web UI.

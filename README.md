@@ -14,11 +14,16 @@
 
 Code Evolution Lab is a monorepo for the public tooling around empirical software diagnostics. It packages the research from [`liangk/empirical-study`](https://github.com/liangk/empirical-study) into practical developer tools: a CLI for local analysis, a GitHub Action for pull request checks, a reusable core engine, and replayable benchmark suites for reproducibility.
 
-The project focuses on performance patterns that have been studied empirically rather than stylistic lint rules. Today the public packages cover three rule families:
+The project focuses on performance patterns that have been studied empirically rather than stylistic lint rules. The public packages ship 35 rules across 11 categories, one per completed study:
 
-- **Loop performance anti-patterns** — nested loops, sequential await, repeated regex/JSON work inside loops
-- **Memory leak patterns** — missing cleanup in React, Vue, Angular, timers, listeners, and subscriptions
-- **Missing Prisma indexes** — foreign-key, filter, sort, and composite index gaps
+- **N+1 queries** — ORM calls made once per loop iteration instead of batched
+- **Blocking I/O** — synchronous file, crypto and child-process calls on the event loop
+- **Memory leaks** — missing cleanup in React, Vue, Angular, timers, listeners and subscriptions
+- **Loop performance** — nested loops, sequential await, repeated regex/JSON work inside loops
+- **Missing Prisma indexes** — foreign-key, filter, sort and composite index gaps
+- **Resource leaks**, **bundle bloat**, **DOM manipulation**, **large payloads**, **ReDoS**, and **caching**
+
+Rule severities and detection criteria are calibrated against real code rather than assumed — see [`packages/cli/CHANGELOG.md`](./packages/cli/CHANGELOG.md) for what changed and why.
 
 ### Key Features
 
@@ -39,6 +44,9 @@ The project focuses on performance patterns that have been studied empirically r
 ```bash
 # Analyze the current project
 npx code-evolution-lab analyze .
+
+# Scope it to one service, and ask for suggested rewrites
+npx code-evolution-lab analyze src/server --category n1 --solutions
 
 # Capture a baseline snapshot before refactoring
 npx code-evolution-lab scan

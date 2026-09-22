@@ -132,9 +132,24 @@ npm run build
 
 ## Releasing
 
-Versions are bumped across `core-engine`, `cli` and `replay` together, **and
-the two workspace dependency pins inside `cli/package.json` must be bumped to
-match**. `npm version --workspaces` does not touch them, and a stale pin makes
+Versions are bumped across all four workspace packages together —
+`core-engine`, `cli`, `replay` and `github-action` — **and every workspace
+dependency pin must be bumped to match**: two in `cli/package.json`, one in
+`github-action/package.json`. Missing one of those has broken a release twice
+(1.2.0: the `replay` pin in `cli`; 1.3.0: the `core-engine` pin in
+`github-action`). Before `npm install`, this should print nothing:
+
+```bash
+v=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' core-engine/package.json | head -1)
+grep -rn '"@code-evolution/' --include=package.json cli core-engine replay github-action \
+  | grep -v '"name"' | grep -vF "\"$v\""
+```
+
+It reads the version with `sed` rather than `node`: on Git Bash, `node` is
+often aliased to `winpty node`, which refuses to run inside `$( )` and fails
+with `stdin is not a tty`.
+
+`npm version --workspaces` does not touch them, and a stale pin makes
 npm treat the workspace package as an external one and fail to resolve it from
 the registry. Regenerate `package-lock.json` afterwards or `npm ci` will read
 the old resolution.

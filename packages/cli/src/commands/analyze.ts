@@ -25,7 +25,11 @@ export async function analyzeCommand(pathArgs: string[] | undefined, options: An
   const { targetPath, includePaths } = resolveScanTargets(pathArgs ?? []);
   const outputDir = resolve(options.output ?? '.codeevolution');
 
-  console.log(`\nScanning: ${(includePaths ?? [targetPath]).join(', ')}\n`);
+  // In --json mode stdout carries the report and nothing else, so anything
+  // meant for a human is skipped. Warnings go to stderr and are unaffected.
+  if (!options.json) {
+    console.log(`\nScanning: ${(includePaths ?? [targetPath]).join(', ')}\n`);
+  }
 
   const registry = new RuleRegistry();
   registry.registerAll(getAllRules());
@@ -65,14 +69,22 @@ export async function analyzeCommand(pathArgs: string[] | undefined, options: An
       console.log(`  ${jsonPath}`);
       console.log(`  ${mdPath}`);
       console.log(`  ${scorePath}\n`);
-    } else {
-      // JSON-only mode: print the report to stdout
-      console.log(JSON.stringify(report, null, 2));
     }
   }
 
-  // Exit with non-zero if critical issues found
+  // --json prints the report whether or not files are written. It used to
+  // live inside the file-writing branch, so `--json --no-files` printed
+  // nothing at all, and a "Scanning" line ahead of it broke every consumer
+  // that parsed stdout.
+  if (options.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  }
+
+  // Non-zero exit if critical issues were found. exitCode rather than
+  // process.exit(): with stdout piped, exit() can end the process before a
+  // large JSON report has finished writing, and the reader gets a truncated
+  // document.
   if (report.summary.bySeverity.critical > 0) {
-    process.exit(1);
+    process.exitCode = 1;
   }
 }

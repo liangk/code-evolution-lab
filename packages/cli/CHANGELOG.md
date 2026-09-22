@@ -92,6 +92,13 @@ have nothing to do with your code. Take a new baseline after upgrading.
 
 ### Fixed
 
+- `--json` was not usable from a pipe. A `Scanning:` line was printed to
+  stdout ahead of the report, so anything parsing the output failed; and the
+  report itself was only printed when output files were written, so
+  `--json --no-files` printed nothing. stdout now carries the report and
+  nothing else. A scan with critical findings also sets the exit code rather
+  than calling `process.exit()`, which could cut off a large report before it
+  finished writing to the pipe.
 - `results.json` reported `"version": "1.0.0"` whatever version produced it.
   The version was a literal in the engine that had not been touched since
   1.0.0, so no result from 1.2.x could say which rules it came from. It is now

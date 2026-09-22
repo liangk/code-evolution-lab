@@ -2,6 +2,24 @@
 
 Welcome to the documentation index for **Code Evolution Lab**. This documentation covers the repository's public tooling, supporting packages, contributor workflows, and architecture notes for the empirical diagnostics platform built around [`liangk/empirical-study`](https://github.com/liangk/empirical-study).
 
+> **These docs describe the backend, API and web app, which are frozen for
+> rule changes.**
+>
+> Detection now lives in `packages/core-engine`, which is what the npm
+> packages ship. The two have diverged: rule names differ (`n1/query-in-loop`
+> in the engine, `n_plus_1_query` in the backend), and several rules were
+> recalibrated in 1.2.1 and 1.3.0 in the engine only. The backends will be
+> switched over in one pass once the engine has all eleven detectors and all
+> eleven solution generators — see [`packages/README.md`](../packages/README.md)
+> for the reasoning.
+>
+> For the rules as shipped, read
+> [`packages/cli/README.md`](../packages/cli/README.md) and
+> [`packages/core-engine/README.md`](../packages/core-engine/README.md).
+> Anything under `backend/`, `api/`, `frontend/` or
+> [Issue Type Catalog](./reference/issue-type-catalog.md) describes the
+> backend and should not be read as documentation of the CLI.
+
 ## Table of Contents
 
 ### Getting Started

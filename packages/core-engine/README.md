@@ -6,6 +6,14 @@
 
 It is designed for teams that want the detection engine without coupling themselves to the CLI UX. If you want to embed empirical diagnostics into your own workflow, CI pipeline, internal platform, or developer tooling, this is the package that provides the underlying primitives.
 
+```bash
+npm install @code-evolution/core-engine
+```
+
+Requires Node 18 or later. Ships TypeScript types. If you just want to scan a
+project from the command line, install [`code-evolution-lab`](https://www.npmjs.com/package/code-evolution-lab)
+instead — it bundles this package.
+
 ## What this package provides
 
 - **35 detection rules** derived from all 11 empirical studies
