@@ -102,6 +102,14 @@ interface ModelInfo {
    * foreign keys were never Prisma's to index and are not counted.
    */
   ignored: boolean;
+  /**
+   * The model block exactly as written in schema.prisma, comments included,
+   * from `model X {` through its closing brace. The fix for every index
+   * finding is an edit to this block, so it travels with the finding as
+   * `codeBefore` and the solution generator hands back the reader's own model
+   * with one line added, rather than a template about a model it invented.
+   */
+  source: string;
 }
 
 /** An index serves a single-field lookup only when that field leads it. */
@@ -204,7 +212,24 @@ function stripComments(content: string): string {
 export function parseSchema(content: string): Map<string, ModelInfo> {
   const models = new Map<string, ModelInfo>();
   const lines = stripComments(content).split('\n');
+  // stripComments blanks comments in place, so a column in `lines` is the
+  // same column in `rawLines`. That is what lets a model's closing brace,
+  // found in the stripped text, cut the original text at the same point.
+  const rawLines = content.split('\n');
   let current: ModelInfo | null = null;
+  let currentStart = 0;
+  /** Where `model` begins on its line — not 0 after `}model Next {`. */
+  let currentStartCol = 0;
+
+  /** Close the open model at line `i`, whose closing brace is at `braceCol`. */
+  const closeModel = (i: number, braceCol: number): void => {
+    if (!current) return;
+    const block = rawLines.slice(currentStart, i);
+    if (block.length > 0) block[0] = block[0].slice(currentStartCol);
+    block.push(rawLines[i].slice(0, braceCol + 1));
+    current.source = block.join('\n');
+    current = null;
+  };
 
   const columnsOf = (raw: string): string[] =>
     raw.split(',').map(f => f.trim().split('(')[0].trim()).filter(Boolean);
@@ -221,18 +246,23 @@ export function parseSchema(content: string): Map<string, ModelInfo> {
     // with whatever follows the brace, on the same line number.
     const closeThen = line.match(/^\s*\}\s*(\S.*)$/);
     if (closeThen) {
-      current = null;
+      closeModel(i, line.indexOf('}'));
       line = closeThen[1];
     }
 
     const modelMatch = line.match(/^\s*model\s+(\w+)\s*\{/);
     if (modelMatch) {
-      current = { name: modelMatch[1], line: lineNo, fields: new Map(), indexes: [], foreignKeys: [], ignored: false };
+      current = {
+        name: modelMatch[1], line: lineNo, fields: new Map(), indexes: [], foreignKeys: [],
+        ignored: false, source: '',
+      };
+      currentStart = i;
+      currentStartCol = lines[i].length - line.length + line.search(/\S/);
       models.set(current.name, current);
       continue;
     }
     if (!current) continue;
-    if (/^\s*\}/.test(line)) { current = null; continue; }
+    if (/^\s*\}/.test(line)) { closeModel(i, line.indexOf('}')); continue; }
 
     if (/@@ignore\b/.test(line)) { current.ignored = true; continue; }
 
@@ -298,7 +328,36 @@ export function parseSchema(content: string): Map<string, ModelInfo> {
     else if (/@unique\b/.test(line)) current.indexes.push({ columns: [name], source: 'unique' });
   }
 
+  // A schema that ends without closing its last model: keep what is there.
+  if (current) {
+    const rest = rawLines.slice(currentStart);
+    rest[0] = rest[0].slice(currentStartCol);
+    (current as ModelInfo).source = rest.join('\n');
+  }
+
   return models;
+}
+
+// ---------------------------------------------------------------------------
+// Recommendation format
+// ---------------------------------------------------------------------------
+
+/**
+ * The recommendation every index rule emits. All four rules build it here, and
+ * the solution generator reads the model and columns back with
+ * `parseIndexRecommendation` — keeping both halves in one file is what stops
+ * the wording drifting away from the parser.
+ */
+export function indexRecommendation(model: string, columns: string[]): string {
+  return `Add @@index([${columns.join(', ')}]) to model '${model}' in schema.prisma`;
+}
+
+/** The model and columns an index finding asks for, or null if it names none. */
+export function parseIndexRecommendation(recommendation: string): { model: string; columns: string[] } | null {
+  const match = recommendation.match(/@@index\(\[([^\]]+)\]\) to model '(\w+)'/);
+  if (!match) return null;
+  const columns = match[1].split(',').map(c => c.trim()).filter(Boolean);
+  return columns.length > 0 ? { model: match[2], columns } : null;
 }
 
 /** One foreign key and whether any index can serve it. */
@@ -412,7 +471,6 @@ function detectSchemaIssues(filePath: string, _content: string, _ast: any): Diag
     if (fk.indexed) continue;
 
     const label = fk.columns.length === 1 ? `'${fk.columns[0]}'` : `[${fk.columns.join(', ')}]`;
-    const indexCols = fk.columns.join(', ');
 
     issues.push({
       id: '', rule: 'index/missing-fk-index', category: 'index', severity: 'high',
@@ -422,7 +480,8 @@ function detectSchemaIssues(filePath: string, _content: string, _ast: any): Diag
         `Prisma does not create indexes for foreign keys — unlike Rails and Django, which do it ` +
         `automatically. Every query filtering or joining on ${label}, and every cascading ` +
         `delete of the parent row, scans the whole '${fk.model}' table.`,
-      recommendation: `Add @@index([${indexCols}]) to model '${fk.model}'`,
+      codeBefore: models.get(fk.model)?.source,
+      recommendation: indexRecommendation(fk.model, fk.columns),
       studyReference: 'Study 05, BM-03',
       empiricalSpeedup: '10–100× depending on table size',
       confidence: 0.9,
@@ -610,7 +669,8 @@ function detectQueryIssues(filePath: string, content: string, _ast: any): Diagno
           description:
             `This query filters '${model.name}' by '${field}', and no index on that model leads with ` +
             `'${field}'. Postgres can only use an index for a leading column, so this is a sequential scan.`,
-          recommendation: `Add @@index([${field}]) to model '${model.name}' in schema.prisma`,
+          codeBefore: model.source,
+          recommendation: indexRecommendation(model.name, [field]),
           studyReference: 'Study 05, BM-01',
           empiricalSpeedup: 'Seq Scan → Index Scan (10–1000× at scale)',
           confidence: 0.8,
@@ -625,7 +685,8 @@ function detectQueryIssues(filePath: string, content: string, _ast: any): Diagno
           description:
             `No index on '${model.name}' starts with these ${whereFields.length} fields. Postgres can use ` +
             `one single-column index and then re-check the rest row by row.`,
-          recommendation: `Add @@index([${whereFields.join(', ')}]) to model '${model.name}'`,
+          codeBefore: model.source,
+          recommendation: indexRecommendation(model.name, whereFields),
           studyReference: 'Study 05, BM-04',
           empiricalSpeedup: 'Composite index eliminates the filter + recheck step',
           confidence: 0.65,
@@ -646,7 +707,8 @@ function detectQueryIssues(filePath: string, content: string, _ast: any): Diagno
         description:
           `This query orders by '${field}' and no index leads with it, so Postgres sorts the result ` +
           `set in memory. The cost grows with the number of rows matched, not returned.`,
-        recommendation: `Add @@index([${field}]) to model '${model.name}'`,
+        codeBefore: model.source,
+        recommendation: indexRecommendation(model.name, [field]),
         studyReference: 'Study 05, BM-02',
         empiricalSpeedup: 'Eliminates an O(n log n) sort',
         confidence: 0.75,

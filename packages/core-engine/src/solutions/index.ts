@@ -1,9 +1,9 @@
 /**
  * Solution generation.
  *
- * Attaches suggested rewrites to findings. One generator per category; only
- * N+1 is ported so far, and a category without a generator simply gets no
- * solutions rather than a generic template.
+ * Attaches suggested rewrites to findings. One generator per category; N+1
+ * and missing index are ported so far, and a category without a generator
+ * simply gets no solutions rather than a generic template.
  *
  * Generators read `DiagnosticIssue.codeBefore` — the whole loop or construct,
  * not the reported line — so the suggestion comes back with the reader's own
@@ -11,6 +11,7 @@
  */
 
 import { N1SolutionGenerator } from './n1-generator';
+import { IndexSolutionGenerator } from './index-generator';
 import type { BaseSolutionGenerator } from './base-generator';
 import type { DiagnosticCategory } from '../types';
 import type { DiagnosticIssue, Solution, SolutionContext } from './types';
@@ -18,6 +19,7 @@ import type { DiagnosticIssue, Solution, SolutionContext } from './types';
 export type { Solution, SolutionContext };
 export { BaseSolutionGenerator } from './base-generator';
 export { N1SolutionGenerator } from './n1-generator';
+export { IndexSolutionGenerator, addIndexToModel } from './index-generator';
 export { FitnessCalculator, WEIGHT_PRESETS } from './fitness-calculator';
 export type { FitnessWeights, FitnessBreakdown, FitnessResult, WeightPreset } from './fitness-calculator';
 export {
@@ -30,6 +32,7 @@ export type { CodePattern, RepeatedCall, TransformationResult } from './code-tra
 
 const GENERATORS: Partial<Record<DiagnosticCategory, () => BaseSolutionGenerator>> = {
   n1: () => new N1SolutionGenerator(),
+  index: () => new IndexSolutionGenerator(),
 };
 
 /** True when a generator exists for this finding's category. */

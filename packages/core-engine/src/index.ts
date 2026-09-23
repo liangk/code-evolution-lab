@@ -63,6 +63,7 @@ export {
   hasSolutionGenerator,
   BaseSolutionGenerator,
   N1SolutionGenerator,
+  IndexSolutionGenerator,
   FitnessCalculator,
   WEIGHT_PRESETS,
   analyzeCodePattern,
