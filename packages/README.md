@@ -115,6 +115,27 @@ them — but including them in the metric would report eight indexes for a
 schema where nobody added one, because eight models have eight primary keys.
 A denominator that flatters the subject is not a denominator.
 
+## Cross-file rules
+
+The engine scans one file at a time. A rule whose finding needs more than one
+file keeps state across the scan — `reset()` clears it at the start — and can
+declare `finalize(issues)`, which runs once after every file, receives every
+issue its rule family reported, and returns the issues that replace them.
+
+`payload/api-response` is the first user: a route in one file sends what a
+repository method in another file returns, and only after both have been seen
+can they be connected. Two conventions:
+
+- **Make the cross-file finding from per-file findings, don't add a second
+  one.** finalize() converts the repository's `large-return` into an
+  `api-response` that names the endpoint; the query is still counted once.
+- **Link cautiously.** A name defined more than once links only when the call
+  names one class; otherwise it does not link. A missed endpoint is a false
+  negative; a wrong link blames the wrong code.
+
+The engine keeps a finalize family's issues until the hook has run, even rule
+ids a `--rules` filter excluded, and re-identifies every issue the hook returns.
+
 ## Build order
 
 `cli` resolves core-engine's types from `core-engine/dist`, so a change to

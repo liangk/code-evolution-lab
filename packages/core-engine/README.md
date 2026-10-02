@@ -47,7 +47,7 @@ instead — it bundles this package.
 | **Resource** | Unclosed connections, streams, and file handles | Study 06 — Resource Leaks |
 | **Bundle** | Heavy package imports and namespace imports that defeat tree-shaking | Study 07 — Bundle Bloat |
 | **DOM** | DOM manipulation in loops, innerHTML XSS risk, document.write() | Study 08 — DOM Manipulation |
-| **Payload** | Unbounded queries and unpaginated return payloads | Study 09 — Large Payloads |
+| **Payload** | Unbounded queries (ORM finders and query builders), unpaginated API and GraphQL responses, deep relation includes, `SELECT *` sent to a database | Study 09 — Large Payloads |
 | **ReDoS** | Regex patterns vulnerable to catastrophic backtracking | Study 10 — ReDoS |
 | **Caching** | Repeated expensive calls and uncached API/DB calls in hot paths | Study 11 — Caching |
 
@@ -115,7 +115,9 @@ const withSolutions = await attachSolutions(report.issues);
 Generators transform `issue.codeBefore` — the whole loop or construct, not just
 the reported line — so a suggestion comes back with your own variable names in
 it. What comes out is a scaffold with a placeholder where the real batch query
-goes, not a patch to apply blind. Only N+1 has a generator so far.
+goes, not a patch to apply blind. N+1, missing index and payload have
+generators so far. The index and payload ones are held to a stricter standard:
+paste the suggestion over `codeBefore`, scan again, and the finding is gone.
 
 ## Prisma schema analysis
 

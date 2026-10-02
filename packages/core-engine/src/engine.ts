@@ -127,6 +127,7 @@ export function analyzeFile(
   filePath: string,
   targetRoot: string,
   rules: RuleDefinition[],
+  keepRuleIds: Set<string> = new Set(),
 ): DiagnosticIssue[] {
   const fileName = filePath.split(/[\\/]/).pop() ?? '';
   const applicable = rulesForFile(fileName, rules);
@@ -149,7 +150,10 @@ export function analyzeFile(
   // actually enabled for this scan, so a `rules`/`categories` filter applies
   // correctly even when several ids share one detector.
   const uniqueDetectors = new Set(applicable.map(r => r.detect));
-  const enabledRuleIds = new Set(applicable.map(r => r.id));
+  // A family with a finalize() hook needs all of its issues until the hook has
+  // run, even ids the scan filters out: api-response is made from large-return
+  // findings, so `--rules payload/api-response` must still collect them.
+  const enabledRuleIds = new Set([...applicable.map(r => r.id), ...keepRuleIds]);
 
   const issues: DiagnosticIssue[] = [];
   for (const detect of uniqueDetectors) {
@@ -200,11 +204,34 @@ export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): 
   // either way, and deduplicate in case one root nests inside another.
   const roots = includePaths?.length ? includePaths : [targetPath];
   const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))].sort(schemaFirst);
-  const allIssues: DiagnosticIssue[] = [];
+  let allIssues: DiagnosticIssue[] = [];
+
+  // Families with a finalize() hook: every rule id sharing that hook, whether
+  // or not this scan enabled it.
+  const finalizers = new Map<NonNullable<RuleDefinition['finalize']>, Set<string>>();
+  for (const rule of activeRules) {
+    if (!rule.finalize || finalizers.has(rule.finalize)) continue;
+    finalizers.set(rule.finalize, new Set(registry.getAll().filter(r => r.finalize === rule.finalize).map(r => r.id)));
+  }
+  const keepRuleIds = new Set([...finalizers.values()].flatMap(ids => [...ids]));
 
   for (const file of files) {
-    const issues = analyzeFile(file, targetPath, activeRules);
+    const issues = analyzeFile(file, targetPath, activeRules, keepRuleIds);
     allIssues.push(...issues);
+  }
+
+  const activeIds = new Set(activeRules.map(r => r.id));
+  for (const [finalize, familyIds] of finalizers) {
+    const family = allIssues.filter(i => familyIds.has(i.rule));
+    const rest = allIssues.filter(i => !familyIds.has(i.rule));
+    let out = family;
+    try {
+      out = finalize(family);
+    } catch {
+      // A failed cross-file pass leaves the per-file findings as they were.
+    }
+    for (const issue of out) issue.id = hashIssue(issue);
+    allIssues = [...rest, ...out.filter(i => activeIds.has(i.rule))];
   }
 
   // Filter by severity

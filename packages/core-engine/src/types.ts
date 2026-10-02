@@ -96,6 +96,15 @@ export interface RuleDefinition {
    * Keys should be namespaced by category, e.g. `index.foreignKeys`.
    */
   metrics?: () => Record<string, number>;
+  /**
+   * Called once after every file has been scanned, with every issue the rule
+   * family reported — the family being the rules that share this function.
+   * Returns the issues that replace them. For rules whose finding depends on
+   * more than one file: the payload rules see a route in one file send what a
+   * repository method in another file returns, and only after both have been
+   * scanned can the two be connected. Issues it changes are re-identified.
+   */
+  finalize?: (issues: DiagnosticIssue[]) => DiagnosticIssue[];
   /** The detection function. Receives file path, content, and optionally an AST. */
   detect(filePath: string, content: string, ast?: any): DiagnosticIssue[];
 }

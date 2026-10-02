@@ -90,7 +90,7 @@ The scan covers 35 rules across 11 categories derived from empirical studies:
 | **Resource** | Unclosed connections, streams, file handles | Study 06 — Resource Leaks |
 | **Bundle** | Heavy package imports, namespace imports that block tree-shaking | Study 07 — Bundle Bloat |
 | **DOM** | DOM manipulation in loops, innerHTML XSS risk, document.write() | Study 08 — DOM Manipulation |
-| **Payload** | Unbounded queries, unpaginated return payloads | Study 09 — Large Payloads |
+| **Payload** | Unbounded queries, unpaginated API and GraphQL responses, deep relation includes, `SELECT *` sent to a database | Study 09 — Large Payloads |
 | **ReDoS** | Dangerous nested-quantifier patterns, regex applied to user input | Study 10 — ReDoS |
 | **Caching** | Repeated expensive calls, uncached API/DB calls in hot paths | Study 11 — Caching |
 
@@ -103,7 +103,7 @@ Full per-rule detail for every category is in [Detection Rules](#detection-rules
 | `-s, --severity <level>` | Minimum severity to report: `critical\|high\|medium\|low` | `low` |
 | `-c, --category <cat>` | Filter to one category: `n1\|blocking-io\|loop\|memory\|index\|resource\|bundle\|dom\|payload\|redos\|caching` | all |
 | `-o, --output <dir>` | Directory for output files | `.codeevolution/` |
-| `--solutions` | Generate a suggested rewrite for each finding, written into `results.json`. Currently N+1 only; a finding with no applicable rewrite gets none rather than a template | false |
+| `--solutions` | Generate a suggested rewrite for each finding, written into `results.json`. Currently N+1, missing index and payload row limits; a finding with no applicable rewrite gets none rather than a template | false |
 | `--json` | Output JSON to stdout only (suppresses console output) | false |
 | `--no-files` | Skip writing output files to disk | false |
 
@@ -406,8 +406,12 @@ Coverage follows Postgres: an index serves a column only when that column **lead
 
 | Rule | Severity | What it detects | Real-world impact |
 |------|----------|----------------|------------------|
-| `payload/unbounded-query` | medium | `findAll`/`findMany` without field selection or a row limit | Loads unnecessary data over the network |
+| `payload/unbounded-query` | medium | A collection query (ORM finder, knex, TypeORM query builder, Kysely) with no row limit | Loads every matching row as the table grows |
 | `payload/large-return` | high | Function returns unbounded query results directly | Memory pressure and slow responses at scale |
+| `payload/api-response` | high | Unbounded query results sent to the client by a route handler, a Nest controller or a tRPC procedure, traced across files | Response size grows with the table |
+| `payload/unbounded-graphql` | high | Unbounded query results returned by a GraphQL resolver | A list field returns the whole table |
+| `payload/deep-include` | medium | An ORM query loading relations three or more levels deep, with a to-many among them (Prisma schema read when present) | Rows multiply per to-many level |
+| `payload/select-star` | low | A `SELECT *` string that reaches a database call | Every column travels, including wide ones |
 
 ### ReDoS Rules (Study 10 — ReDoS)
 

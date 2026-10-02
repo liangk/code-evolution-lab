@@ -64,6 +64,8 @@ export {
   BaseSolutionGenerator,
   N1SolutionGenerator,
   IndexSolutionGenerator,
+  PayloadSolutionGenerator,
+  addRowLimit,
   FitnessCalculator,
   WEIGHT_PRESETS,
   analyzeCodePattern,
