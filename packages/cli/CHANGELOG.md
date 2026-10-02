@@ -7,6 +7,73 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-02
+
+The payload rules were recalibrated against the 300 repositories Study 09
+scanned and extended to cover every large-payload pattern. Index and payload
+findings now come with a suggested fix that removes them.
+
+### Upgrading
+
+Payload findings change a great deal from 1.3.x. On Study 09's corpus,
+1.3.0's two payload rules reported about 3,500 findings, an estimated 9% of
+them real. Recalibrated, the same two rules report 923, about 53% real;
+query-builder support and four new payload rules then add their own. A baseline taken with 1.3.x will show payload findings appearing
+and disappearing on `compare` that have nothing to do with your code. Take a
+new baseline after upgrading.
+
+### Added
+
+- `payload/api-response`: an unbounded query whose rows a route handler sends
+  to the client (`res.json`, `reply.send`, `c.json`, `ctx.body`,
+  `NextResponse.json`, a Nest controller method, a tRPC procedure). It is
+  traced across files: when a route returns what a service returns, which a
+  repository method in another file returns, the finding sits on the query and
+  names the endpoint that sends it.
+- `payload/unbounded-graphql`: the same for GraphQL resolvers (resolver maps,
+  Nest `@Query`/`@ResolveField`, type-graphql `@FieldResolver`, graphql-js /
+  Pothos / Nexus field configs, one-resolver-per-file `resolvers/<Type>/`
+  layouts).
+- `payload/deep-include`: an ORM query that loads relations three or more
+  levels deep. Depth is counted in relations for Prisma, Drizzle, Sequelize,
+  TypeORM, MikroORM, Mongoose and Objection, not in nested objects. When the
+  project's `schema.prisma` is scanned, a Prisma tree whose relations are all
+  to-one is not reported.
+- `payload/select-star`: a `SELECT *` string that reaches a database call
+  (`query`, `raw`, `execute`, `$queryRawUnsafe`, a `sql` tagged template, or a
+  `const` passed to one). `EXISTS (SELECT *)`, `INSERT ... SELECT *` and
+  `SELECT *` over a subquery or a function are not reported.
+- Query builders in the row-limit rules: knex chains (including a mutable
+  builder limited later through its variable), TypeORM's `createQueryBuilder`
+  and Kysely's `selectFrom`.
+- A solution generator for missing indexes: the finding's own model block from
+  `schema.prisma` with the `@@index` line added, or nothing when the model,
+  field or existing index does not line up.
+- A solution generator for the four row-limit payload rules: the query with a
+  row limit in the form its library takes (`take`, `limit`, `.limit()`,
+  `.take()`). Applied to every row-limit finding on Study 09's corpus, it gave
+  a suggestion for 1,092 of 1,198, and every one removed its finding on a
+  rescan. It returns nothing where the library cannot be told from the code.
+  The explanation says plainly that a fixed limit is a cap, not pagination.
+  `--solutions` picks both generators up with no change on your side.
+- `finalize(issues)` hook on `RuleDefinition`, run once after every file has
+  been scanned, for rules that need to see the whole project.
+- Payload findings carry the query as written in `codeBefore`.
+
+### Changed
+
+- `payload/unbounded-query` and `payload/large-return` now use the same
+  database-call heuristics as the N+1 rules: a method named `find` is not a
+  query on its own. Queries bounded by a unique key or a list of ids, a
+  `.limit()` / `.first()` later in the chain, or a count are not reported.
+- A query with a row limit but no field selection is no longer reported. What
+  makes a payload large is the number of rows.
+- A query is reported once: a returned query is `large-return` (or
+  `api-response`, or `unbounded-graphql`), not also `unbounded-query`.
+- Payload rules skip code that never serves a request: test and e2e
+  directories (including hyphenated ones such as `e2e-tests/` and
+  `test-utils/`), migrations, seeds, scripts, examples, and minified bundles.
+
 ## [1.3.0] - 2026-09-21
 
 `@code-evolution/core-engine` is now published on its own, the index rules
@@ -247,7 +314,8 @@ codebases.
   while the workspace had moved to `1.2.0`, so npm treated it as an external
   package and failed to resolve it from the registry.
 
-[Unreleased]: https://github.com/liangk/code-evolution-lab/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/liangk/code-evolution-lab/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/liangk/code-evolution-lab/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/liangk/code-evolution-lab/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/liangk/code-evolution-lab/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/liangk/code-evolution-lab/compare/v1.1.0...v1.2.0
