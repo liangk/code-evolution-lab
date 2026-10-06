@@ -27,6 +27,10 @@ inputs:
     description: 'Post a PR comment with results'
     required: false
     default: 'true'
+  github-token:
+    description: 'Token used to list the PR''s changed files and post the comment'
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   issues-found:
@@ -39,5 +43,5 @@ outputs:
     description: 'Number of resolved issues compared to baseline'
 
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'action-dist/index.js'

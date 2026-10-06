@@ -169,7 +169,7 @@ function rulesForFile(fileName, rules) {
 // ---------------------------------------------------------------------------
 // Core analyze functions
 // ---------------------------------------------------------------------------
-function analyzeFile(filePath, targetRoot, rules) {
+function analyzeFile(filePath, targetRoot, rules, keepRuleIds = new Set()) {
     const fileName = filePath.split(/[\\/]/).pop() ?? '';
     const applicable = rulesForFile(fileName, rules);
     if (applicable.length === 0)
@@ -194,7 +194,10 @@ function analyzeFile(filePath, targetRoot, rules) {
     // actually enabled for this scan, so a `rules`/`categories` filter applies
     // correctly even when several ids share one detector.
     const uniqueDetectors = new Set(applicable.map(r => r.detect));
-    const enabledRuleIds = new Set(applicable.map(r => r.id));
+    // A family with a finalize() hook needs all of its issues until the hook has
+    // run, even ids the scan filters out: api-response is made from large-return
+    // findings, so `--rules payload/api-response` must still collect them.
+    const enabledRuleIds = new Set([...applicable.map(r => r.id), ...keepRuleIds]);
     const issues = [];
     for (const detect of uniqueDetectors) {
         const owner = applicable.find(r => r.detect === detect);
@@ -242,10 +245,34 @@ function analyzeDirectory(options, registry) {
     // either way, and deduplicate in case one root nests inside another.
     const roots = includePaths?.length ? includePaths : [targetPath];
     const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))].sort(schemaFirst);
-    const allIssues = [];
+    let allIssues = [];
+    // Families with a finalize() hook: every rule id sharing that hook, whether
+    // or not this scan enabled it.
+    const finalizers = new Map();
+    for (const rule of activeRules) {
+        if (!rule.finalize || finalizers.has(rule.finalize))
+            continue;
+        finalizers.set(rule.finalize, new Set(registry.getAll().filter(r => r.finalize === rule.finalize).map(r => r.id)));
+    }
+    const keepRuleIds = new Set([...finalizers.values()].flatMap(ids => [...ids]));
     for (const file of files) {
-        const issues = analyzeFile(file, targetPath, activeRules);
+        const issues = analyzeFile(file, targetPath, activeRules, keepRuleIds);
         allIssues.push(...issues);
+    }
+    const activeIds = new Set(activeRules.map(r => r.id));
+    for (const [finalize, familyIds] of finalizers) {
+        const family = allIssues.filter(i => familyIds.has(i.rule));
+        const rest = allIssues.filter(i => !familyIds.has(i.rule));
+        let out = family;
+        try {
+            out = finalize(family);
+        }
+        catch {
+            // A failed cross-file pass leaves the per-file findings as they were.
+        }
+        for (const issue of out)
+            issue.id = hashIssue(issue);
+        allIssues = [...rest, ...out.filter(i => activeIds.has(i.rule))];
     }
     // Filter by severity
     const minSev = minSeverity ?? 'low';
@@ -378,7 +405,7 @@ function writeOutputFiles(report, outputDir) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = exports.hasSolutionGenerator = exports.attachSolutions = exports.generateSolutionsFor = exports.generateScoreText = exports.writeScoreFile = exports.printBaselineDiff = exports.printReport = exports.generateMarkdownReport = exports.writeMarkdownReport = exports.writeJsonReport = exports.foreignKeyCoverage = exports.indexRuleMetrics = exports.parseSchema = exports.cachingRules = exports.redosRules = exports.payloadRules = exports.domRules = exports.bundleRules = exports.resourceRules = exports.blockingIoRules = exports.n1Rules = exports.resetIndexRuleCache = exports.indexRules = exports.memoryRules = exports.loopRules = exports.getAllRules = exports.writeOutputFiles = exports.compareBaseline = exports.createBaseline = exports.calculateScore = exports.hashIssue = exports.analyzeDirectory = exports.analyzeFile = exports.RuleRegistry = void 0;
+exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.addRowLimit = exports.PayloadSolutionGenerator = exports.IndexSolutionGenerator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = exports.hasSolutionGenerator = exports.attachSolutions = exports.generateSolutionsFor = exports.generateScoreText = exports.writeScoreFile = exports.printBaselineDiff = exports.printReport = exports.generateMarkdownReport = exports.writeMarkdownReport = exports.writeJsonReport = exports.foreignKeyCoverage = exports.indexRuleMetrics = exports.parseSchema = exports.cachingRules = exports.redosRules = exports.payloadRules = exports.domRules = exports.bundleRules = exports.resourceRules = exports.blockingIoRules = exports.n1Rules = exports.resetIndexRuleCache = exports.indexRules = exports.memoryRules = exports.loopRules = exports.getAllRules = exports.writeOutputFiles = exports.compareBaseline = exports.createBaseline = exports.calculateScore = exports.hashIssue = exports.analyzeDirectory = exports.analyzeFile = exports.RuleRegistry = void 0;
 // Core engine — public API
 var engine_1 = __nccwpck_require__(3606);
 Object.defineProperty(exports, "RuleRegistry", ({ enumerable: true, get: function () { return engine_1.RuleRegistry; } }));
@@ -426,6 +453,9 @@ Object.defineProperty(exports, "attachSolutions", ({ enumerable: true, get: func
 Object.defineProperty(exports, "hasSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.hasSolutionGenerator; } }));
 Object.defineProperty(exports, "BaseSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.BaseSolutionGenerator; } }));
 Object.defineProperty(exports, "N1SolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.N1SolutionGenerator; } }));
+Object.defineProperty(exports, "IndexSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.IndexSolutionGenerator; } }));
+Object.defineProperty(exports, "PayloadSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.PayloadSolutionGenerator; } }));
+Object.defineProperty(exports, "addRowLimit", ({ enumerable: true, get: function () { return solutions_1.addRowLimit; } }));
 Object.defineProperty(exports, "FitnessCalculator", ({ enumerable: true, get: function () { return solutions_1.FitnessCalculator; } }));
 Object.defineProperty(exports, "WEIGHT_PRESETS", ({ enumerable: true, get: function () { return solutions_1.WEIGHT_PRESETS; } }));
 Object.defineProperty(exports, "analyzeCodePattern", ({ enumerable: true, get: function () { return solutions_1.analyzeCodePattern; } }));
@@ -1855,6 +1885,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.indexRules = void 0;
 exports.parseSchema = parseSchema;
+exports.indexRecommendation = indexRecommendation;
+exports.parseIndexRecommendation = parseIndexRecommendation;
 exports.foreignKeyCoverage = foreignKeyCoverage;
 exports.resetIndexRuleCache = resetIndexRuleCache;
 exports.indexRuleMetrics = indexRuleMetrics;
@@ -1966,7 +1998,25 @@ function stripComments(content) {
 function parseSchema(content) {
     const models = new Map();
     const lines = stripComments(content).split('\n');
+    // stripComments blanks comments in place, so a column in `lines` is the
+    // same column in `rawLines`. That is what lets a model's closing brace,
+    // found in the stripped text, cut the original text at the same point.
+    const rawLines = content.split('\n');
     let current = null;
+    let currentStart = 0;
+    /** Where `model` begins on its line — not 0 after `}model Next {`. */
+    let currentStartCol = 0;
+    /** Close the open model at line `i`, whose closing brace is at `braceCol`. */
+    const closeModel = (i, braceCol) => {
+        if (!current)
+            return;
+        const block = rawLines.slice(currentStart, i);
+        if (block.length > 0)
+            block[0] = block[0].slice(currentStartCol);
+        block.push(rawLines[i].slice(0, braceCol + 1));
+        current.source = block.join('\n');
+        current = null;
+    };
     const columnsOf = (raw) => raw.split(',').map(f => f.trim().split('(')[0].trim()).filter(Boolean);
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
@@ -1979,19 +2029,24 @@ function parseSchema(content) {
         // with whatever follows the brace, on the same line number.
         const closeThen = line.match(/^\s*\}\s*(\S.*)$/);
         if (closeThen) {
-            current = null;
+            closeModel(i, line.indexOf('}'));
             line = closeThen[1];
         }
         const modelMatch = line.match(/^\s*model\s+(\w+)\s*\{/);
         if (modelMatch) {
-            current = { name: modelMatch[1], line: lineNo, fields: new Map(), indexes: [], foreignKeys: [], ignored: false };
+            current = {
+                name: modelMatch[1], line: lineNo, fields: new Map(), indexes: [], foreignKeys: [],
+                ignored: false, source: '',
+            };
+            currentStart = i;
+            currentStartCol = lines[i].length - line.length + line.search(/\S/);
             models.set(current.name, current);
             continue;
         }
         if (!current)
             continue;
         if (/^\s*\}/.test(line)) {
-            current = null;
+            closeModel(i, line.indexOf('}'));
             continue;
         }
         if (/@@ignore\b/.test(line)) {
@@ -2060,7 +2115,33 @@ function parseSchema(content) {
         else if (/@unique\b/.test(line))
             current.indexes.push({ columns: [name], source: 'unique' });
     }
+    // A schema that ends without closing its last model: keep what is there.
+    if (current) {
+        const rest = rawLines.slice(currentStart);
+        rest[0] = rest[0].slice(currentStartCol);
+        current.source = rest.join('\n');
+    }
     return models;
+}
+// ---------------------------------------------------------------------------
+// Recommendation format
+// ---------------------------------------------------------------------------
+/**
+ * The recommendation every index rule emits. All four rules build it here, and
+ * the solution generator reads the model and columns back with
+ * `parseIndexRecommendation` — keeping both halves in one file is what stops
+ * the wording drifting away from the parser.
+ */
+function indexRecommendation(model, columns) {
+    return `Add @@index([${columns.join(', ')}]) to model '${model}' in schema.prisma`;
+}
+/** The model and columns an index finding asks for, or null if it names none. */
+function parseIndexRecommendation(recommendation) {
+    const match = recommendation.match(/@@index\(\[([^\]]+)\]\) to model '(\w+)'/);
+    if (!match)
+        return null;
+    const columns = match[1].split(',').map(c => c.trim()).filter(Boolean);
+    return columns.length > 0 ? { model: match[2], columns } : null;
 }
 /**
  * Every foreign key across the given models, with its coverage.
@@ -2154,7 +2235,6 @@ function detectSchemaIssues(filePath, _content, _ast) {
         if (fk.indexed)
             continue;
         const label = fk.columns.length === 1 ? `'${fk.columns[0]}'` : `[${fk.columns.join(', ')}]`;
-        const indexCols = fk.columns.join(', ');
         issues.push({
             id: '', rule: 'index/missing-fk-index', category: 'index', severity: 'high',
             file: filePath, line: fk.line,
@@ -2162,7 +2242,8 @@ function detectSchemaIssues(filePath, _content, _ast) {
             description: `Prisma does not create indexes for foreign keys — unlike Rails and Django, which do it ` +
                 `automatically. Every query filtering or joining on ${label}, and every cascading ` +
                 `delete of the parent row, scans the whole '${fk.model}' table.`,
-            recommendation: `Add @@index([${indexCols}]) to model '${fk.model}'`,
+            codeBefore: models.get(fk.model)?.source,
+            recommendation: indexRecommendation(fk.model, fk.columns),
             studyReference: 'Study 05, BM-03',
             empiricalSpeedup: '10–100× depending on table size',
             confidence: 0.9,
@@ -2326,7 +2407,8 @@ function detectQueryIssues(filePath, content, _ast) {
                     title: `Field '${field}' filtered on '${model.name}' has no index`,
                     description: `This query filters '${model.name}' by '${field}', and no index on that model leads with ` +
                         `'${field}'. Postgres can only use an index for a leading column, so this is a sequential scan.`,
-                    recommendation: `Add @@index([${field}]) to model '${model.name}' in schema.prisma`,
+                    codeBefore: model.source,
+                    recommendation: indexRecommendation(model.name, [field]),
                     studyReference: 'Study 05, BM-01',
                     empiricalSpeedup: 'Seq Scan → Index Scan (10–1000× at scale)',
                     confidence: 0.8,
@@ -2339,7 +2421,8 @@ function detectQueryIssues(filePath, content, _ast) {
                     title: `Multi-field filter on '${model.name}' [${whereFields.join(', ')}] has no composite index`,
                     description: `No index on '${model.name}' starts with these ${whereFields.length} fields. Postgres can use ` +
                         `one single-column index and then re-check the rest row by row.`,
-                    recommendation: `Add @@index([${whereFields.join(', ')}]) to model '${model.name}'`,
+                    codeBefore: model.source,
+                    recommendation: indexRecommendation(model.name, whereFields),
                     studyReference: 'Study 05, BM-04',
                     empiricalSpeedup: 'Composite index eliminates the filter + recheck step',
                     confidence: 0.65,
@@ -2359,7 +2442,8 @@ function detectQueryIssues(filePath, content, _ast) {
                 title: `Sorting '${model.name}' by '${field}' with no index`,
                 description: `This query orders by '${field}' and no index leads with it, so Postgres sorts the result ` +
                     `set in memory. The cost grows with the number of rows matched, not returned.`,
-                recommendation: `Add @@index([${field}]) to model '${model.name}'`,
+                codeBefore: model.source,
+                recommendation: indexRecommendation(model.name, [field]),
                 studyReference: 'Study 05, BM-02',
                 empiricalSpeedup: 'Eliminates an O(n log n) sort',
                 confidence: 0.75,
@@ -3754,12 +3838,37 @@ exports.n1Rules = [
  * distinctive ORM method names are evidence on their own, ambiguous ones need
  * an ORM import, a query-builder chain, a database handle or a data-access
  * receiver before anything is reported.
+ *
+ * Only a missing row limit is reported. The first version also reported a
+ * query that had a limit but no `select`, which is 143 of the 3,584 findings
+ * across the Study 09 corpus: `findMany({ take: 20 })` is not what makes a
+ * response large. The number of rows is what grows with data; the number of
+ * columns does not.
+ *
+ * Round 2 (2026-09-24) comes from labelling 400 findings across the 283
+ * repositories of the Study 09 corpus. Five causes, each handled below:
+ *
+ *   1. Files that never serve a request: test directories the engine does not
+ *      skip (`test/`, `tests/`, fixtures), migrations, seeds, scripts, samples,
+ *      and vendored or minified bundles. 2,085 of 3,441 findings.
+ *   2. Filters bounded by the caller: `where: { id: { in: ids } }`,
+ *      `{ _id: { $in: ids } }`, `In(ids)`, or an id equality. The largest class
+ *      in the rest: 85 of 300 labelled.
+ *   3. A limit the rule could not see: Mongoose takes options as its third
+ *      argument, and a chained `.limit()`, `.countDocuments()` or `.cursor()`
+ *      bounds or replaces the rows.
+ *   4. Calls that are not queries but pass the shared heuristics: selector
+ *      lookups (`testSubjects.findAll('row')`), callback finders, and an
+ *      application service's own `findAll()`, whose query is reported inside
+ *      the service.
+ *   5. `return await x.findMany()` was reported twice, once by each rule.
  */
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.payloadRules = void 0;
+exports.relationExpressionDepth = relationExpressionDepth;
 const traverse_1 = __importDefault(__nccwpck_require__(8254));
 const db_call_heuristics_1 = __nccwpck_require__(7601);
 const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
@@ -3769,21 +3878,70 @@ const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
  * database calls.
  */
 const COLLECTION_FINDERS = new Set(['findAll', 'findMany', 'find', 'getMany', 'findAndCountAll']);
+/**
+ * Directories whose code never serves a request. A whole-table read in a
+ * migration or a seed is expected, and a test fixture's is irrelevant.
+ */
+const NOT_SERVED_PATH = new RegExp([
+    String.raw `(^|/)(test|tests|__fixtures__|fixtures|cypress|e2e|integration-tests|node-integration-tests)(/|$)`,
+    String.raw `\.(integration-test|cy)\.[cm]?[jt]sx?$|\.test-d\.tsx?$`,
+    String.raw `(^|/)(migrations?|data-migrations|seeds?|seeders|scripts)(/|$)`,
+    // knex_migrations/, migration-scripts/, migration-jobs/ (added in Stage 2, item 2)
+    String.raw `(^|/)[\w-]*[-_]migrations?(/|$)|(^|/)migrations?[-_][\w-]*(/|$)`,
+    String.raw `(^|/)seed[-\w]*\.[cm]?[jt]s$`,
+    String.raw `(^|/)(examples?|samples?|sandbox|benchmarks?|type-benchmark-tests)(/|$)`,
+    // Hyphenated variants (Stage 2, item 4): e2e-tests/, test-applications/,
+    // cubejs-testing-shared/, backend-test-utils/, samples-dev/.
+    // Directories only (n8n serves `evaluation.ee/test-runs.controller.ee.ts`),
+    // and not any name with "test" in it (novu serves `build-test-data/`).
+    String.raw `(^|/)(e2e|tests?|testing|samples?|examples?)-[\w.-]+/`,
+    String.raw `(^|/)[\w.-]+-(test|testing)-(utils|helpers|shared|harness|kit)[\w.-]*/`,
+    String.raw `(^|/)[\w.-]+-(e2e|tests|samples|examples)/`,
+    String.raw `(^|/)test-(helpers|utils)\.[cm]?[jt]sx?$`,
+    // logto's schema alterations are migrations; trigger.dev's references/ are sample projects.
+    String.raw `(^|/)(\.scripts|alterations|references)(/|$)`,
+    String.raw `(^|/)(vendor|\.yarn)(/|$)|\.min\.[cm]?js$`,
+].join('|'), 'i');
+/** A bundle rather than source: any line this long is generated. */
+function looksMinified(content) {
+    let start = 0;
+    while (start < content.length) {
+        const end = content.indexOf('\n', start);
+        const stop = end === -1 ? content.length : end;
+        if (stop - start > 1000)
+            return true;
+        start = stop + 1;
+    }
+    return false;
+}
+/** Chained calls that bound the rows, or replace them with a count or a stream. */
+const BOUNDING_CHAIN = new Set([
+    'limit', 'take', 'paginate', 'countDocuments', 'estimatedDocumentCount', 'count',
+    'cursor', 'batchSize', 'stream', 'first', 'findOne',
+]);
+/** Receivers that are an application service, not a data-access object. */
+const SERVICE_RECEIVER = /Service$/;
+/** Receivers that are UI or cache lookups whose finders share ORM names. */
+const NON_DB_FINDER_RECEIVERS = new Set(['testSubjects', 'find', 'browser', 'page', 'cy', 'Walker']);
+/**
+ * The query exactly as written, for the solution generator: it rewrites this
+ * text and the suggestion is pasted back over it.
+ */
+function sourceOf(code, node) {
+    return typeof node?.start === 'number' && typeof node?.end === 'number' ? code.slice(node.start, node.end) : undefined;
+}
 function snippetAt(code, line) {
     return (code.split('\n')[line - 1] ?? '').trim().slice(0, 120);
 }
-function optionsHaveSelectAndLimit(optionsNode) {
-    let hasSelect = false;
+function hasRowLimit(optionsNode) {
     let hasLimit = false;
-    if (!optionsNode)
-        return { hasSelect, hasLimit };
+    if (!optionsNode || optionsNode.type !== 'ObjectExpression')
+        return hasLimit;
     try {
         (0, traverse_1.default)(optionsNode, {
             noScope: true,
             ObjectProperty(inner) {
                 const key = inner.node.key?.name;
-                if (key === 'attributes' || key === 'select')
-                    hasSelect = true;
                 if (key === 'limit' || key === 'take' || key === 'perPage')
                     hasLimit = true;
             },
@@ -3792,7 +3950,115 @@ function optionsHaveSelectAndLimit(optionsNode) {
     catch {
         // ignore
     }
-    return { hasSelect, hasLimit };
+    return hasLimit;
+}
+/** Any object argument carries a limit — Mongoose puts options third. */
+function anyArgumentHasRowLimit(callExpr) {
+    return (callExpr.arguments ?? []).some((arg) => hasRowLimit(arg));
+}
+/** `.find(q).skip(n).limit(m)`, `.find().countDocuments()`, `.find().cursor()`. */
+function chainBoundsRows(path) {
+    let current = path;
+    for (let depth = 0; depth < 8; depth++) {
+        const parent = current.parentPath;
+        if (!parent || parent.node.type !== 'MemberExpression' || parent.node.object !== current.node)
+            return false;
+        const name = parent.node.property?.name;
+        if (name && BOUNDING_CHAIN.has(name))
+            return true;
+        const call = parent.parentPath;
+        if (!call || call.node.type !== 'CallExpression' || call.node.callee !== parent.node)
+            return false;
+        current = call;
+    }
+    return false;
+}
+const keyName = (prop) => prop?.key?.type === 'Identifier' ? prop.key.name
+    : prop?.key?.type === 'StringLiteral' ? prop.key.value
+        : null;
+/** Logical combinators hold nested filters, not values. */
+const LOGICAL_KEYS = new Set(['OR', 'AND', 'NOT', '$or', '$and', '$nor', 'or', 'and']);
+/** Keys that select one row: `where: { id }`, `{ slug }`. */
+const UNIQUE_KEYS = new Set(['id', '_id', 'uuid', 'slug']);
+/** `id`, `_id`, `userId`, `workflowIds`, `project_id`. */
+const ID_LIKE_KEY = /^(_?id|\w+(Id|Ids|_id|_ids|Uuid|Uuids))$/;
+/**
+ * An IN list whose members the caller supplied: `{ in: ids }`,
+ * `{ $in: items.map(...) }`, `In(ids)`, `{ [Op.in]: ids }`. A constant list —
+ * `type: { $in: [Kind.ECHO, Kind.BRIDGE] }` — selects a category of rows, not
+ * a known set of them, so it bounds nothing. A bare array value only means IN
+ * for an id-like key: Sequelize reads `where: { id: ids }` as IN, but Mongo
+ * reads `projects: [projectId]` as an exact array match.
+ */
+function isInList(key, value) {
+    if (!value)
+        return false;
+    const callerSupplied = (operand) => operand && operand.type !== 'ArrayExpression';
+    if (value.type === 'ArrayExpression')
+        return ID_LIKE_KEY.test(key);
+    if (value.type === 'CallExpression' && value.callee?.type === 'Identifier' && value.callee.name === 'In') {
+        return callerSupplied(value.arguments?.[0]) || ID_LIKE_KEY.test(key);
+    }
+    if (value.type === 'ObjectExpression') {
+        return value.properties.some((p) => {
+            const k = keyName(p);
+            const isIn = k === 'in' || k === '$in' || (p.computed && p.key?.type === 'MemberExpression' && p.key.property?.name === 'in');
+            return isIn && (callerSupplied(p.value) || ID_LIKE_KEY.test(key));
+        });
+    }
+    return false;
+}
+/**
+ * The filter is bounded by what the caller passed in: an IN list or an id.
+ * Only top-level keys count — `teams: { some: { teamId: { in: ids } } }`
+ * selects every member of those teams and stays a finding.
+ */
+function filterIsBoundedByKey(callExpr) {
+    const filters = [];
+    for (const arg of callExpr.arguments ?? []) {
+        if (arg?.type !== 'ObjectExpression')
+            continue;
+        const where = arg.properties.find((p) => keyName(p) === 'where');
+        if (where)
+            filters.push(where.value);
+        // Mongo-style: the first object argument is the filter itself.
+        else if (filters.length === 0 && !arg.properties.some((p) => ['select', 'include', 'orderBy', 'relations', 'order'].includes(keyName(p) ?? ''))) {
+            filters.push(arg);
+        }
+    }
+    return filters.some(filter => filter?.type === 'ObjectExpression' && filter.properties.some((p) => {
+        const k = keyName(p);
+        if (!k || LOGICAL_KEYS.has(k))
+            return false;
+        if (isInList(k, p.value))
+            return true;
+        const scalar = p.value && p.value.type !== 'ObjectExpression' && p.value.type !== 'ArrayExpression';
+        // Not done: treating `{ spaceUuids }` (a plural id key holding a list) as
+        // bounded. It removed six false positives in the labelled sample and one
+        // true positive — `savedChartModel.find({ spaceUuids: allowedSpaceUuids })`
+        // loads every chart in every space the user can see. A list of the rows'
+        // own ids bounds the result; a list of parent ids does not, and the key
+        // name cannot tell the two apart.
+        return UNIQUE_KEYS.has(k) && scalar;
+    }));
+}
+/** Finder-shaped calls that are not queries: selectors, callbacks, services. */
+function isNotACollectionQuery(callExpr) {
+    const args = callExpr.arguments ?? [];
+    if (args[0]?.type === 'StringLiteral' || args[0]?.type === 'TemplateLiteral')
+        return true;
+    if (args.some((a) => a.type === 'ArrowFunctionExpression' || a.type === 'FunctionExpression'))
+        return true;
+    const receiver = callExpr.callee?.object;
+    const name = receiver?.type === 'Identifier' ? receiver.name
+        : receiver?.type === 'MemberExpression' ? receiver.property?.name
+            : null;
+    if (name && (SERVICE_RECEIVER.test(name) || NON_DB_FINDER_RECEIVERS.has(name)))
+        return true;
+    // queryClient.getQueryCache().findAll(...)
+    if (receiver?.type === 'CallExpression' && receiver.callee?.property?.name === 'getQueryCache')
+        return true;
+    return false;
 }
 /**
  * True when this call is a database query returning a collection. Returns
@@ -3811,40 +4077,1000 @@ const PROMISE_CONTEXT = new Set([
     'AwaitExpression', 'ReturnStatement', 'ArrowFunctionExpression',
     'ArrayExpression', 'CallExpression', 'YieldExpression',
 ]);
+// ---------------------------------------------------------------------------
+// Query builders — Stage 2, item 2
+// ---------------------------------------------------------------------------
+//
+// Stage 1's largest false-negative class: directus, nocodb and lightdash write
+// their queries with knex, never call a finder, and reported nothing. A builder
+// chain is a query when it is executed — awaited, returned, `.then()`-ed or
+// ended with a terminal method — and unbounded when nothing on it, or on the
+// variable holding it, limits the rows.
+/** Handles called with a table name: `knex('users')`, `this.database('t')`. */
+const KNEX_HANDLES = new Set(['knex', 'db', 'trx', 'tx', 'database', 'dbDriver', 'knexClient', 'conn']);
+/** `knex.select(...)`, `knex.from('t')`, `db.table('t')`: a chain started on the handle. */
+const KNEX_ENTRY = new Set(['select', 'from', 'table', 'distinct', 'queryBuilder']);
+/** Methods that execute a TypeORM or Kysely chain and return every row. */
+const BUILDER_TERMINAL = new Set(['getMany', 'getRawMany', 'getManyAndCount', 'getRawAndEntities', 'execute']);
+/** Methods that bound the rows, or replace them with one row or a stream. */
+const BUILDER_BOUNDING = new Set([
+    'limit', 'first', 'take', 'paginate', 'modify', 'count', 'countDistinct', 'sum', 'sumDistinct', 'avg',
+    'avgDistinct', 'min', 'max', 'executeTakeFirst', 'executeTakeFirstOrThrow', 'getOne', 'getOneOrFail',
+    'getRawOne', 'getCount', 'getExists', 'stream', 'cursor',
+]);
+/** Methods that turn a chain into SQL text without running it. */
+const BUILDER_NOT_RUN = new Set(['toSQL', 'toQuery', 'toString', 'toNative', 'getQuery', 'getSql', 'compile']);
+/**
+ * Database catalogs: `information_schema.tables`, `sqlite_master`, Oracle's
+ * `USER_TABLES`. They grow with the schema, not with the data, so reading one
+ * whole is how schema inspection works.
+ */
+const CATALOG_TABLE = /^(information_schema\.|pg_catalog\.|pg_[a-z]|sqlite_(master|schema|sequence)$|pragma_|(user|all|dba)_(tab|tables|views|cons|ind|objects|col))/i;
+/** SQL aggregates: a select of one of these returns one row, or one per group. */
+const AGGREGATE_SQL = /\b(count|sum|avg|min|max|array_agg|json_agg|jsonb_agg|string_agg|group_concat|bool_and|bool_or)\s*\(/i;
+const AGGREGATE_FN = new Set(['count', 'countAll', 'countDistinct', 'sum', 'avg', 'min', 'max']);
+/** Writes are not reads. */
+const BUILDER_WRITES = new Set([
+    'insert', 'update', 'del', 'delete', 'truncate', 'increment', 'decrement', 'upsert', 'softDelete',
+    'restore', 'insertInto', 'updateTable', 'deleteFrom', 'merge', 'onConflict',
+]);
+const KEY_WHERES = new Set(['where', 'andWhere', 'whereIn', 'andWhereIn']);
+const SELECTS = new Set(['select', 'addSelect', 'column', 'columns', 'distinct', 'pluck']);
+/**
+ * The handle a chain is rooted at: `knex(...)`, `this.database(...)`,
+ * `ncMeta.knex(...)`. A handle name on any other receiver is not a knex
+ * instance: `client.db(name)` is a MongoDB database, `metadata.database(id)`
+ * and Spanner's `instance.database(id)` are lookups.
+ */
+function calleeHandleName(callee) {
+    if (callee?.type === 'Identifier')
+        return callee.name;
+    if (callee?.type === 'MemberExpression' && callee.property?.type === 'Identifier'
+        && (callee.object?.type === 'ThisExpression' || callee.property.name === 'knex'))
+        return callee.property.name;
+    return null;
+}
+const tableArg = (arg) => arg?.type === 'StringLiteral' ? arg.value
+    : arg?.type === 'TemplateLiteral' && arg.quasis.length === 1 ? arg.quasis[0].value.cooked
+        : null;
+const snake = (name) => name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+/**
+ * The table a handle is called with. Besides a literal, codebases name tables
+ * with constants — Lightdash's `ProjectTableName`, nocodb's
+ * `MetaTable.COMMENTS` — and the name says which table it is.
+ */
+function tableOf(arg) {
+    const lit = tableArg(arg);
+    if (lit)
+        return lit;
+    const name = arg?.type === 'Identifier' ? arg.name
+        : arg?.type === 'MemberExpression' && arg.property?.type === 'Identifier' ? arg.property.name
+            : null;
+    if (!name)
+        return null;
+    const m = name.match(/^(\w+?)_?(TableName|Table|TABLE_NAME|TABLE)$/);
+    if (m)
+        return snake(m[1]);
+    if (arg.type === 'MemberExpression' && /^[A-Z][A-Z0-9_]+$/.test(name))
+        return name.toLowerCase();
+    return null;
+}
+/** `${SavedChartsTableName}.saved_query_uuid` -> [table, column]. */
+function columnOf(arg) {
+    const lit = tableArg(arg);
+    if (lit && /^[\w.]+$/.test(lit)) {
+        const parts = lit.split('.');
+        return { table: parts.length > 1 ? parts[parts.length - 2] : null, column: parts[parts.length - 1] };
+    }
+    if (arg?.type === 'TemplateLiteral' && arg.expressions.length === 1 && arg.quasis.length === 2
+        && arg.quasis[0].value.cooked === '' && arg.quasis[1].value.cooked.startsWith('.')) {
+        return { table: tableOf(arg.expressions[0]), column: arg.quasis[1].value.cooked.slice(1) };
+    }
+    return null;
+}
+/** True when `node` contains an SQL aggregate: `count()`, `fn.countAll()`, `raw('ARRAY_AGG(x)')`. */
+function hasAggregate(node, depth = 0) {
+    if (!node || typeof node !== 'object' || depth > 14)
+        return false;
+    if (node.type === 'StringLiteral')
+        return AGGREGATE_SQL.test(node.value);
+    if (node.type === 'TemplateLiteral')
+        return node.quasis.some((q) => AGGREGATE_SQL.test(q.value.cooked ?? ''));
+    if (node.type === 'CallExpression') {
+        const c = node.callee;
+        const name = c?.type === 'Identifier' ? c.name : c?.type === 'MemberExpression' ? c.property?.name : null;
+        if (name && AGGREGATE_FN.has(name))
+            return true;
+    }
+    for (const key of Object.keys(node)) {
+        if (key === 'loc' || key === 'start' || key === 'end' || key === 'leadingComments' || key === 'trailingComments')
+            continue;
+        const v = node[key];
+        if (Array.isArray(v)) {
+            if (v.some(x => hasAggregate(x, depth + 1)))
+                return true;
+        }
+        else if (v && typeof v === 'object' && typeof v.type === 'string' && hasAggregate(v, depth + 1))
+            return true;
+    }
+    return false;
+}
+/** Walk a chain from its outermost call to its root. Null when it is not a builder chain. */
+function builderChain(outer) {
+    const methods = [];
+    const wheres = [];
+    const selects = [];
+    let table = null;
+    let n = outer;
+    for (let depth = 0; depth < 40 && n; depth++) {
+        if (n.type === 'Identifier') {
+            return methods.length ? { kind: 'var', varName: n.name, table, methods, wheres, selects } : null;
+        }
+        if (n.type !== 'CallExpression')
+            return null;
+        const callee = n.callee;
+        // knex('users'), this.database('spaces'), trx(table)
+        const handle = calleeHandleName(callee);
+        if (handle && KNEX_HANDLES.has(handle) && n.arguments?.length >= 1) {
+            const a = n.arguments[0];
+            if (a.type === 'StringLiteral' || a.type === 'TemplateLiteral' || a.type === 'Identifier' || a.type === 'MemberExpression') {
+                return { kind: 'knex', table: table ?? tableOf(a), methods, wheres, selects };
+            }
+        }
+        if (callee?.type !== 'MemberExpression' || callee.property?.type !== 'Identifier')
+            return null;
+        const m = callee.property.name;
+        methods.push(m);
+        if (KEY_WHERES.has(m))
+            wheres.push(n.arguments ?? []);
+        if (SELECTS.has(m))
+            selects.push(n.arguments ?? []);
+        if ((m === 'from' || m === 'table') && !table)
+            table = tableOf(n.arguments?.[0]);
+        if (m === 'createQueryBuilder') {
+            // TypeORM names the root by its alias: createQueryBuilder('u') or (User, 'u').
+            const alias = [...(n.arguments ?? [])].reverse().map(tableArg).find(Boolean) ?? null;
+            return { kind: 'typeorm', table: table ?? alias, methods, wheres, selects };
+        }
+        if (m === 'selectFrom')
+            return { kind: 'kysely', table: tableOf(n.arguments?.[0]), methods, wheres, selects };
+        const objHandle = callee.object?.type === 'Identifier' ? callee.object.name
+            : callee.object?.type === 'MemberExpression' && callee.object.object?.type === 'ThisExpression' ? callee.object.property?.name
+                : null;
+        if (KNEX_ENTRY.has(m) && objHandle && KNEX_HANDLES.has(objHandle)) {
+            // knex.select(knex.raw('1')) with no from() reads no table.
+            if ((m === 'select' || m === 'distinct') && !methods.includes('from'))
+                return null;
+            return { kind: 'knex', table, methods, wheres, selects };
+        }
+        n = callee.object;
+    }
+    return null;
+}
+const singular = (t) => t.replace(/ies$/, 'y').replace(/(ses|xes)$/, (x) => x.slice(0, -2)).replace(/s$/, '');
+/** `id`, `uuid`, and `<table>_id` / `<table>_uuid` where the table's name ends with that prefix. */
+function isOwnKey(column, table) {
+    if (column === 'id' || column === 'uuid' || column === '_id')
+        return true;
+    const m = column.match(/^(\w+)_(id|uuid)$/);
+    if (!m || !table)
+        return false;
+    const t = singular(snake(table.split(/\s+as\s+|\s+/i)[0].split('.').pop()));
+    return t === m[1] || t.endsWith(`_${m[1]}`);
+}
+const tableKey = (t) => singular(snake(t.split(/\s+as\s+|\s+/i)[0].split('.').pop()));
+const sameTable = (a, b) => tableKey(a) === tableKey(b);
+/**
+ * A where on the table's own key, or an IN over a list the caller passes:
+ * `where('id', x)`, `whereIn('spaces.space_uuid', ids)`, `where({ id })`,
+ * TypeORM's `.where('q.id IN (:...ids)')`.
+ */
+function whereOnOwnKey(chain) {
+    return chain.wheres.some(args => {
+        const col = columnOf(args[0]);
+        // A qualified column on another table is a join's key, not this table's:
+        // dashboards joined to spaces `where('spaces.space_uuid', x)` is every
+        // dashboard in one space.
+        if (col)
+            return isOwnKey(col.column, chain.table) && (!col.table || !chain.table || sameTable(col.table, chain.table));
+        const sql = tableArg(args[0]);
+        if (sql) {
+            const m = sql.match(/^\s*(?:(\w+)\.)?(\w+)\s*(=|in\s*\(\s*:\.\.\.)/i);
+            // `user.id = :id` on a builder rooted at 'friend' is a joined row's key.
+            if (!m || (m[1] && chain.table && m[1] !== chain.table))
+                return false;
+            const [, , column, op] = m;
+            return /^(id|uuid|_id)$/.test(column) || (/^in/i.test(op) && /^(name|slug|key|email)$/.test(column));
+        }
+        if (args[0]?.type === 'ObjectExpression') {
+            return args[0].properties.some((p) => {
+                const k = keyName(p);
+                return !!k && isOwnKey(k.split('.').pop(), chain.table) && p.value?.type !== 'ObjectExpression';
+            });
+        }
+        return false;
+    });
+}
+const chainTitle = (c) => c.kind === 'typeorm' ? 'createQueryBuilder() query'
+    : c.kind === 'kysely' ? `selectFrom(${c.table ? `'${c.table}'` : ''}) query`
+        : `knex(${c.table ? `'${c.table}'` : ''}) query`;
+const isAwaited = (n) => {
+    let x = n;
+    for (let i = 0; i < 6 && x; i++) {
+        if (x.type === 'AwaitExpression')
+            return true;
+        if (x.type === 'TSAsExpression' || x.type === 'TSNonNullExpression' || x.type === 'ParenthesizedExpression' || x.type === 'TSSatisfiesExpression')
+            x = x.expression;
+        else
+            return false;
+    }
+    return false;
+};
+const isThenCall = (n) => n?.type === 'CallExpression' && n.callee?.type === 'MemberExpression' && n.callee.property?.name === 'then';
+const typeAnnotationText = (t) => {
+    if (!t)
+        return '';
+    const names = [];
+    const walk = (x, d) => {
+        if (!x || typeof x !== 'object' || d > 8)
+            return;
+        if (x.type === 'Identifier')
+            names.push(x.name);
+        for (const k of ['typeAnnotation', 'typeName', 'typeParameters', 'params', 'types', 'right', 'left']) {
+            const v = x[k];
+            if (Array.isArray(v))
+                v.forEach(y => walk(y, d + 1));
+            else
+                walk(v, d + 1);
+        }
+    };
+    walk(t, 0);
+    return names.join(' ');
+};
+/**
+ * Every executed, unbounded builder query in the file, and the chain nodes
+ * that are one (so the api-response trace can accept them).
+ */
+function analyzeBuilders(ast) {
+    const executed = [];
+    const unbounded = new Map();
+    const isBounded = (c, extra) => c.methods.some(m => BUILDER_BOUNDING.has(m) || BUILDER_WRITES.has(m) || BUILDER_NOT_RUN.has(m))
+        || [...extra].some(m => BUILDER_BOUNDING.has(m) || BUILDER_WRITES.has(m) || BUILDER_NOT_RUN.has(m))
+        || whereOnOwnKey(c)
+        || (!!c.table && CATALOG_TABLE.test(c.table))
+        || (c.selects ?? []).some(args => args.some(a => hasAggregate(a)));
+    try {
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            enter(path) {
+                const fn = path.node;
+                if (!FUNCTION_TYPES.has(fn.type))
+                    return;
+                // Per function: what each variable holding a builder is assigned, and
+                // every method called on it, so a later `q.limit(n)` counts.
+                const assigned = new Map();
+                const calledOn = new Map();
+                const argsOn = new Map();
+                const escapes = new Set();
+                const note = (name, m) => {
+                    const set = calledOn.get(name) ?? new Set();
+                    set.add(m);
+                    calledOn.set(name, set);
+                };
+                (0, traverse_1.default)(fn.body, {
+                    noScope: true,
+                    Function(p) { p.skip(); },
+                    VariableDeclarator(p) {
+                        const { id, init } = p.node;
+                        // `const rows = await q` holds rows, not a builder.
+                        const c = init && id.type === 'Identifier' && !isAwaited(init) ? builderChain(unwrap(init)) : null;
+                        if (c)
+                            assigned.set(id.name, [...(assigned.get(id.name) ?? []), { node: unwrap(init), chain: c }]);
+                    },
+                    AssignmentExpression(p) {
+                        const { left, right } = p.node;
+                        const c = left.type === 'Identifier' && !isAwaited(right) ? builderChain(unwrap(right)) : null;
+                        if (c)
+                            assigned.set(left.name, [...(assigned.get(left.name) ?? []), { node: unwrap(right), chain: c }]);
+                    },
+                    CallExpression(p) {
+                        // q.limit(10), q.where(...).orderBy(...) as statements
+                        const c = builderChain(p.node);
+                        if (c?.kind === 'var' && c.varName) {
+                            c.methods.forEach(m => note(c.varName, m));
+                            const a = argsOn.get(c.varName) ?? { wheres: [], selects: [] };
+                            a.wheres.push(...c.wheres);
+                            a.selects.push(...(c.selects ?? []));
+                            argsOn.set(c.varName, a);
+                        }
+                        // applyFilters(q) — handed to code that may paginate it
+                        for (const a of p.node.arguments ?? [])
+                            if (a.type === 'Identifier')
+                                escapes.add(a.name);
+                    },
+                }, undefined);
+                const resolve = (c, seen = new Set()) => {
+                    if (c.kind !== 'var')
+                        return { chain: c, extra: new Set() };
+                    const name = c.varName;
+                    if (seen.has(name) || escapes.has(name))
+                        return null;
+                    seen.add(name);
+                    const bases = assigned.get(name);
+                    if (!bases?.length)
+                        return null;
+                    const rootChain = bases.map(b => resolve(b.chain, seen)).find(Boolean);
+                    if (!rootChain)
+                        return null;
+                    const later = argsOn.get(name);
+                    if (later) {
+                        rootChain.chain = {
+                            ...rootChain.chain,
+                            wheres: [...rootChain.chain.wheres, ...later.wheres],
+                            selects: [...(rootChain.chain.selects ?? []), ...later.selects],
+                        };
+                    }
+                    const extra = new Set([...rootChain.extra, ...(calledOn.get(name) ?? []), ...bases.flatMap(b => b.chain.methods)]);
+                    return {
+                        chain: {
+                            ...rootChain.chain,
+                            methods: [...c.methods, ...rootChain.chain.methods],
+                            wheres: [...c.wheres, ...rootChain.chain.wheres, ...bases.flatMap(b => b.chain.wheres)],
+                            selects: [...(c.selects ?? []), ...(rootChain.chain.selects ?? []), ...bases.flatMap(b => b.chain.selects ?? [])],
+                        },
+                        extra,
+                    };
+                };
+                // A function that is not async and does not declare a Promise hands its
+                // builder back unexecuted: a query factory, run (and often limited) by
+                // its caller.
+                // A route handler or resolver's return value is awaited by the framework.
+                const returnsPromise = !!fn.async || /Promise/.test(typeAnnotationText(fn.returnType)) || responseKind(path) !== null;
+                const consider = (exprNode, reportNode, returned, byVariable, awaited = false) => {
+                    // `await q`: the variable itself, with no calls of its own yet.
+                    const c = exprNode.type === 'Identifier'
+                        ? { kind: 'var', varName: exprNode.name, table: null, methods: [], wheres: [] }
+                        : builderChain(exprNode);
+                    if (!c)
+                        return;
+                    const r = resolve(c);
+                    if (!r)
+                        return;
+                    const { chain, extra } = r;
+                    const needsTerminal = chain.kind === 'typeorm' || chain.kind === 'kysely';
+                    const all = new Set([...chain.methods, ...extra]);
+                    if (needsTerminal && ![...all].some(m => BUILDER_TERMINAL.has(m)))
+                        return;
+                    if (returned && !awaited && !returnsPromise && ![...all].some(m => BUILDER_TERMINAL.has(m)))
+                        return;
+                    if (isBounded(chain, extra))
+                        return;
+                    if (!needsTerminal && !chain.methods.length && byVariable === false && chain.kind === 'knex' && !chain.table)
+                        return;
+                    unbounded.set(reportNode, chain);
+                    executed.push({ node: reportNode, chain, returned });
+                };
+                (0, traverse_1.default)(fn.body, {
+                    noScope: true,
+                    Function(p) { p.skip(); },
+                    AwaitExpression(p) {
+                        const arg = unwrap(p.node.argument);
+                        // `const [row] = await q`: one row is read, the lookup is by design.
+                        const parent = p.parent?.type === 'TSAsExpression' ? null : p.parent;
+                        if (parent?.type === 'VariableDeclarator' && parent.id?.type === 'ArrayPattern'
+                            && parent.id.elements.length === 1 && parent.id.elements[0]?.type !== 'RestElement')
+                            return;
+                        // `await q.then(...)`: the CallExpression visitor reports q.
+                        if (isThenCall(arg))
+                            return;
+                        if (arg?.type === 'CallExpression')
+                            consider(arg, arg, p.parent?.type === 'ReturnStatement', false, true);
+                        else if (arg?.type === 'Identifier') {
+                            const last = assigned.get(arg.name)?.slice(-1)[0];
+                            if (last)
+                                consider(arg, last.node, p.parent?.type === 'ReturnStatement', true, true);
+                        }
+                    },
+                    ReturnStatement(p) {
+                        const arg = p.node.argument;
+                        if (isThenCall(arg))
+                            return;
+                        if (arg?.type === 'CallExpression')
+                            consider(arg, arg, true, false);
+                        else if (arg?.type === 'Identifier') {
+                            const last = assigned.get(arg.name)?.slice(-1)[0];
+                            if (last)
+                                consider(arg, last.node, true, true);
+                        }
+                    },
+                    CallExpression(p) {
+                        // knex('t').where(...).then(rows => ...)
+                        const callee = p.node.callee;
+                        if (callee?.type === 'MemberExpression' && callee.property?.name === 'then' && callee.object?.type === 'CallExpression') {
+                            consider(callee.object, callee.object, false, false);
+                        }
+                        // TypeORM / Kysely chains end in a terminal method, awaited or not.
+                        if (callee?.type === 'MemberExpression' && BUILDER_TERMINAL.has(callee.property?.name)
+                            && p.parent?.type !== 'AwaitExpression' && p.parent?.type !== 'ReturnStatement') {
+                            consider(p.node, p.node, false, false);
+                        }
+                    },
+                }, undefined);
+                if (fn.type === 'ArrowFunctionExpression' && fn.body?.type === 'CallExpression' && !isThenCall(fn.body))
+                    consider(fn.body, fn.body, true, false);
+            },
+        });
+    }
+    catch {
+        // partial result
+    }
+    // One report per node: an awaited return is seen by both visitors.
+    const seen = new Set();
+    return { executed: executed.filter(q => (seen.has(q.node) ? false : (seen.add(q.node), true))), unbounded };
+}
+// ---------------------------------------------------------------------------
+// payload/api-response — Stage 2, item 1
+// ---------------------------------------------------------------------------
+//
+// A query whose rows are sent to the client. Study 09's `missing_pagination`
+// is this rule: a list endpoint without a pagination contract is a handler
+// whose response carries an unbounded query result.
+//
+// The backend's `large_api_payload` had the same intent and never fired on
+// the ordinary shapes: it compared a variable's initialiser to the query call
+// by identity, so `const users = await prisma.user.findMany()` — where the
+// initialiser is the `await`, not the call — was never connected to
+// `res.json(users)`. Here the response value is traced backwards through
+// awaits, bindings, object properties and pass-through chains until it reaches
+// a query call or runs out.
+/** `res.json(x)`, `reply.send(x)`, `c.json(x)`, `res.status(200).json(x)`. */
+const GRAPHQL_DESCRIPTION = 'A GraphQL list field returns every matching row. The client cannot ask for less than the whole table, and the response grows with it.';
+const GRAPHQL_RECOMMENDATION = 'Add pagination arguments to the field (first/after, or limit/offset with a maximum) and pass them to the query as take/limit, or return a connection type.';
+const RESPONSE_RECEIVER = /^(res|response|reply|ctx|context|c|h)$/;
+const RESPONSE_METHODS = new Set(['json', 'send', 'jsonp']);
+/** `Response.json(x)`, `NextResponse.json(x)`. */
+const RESPONSE_CLASSES = new Set(['Response', 'NextResponse']);
+/** Remix / React Router `json(x)`, `typedjson(x)`. */
+const RESPONSE_FUNCTIONS = new Set(['json', 'typedjson']);
+/** Nest route decorators: a controller method's return value is the response. */
+const ROUTE_DECORATORS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All']);
+/** GraphQL resolver decorators: NestJS `@Query` / `@ResolveField`, type-graphql `@FieldResolver`. */
+const GRAPHQL_DECORATORS = new Set(['Query', 'ResolveField', 'FieldResolver']);
+/** A module that holds one resolver: `resolvers/Query/groups.js`, `resolvers/Account/addressBook.js`. */
+const RESOLVER_MODULE_PATH = /(^|\/)resolvers\/[A-Z]\w*\/[\w.-]+\.[cm]?[jt]sx?$/;
+/** The root keys that mark an object as a resolver map. */
+const RESOLVER_MAP_ROOTS = new Set(['Query', 'Mutation']);
+/** Calls that keep every row: a traced value passes through them. */
+const PASS_THROUGH = new Set([
+    'map', 'filter', 'flatMap', 'sort', 'reverse', 'lean', 'exec', 'toArray', 'populate', 'then',
+    'select', 'orderBy', 'order', 'where', 'andWhere', 'orWhere', 'include', 'with', 'leftJoin',
+    'innerJoin', 'join', 'from', 'returning',
+]);
+function unwrap(node) {
+    let n = node;
+    for (let i = 0; i < 8 && n; i++) {
+        if (n.type === 'AwaitExpression' || n.type === 'TSAsExpression' || n.type === 'TSNonNullExpression'
+            || n.type === 'ParenthesizedExpression' || n.type === 'TSSatisfiesExpression')
+            n = n.argument ?? n.expression;
+        else
+            break;
+    }
+    return n;
+}
+/** Every `const x = ...` in a function, plus `const [a, b] = await Promise.all([qa, qb])`. */
+function collectBindings(fn, into) {
+    try {
+        (0, traverse_1.default)(fn, {
+            noScope: true,
+            VariableDeclarator(p) {
+                const { id, init } = p.node;
+                if (!init)
+                    return;
+                if (id.type === 'Identifier') {
+                    into.set(id.name, init);
+                    return;
+                }
+                const inner = unwrap(init);
+                if (id.type === 'ArrayPattern' && inner?.type === 'CallExpression'
+                    && inner.callee?.type === 'MemberExpression' && inner.callee.object?.name === 'Promise'
+                    && inner.arguments?.[0]?.type === 'ArrayExpression') {
+                    id.elements.forEach((el, i) => {
+                        const src = inner.arguments[0].elements[i];
+                        if (el?.type === 'Identifier' && src)
+                            into.set(el.name, src);
+                    });
+                }
+            },
+            AssignmentExpression(p) {
+                const { left, right } = p.node;
+                if (left.type === 'Identifier')
+                    into.set(left.name, right);
+            },
+        }, undefined);
+    }
+    catch {
+        // leave what was collected
+    }
+}
+/**
+ * The receiver's name, for matching a class: `this.catsService` → catsService,
+ * `this.services.getProjectService()` → ProjectService.
+ */
+function receiverNameOf(recv) {
+    if (recv?.type === 'Identifier')
+        return recv.name;
+    if (recv?.type === 'MemberExpression' && recv.property?.type === 'Identifier')
+        return recv.property.name;
+    if (recv?.type === 'CallExpression' && recv.callee?.type === 'MemberExpression') {
+        const getter = recv.callee.property?.name;
+        const m = getter && /^get([A-Z]\w*)$/.exec(getter);
+        if (m && (recv.arguments?.length ?? 0) === 0)
+            return m[1];
+    }
+    return null;
+}
+function traceToQueries(node, lookup, out, depth = 0, seen = new Set(), calls) {
+    const n = unwrap(node);
+    if (!n || depth > 8)
+        return;
+    if (n.type === 'Identifier') {
+        if (seen.has(n.name))
+            return;
+        seen.add(n.name);
+        const bound = lookup(n.name);
+        if (bound)
+            traceToQueries(bound, lookup, out, depth + 1, seen, calls);
+        return;
+    }
+    if (n.type === 'ObjectExpression') {
+        for (const p of n.properties) {
+            if (p.type === 'ObjectProperty')
+                traceToQueries(p.value, lookup, out, depth + 1, seen, calls);
+            else if (p.type === 'SpreadElement')
+                traceToQueries(p.argument, lookup, out, depth + 1, seen, calls);
+        }
+        return;
+    }
+    if (n.type === 'ConditionalExpression' || n.type === 'LogicalExpression') {
+        traceToQueries(n.consequent ?? n.left, lookup, out, depth + 1, seen, calls);
+        traceToQueries(n.alternate ?? n.right, lookup, out, depth + 1, seen, calls);
+        return;
+    }
+    if (n.type !== 'CallExpression')
+        return;
+    const method = n.callee?.type === 'MemberExpression' ? n.callee.property?.name : null;
+    const chain = builderChain(n);
+    if (chain && chain.kind !== 'var') {
+        out.add(n);
+        return;
+    }
+    if (method && COLLECTION_FINDERS.has(method)) {
+        out.add(n);
+        return;
+    }
+    if (method && BOUNDING_CHAIN.has(method))
+        return;
+    if (method && PASS_THROUGH.has(method)) {
+        traceToQueries(n.callee.object, lookup, out, depth + 1, seen, calls);
+        return;
+    }
+    // A call into code the trace cannot see: remember it for the cross-file pass.
+    if (calls) {
+        const callee = n.callee;
+        if (callee?.type === 'Identifier')
+            calls.push({ name: callee.name, receiver: null });
+        else if (callee?.type === 'MemberExpression' && callee.property?.type === 'Identifier') {
+            calls.push({ name: callee.property.name, receiver: receiverNameOf(callee.object) });
+        }
+    }
+}
+/** The value a sink sends, or null when this node is not a response sink. */
+function responseValue(node) {
+    if (node.type === 'CallExpression') {
+        const callee = node.callee;
+        if (callee?.type === 'MemberExpression' && RESPONSE_METHODS.has(callee.property?.name)) {
+            if (callee.object?.type === 'Identifier' && RESPONSE_CLASSES.has(callee.object.name))
+                return node.arguments?.[0];
+            const root = (0, db_call_heuristics_1.rootIdentifierName)(callee.object);
+            if (root && RESPONSE_RECEIVER.test(root))
+                return node.arguments?.[0];
+        }
+        if (callee?.type === 'Identifier' && RESPONSE_FUNCTIONS.has(callee.name))
+            return node.arguments?.[0];
+    }
+    // ctx.body = rows (Koa)
+    if (node.type === 'AssignmentExpression' && node.left?.type === 'MemberExpression'
+        && node.left.property?.name === 'body') {
+        const root = (0, db_call_heuristics_1.rootIdentifierName)(node.left.object);
+        if (root && /^(ctx|context|response)$/.test(root))
+            return node.right;
+    }
+    return null;
+}
+const FUNCTION_TYPES = new Set([
+    'FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ClassMethod', 'ObjectMethod',
+]);
+const decoratorNames = (node) => (node.decorators ?? []).map((d) => {
+    const e = d.expression;
+    return e?.type === 'CallExpression' ? e.callee?.name : e?.name;
+}).filter(Boolean);
+const propKey = (p) => p?.key?.type === 'Identifier' ? p.key.name : p?.key?.type === 'StringLiteral' ? p.key.value : null;
+/** `{ Query: { users }, User: { posts } }`: an object with a Query or Mutation key whose value is an object. */
+const isResolverMap = (obj) => obj?.type === 'ObjectExpression'
+    && obj.properties.some((p) => RESOLVER_MAP_ROOTS.has(propKey(p) ?? '') && p.value?.type === 'ObjectExpression');
+/**
+ * Whether the framework sends a function's return value, and how: a Nest
+ * route or tRPC procedure ('rest'), or a GraphQL resolver ('graphql').
+ */
+function responseKind(path) {
+    const node = path.node;
+    if (node.type === 'ClassMethod') {
+        const names = decoratorNames(node);
+        if (names.some(n => GRAPHQL_DECORATORS.has(n)))
+            return 'graphql';
+        if (names.some(n => ROUTE_DECORATORS.has(n)))
+            return 'rest';
+        return null;
+    }
+    // publicProcedure.query(async ({ ctx }) => ...) — a function argument, which
+    // is what separates it from db.query(sql).
+    const parent = path.parent;
+    if (parent?.type === 'CallExpression' && parent.arguments?.[0] === node
+        && parent.callee?.type === 'MemberExpression' && ['query', 'mutation'].includes(parent.callee.property?.name)) {
+        return 'rest';
+    }
+    // Resolver map: Query.users / User.posts, as a property value or a method.
+    const prop = node.type === 'ObjectMethod' ? node : parent?.type === 'ObjectProperty' && parent.value === node ? parent : null;
+    if (prop) {
+        const typeObj = node.type === 'ObjectMethod' ? path.parentPath : path.parentPath?.parentPath;
+        const typeProp = typeObj?.parentPath;
+        const map = typeProp?.parentPath;
+        if (typeObj?.node?.type === 'ObjectExpression' && typeProp?.node?.type === 'ObjectProperty' && isResolverMap(map?.node)) {
+            return 'graphql';
+        }
+        // Field config: { type: [User], resolve: () => ... }
+        if (propKey(prop) === 'resolve') {
+            const config = node.type === 'ObjectMethod' ? path.parentPath?.node : path.parentPath?.parentPath?.node;
+            if (config?.type === 'ObjectExpression' && config.properties.some((p) => propKey(p) === 'type'))
+                return 'graphql';
+        }
+    }
+    return null;
+}
+/** `class X { m() {} }`, `function m() {}`, `const m = () => {}`, `{ m: () => {} }`. */
+function functionName(path) {
+    const node = path.node;
+    const cls = (() => {
+        const c = path.findParent?.((p) => p.isClassDeclaration?.() || p.isClassExpression?.());
+        return c?.node?.id?.name ?? null;
+    })();
+    if (node.type === 'FunctionDeclaration' && node.id)
+        return { name: node.id.name, cls: null };
+    if ((node.type === 'ClassMethod' || node.type === 'ObjectMethod') && node.key?.type === 'Identifier') {
+        return { name: node.key.name, cls: node.type === 'ClassMethod' ? cls : null };
+    }
+    const parent = path.parent;
+    if (parent?.type === 'VariableDeclarator' && parent.id?.type === 'Identifier')
+        return { name: parent.id.name, cls: null };
+    if ((parent?.type === 'ObjectProperty' || parent?.type === 'ClassProperty') && parent.key?.type === 'Identifier') {
+        return { name: parent.key.name, cls: parent.type === 'ClassProperty' ? cls : null };
+    }
+    return null;
+}
+/**
+ * Collect the query calls whose rows reach a response. The caller reports
+ * those as api-response and skips them in the other two rules. Also records,
+ * for the cross-file pass, what each named function returns and which calls
+ * into other code a response depends on.
+ */
+function findQueriesSentToClient(ast, filePath = '') {
+    const resolverModule = RESOLVER_MODULE_PATH.test(filePath.replace(/\\/g, '/'));
+    const sent = new Set();
+    const viaRest = new Set();
+    const viaGraphql = new Set();
+    const sinkCalls = [];
+    const sinkFinders = [];
+    const functions = [];
+    const stack = [];
+    const lookup = (name) => {
+        for (let i = stack.length - 1; i >= 0; i--) {
+            const v = stack[i].bindings.get(name);
+            if (v)
+                return v;
+        }
+        return undefined;
+    };
+    const currentCaller = () => {
+        for (let i = stack.length - 1; i >= 0; i--) {
+            const fn = stack[i].fn;
+            if (fn)
+                return { file: '', name: fn.name, cls: fn.cls };
+        }
+        return undefined;
+    };
+    const sinkTrace = (value, line, kind = 'rest') => {
+        const calls = [];
+        const found = new Set();
+        traceToQueries(value, lookup, found, 0, new Set(), calls);
+        const graphql = kind === 'graphql';
+        for (const n of found) {
+            sent.add(n);
+            (graphql ? viaGraphql : viaRest).add(n);
+            sinkFinders.push({ node: n, line, ...(graphql ? { graphql } : {}) });
+        }
+        const caller = currentCaller();
+        for (const c of calls)
+            sinkCalls.push({ ...c, line, caller, ...(graphql ? { graphql } : {}) });
+    };
+    const returnTrace = (value) => {
+        const top = stack[stack.length - 1];
+        if (!top)
+            return;
+        if (top.returns)
+            sinkTrace(value, value.loc?.start?.line ?? 0, top.returns);
+        else if (top.fn)
+            traceToQueries(value, lookup, top.fn.queries, 0, new Set(), top.fn.calls);
+    };
+    try {
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            enter(path) {
+                const node = path.node;
+                if (FUNCTION_TYPES.has(node.type)) {
+                    const bindings = new Map();
+                    collectBindings(node.body, bindings);
+                    const named = functionName(path);
+                    const fn = named ? { ...named, line: node.loc?.start?.line ?? 0, queries: new Set(), calls: [] } : null;
+                    if (fn)
+                        functions.push(fn);
+                    // Reaction Commerce and others keep one resolver per module:
+                    // resolvers/Query/groups.js default-exports Query.groups.
+                    const kind = responseKind(path)
+                        ?? (resolverModule && path.parent?.type === 'ExportDefaultDeclaration' ? 'graphql' : null);
+                    stack.push({ bindings, returns: kind, fn });
+                    if (node.type === 'ArrowFunctionExpression' && node.body?.type !== 'BlockStatement')
+                        returnTrace(node.body);
+                    return;
+                }
+                const value = responseValue(node);
+                if (value) {
+                    sinkTrace(value, node.loc?.start?.line ?? 0);
+                    return;
+                }
+                if (node.type === 'ReturnStatement' && node.argument)
+                    returnTrace(node.argument);
+            },
+            exit(path) {
+                if (FUNCTION_TYPES.has(path.node.type))
+                    stack.pop();
+            },
+        });
+    }
+    catch {
+        // partial result is still correct as far as it goes
+    }
+    // A query reached by both a REST response and a resolver is reported as api-response.
+    const sentGraphql = new Set([...viaGraphql].filter(n => !viaRest.has(n)));
+    return { sent, sentGraphql, sinkCalls, sinkFinders, functions };
+}
+/**
+ * A finder-named call the file could not accept as a query — an application's
+ * own `this.catsService.findAll()` — is a call into code defined elsewhere,
+ * and the cross-file pass should follow it. A call accepted as a query is not
+ * followed: `prisma.user.findMany()` is the query, and linking it to some
+ * application method that happens to be called findMany would be wrong.
+ */
+function calleeRefOf(call) {
+    const callee = call.callee;
+    if (callee?.type !== 'MemberExpression' || callee.property?.type !== 'Identifier')
+        return null;
+    return { name: callee.property.name, receiver: receiverNameOf(callee.object) };
+}
+let registryFunctions = [];
+let registrySinks = [];
+/**
+ * Every reported query call that has a receiver and a method name, by issue
+ * location: `oAuthClientRepository.findAll()` in a handler is reported as a
+ * query because the receiver looks like data access, but when the scanned code
+ * defines that method, and the query inside it is itself a finding, the call
+ * site is the same rows counted twice.
+ */
+let registryCallSites = [];
+function resetPayloadRegistry() {
+    registryFunctions = [];
+    registrySinks = [];
+    registryCallSites = [];
+}
+// Keyed by file and line, not column: large-return reports at the `return`,
+// and the query it returns starts later on the same line.
+const issueKey = (i) => `${i.file}:${i.line}`;
+function resolveCallee(ref) {
+    // A controller's getCharts() calling the service's getCharts() is not
+    // calling itself: the caller is never a candidate.
+    const candidates = registryFunctions.filter(f => f.name === ref.name
+        && !(ref.caller && f.file === ref.caller.file && f.name === ref.caller.name && f.cls === ref.caller.cls));
+    if (candidates.length === 1)
+        return candidates[0];
+    if (candidates.length === 0 || !ref.receiver)
+        return null;
+    const recv = ref.receiver.toLowerCase().replace(/^_+/, '');
+    const byClass = candidates.filter(f => f.cls && f.cls.toLowerCase() === recv);
+    return byClass.length === 1 ? byClass[0] : null;
+}
+/** The unbounded-query issues a call reaches, following returned calls up to three hops. */
+function issuesReachedBy(ref, hops = 0, seen = new Set()) {
+    if (hops > 3)
+        return [];
+    const fn = resolveCallee(ref);
+    if (!fn || seen.has(fn))
+        return [];
+    seen.add(fn);
+    return [...fn.queryIssues, ...fn.calls.flatMap(c => issuesReachedBy(c, hops + 1, seen))];
+}
+function finalizePayload(issues) {
+    // Round 2: a call site that is really a call into the application's own
+    // method is dropped when that method's query is already a finding. If the
+    // call site's rows were sent to the client, the endpoint moves to the
+    // method's query, which the linking below then converts.
+    const dropped = new Set();
+    for (const site of registryCallSites) {
+        const fn = resolveCallee(site);
+        if (!fn || fn.queryIssues.length === 0 || fn.queryIssues.includes(site.key))
+            continue;
+        const here = issues.filter(i => issueKey(i) === site.key);
+        if (here.length === 0)
+            continue;
+        dropped.add(site.key);
+        // Functions that returned the call site now return the method's result:
+        // route -> handler -> oAuthClientRepository.findAll() keeps its chain.
+        for (const other of registryFunctions) {
+            if (other.queryIssues.includes(site.key))
+                other.calls.push({ name: site.name, receiver: site.receiver });
+        }
+        const sentHere = here.filter(i => i.rule === 'payload/api-response' || i.rule === 'payload/unbounded-graphql');
+        if (sentHere.length) {
+            registrySinks.push({
+                name: site.name, receiver: site.receiver, file: site.file, line: site.line,
+                ...(sentHere.every(i => i.rule === 'payload/unbounded-graphql') ? { graphql: true } : {}),
+            });
+        }
+    }
+    issues = issues.filter(i => !dropped.has(issueKey(i)));
+    const byLocation = new Map();
+    for (const issue of issues) {
+        if (issue.rule === 'payload/api-response' || issue.rule === 'payload/unbounded-graphql')
+            continue;
+        const k = issueKey(issue);
+        byLocation.set(k, [...(byLocation.get(k) ?? []), issue]);
+    }
+    const endpoints = new Map();
+    const restReached = new Set();
+    for (const sink of registrySinks) {
+        for (const key of issuesReachedBy(sink)) {
+            for (const issue of byLocation.get(key) ?? []) {
+                const list = endpoints.get(issue) ?? [];
+                list.push(`${sink.file}:${sink.line}`);
+                endpoints.set(issue, list);
+                if (!sink.graphql)
+                    restReached.add(issue);
+            }
+        }
+    }
+    for (const [issue, where] of endpoints) {
+        const unique = [...new Set(where)];
+        // Keep what the original title named: `findMany()` for a finder,
+        // `knex('spaces') query` for a builder.
+        const builder = /^(?:Returning unbounded )?((?:knex|selectFrom)\([^)]*\) query|createQueryBuilder\(\) query)/.exec(issue.title)?.[1];
+        const method = /^(\w+)\(\)/.exec(issue.title)?.[1] ?? 'query';
+        if (!restReached.has(issue)) {
+            issue.rule = 'payload/unbounded-graphql';
+            issue.severity = 'high';
+            issue.title = `${builder ?? `${method}()`} result returned by a GraphQL resolver without a row limit`;
+            issue.description = `Every matching row is loaded here and returned by the resolver at ${unique[0]}`
+                + (unique.length > 1 ? ` and ${unique.length - 1} other resolver(s)` : '')
+                + '. A GraphQL list field with no pagination arguments returns the whole table, and the response grows with it.';
+            issue.recommendation = GRAPHQL_RECOMMENDATION;
+            issue.confidence = 0.65;
+            continue;
+        }
+        issue.rule = 'payload/api-response';
+        issue.severity = 'high';
+        issue.title = builder ? `${builder} result sent in an API response without a row limit`
+            : `${method}() result sent in an API response without a row limit`;
+        issue.description =
+            `Every matching row is loaded here and sent to the client by ${unique[0]}` +
+                (unique.length > 1 ? ` and ${unique.length - 1} other endpoint(s)` : '') +
+                '. The response grows with the table, and so do memory, parse time and transfer size on both ends.';
+        issue.recommendation = 'Paginate the endpoint: accept a page size (with a maximum) and a cursor or offset, and pass them to the query as take/limit.';
+        issue.confidence = 0.65;
+    }
+    return issues;
+}
 function detectPayloadIssues(filePath, content, ast) {
     if (!ast)
+        return [];
+    if (NOT_SERVED_PATH.test(filePath.replace(/\\/g, '/')) || looksMinified(content))
         return [];
     const issues = [];
     try {
         const ctx = (0, db_call_heuristics_1.collectDbContext)(ast);
+        // api-response first: a query that reaches a response is reported once,
+        // as the more specific claim, and skipped by the other two rules below.
+        const flow = findQueriesSentToClient(ast, filePath);
+        const sentToClient = flow.sent;
+        const builders = analyzeBuilders(ast);
+        const acceptedQuery = (node) => {
+            if (builders.unbounded.has(node))
+                return true;
+            const method = node.callee?.property?.name;
+            return !!method && isCollectionQuery(node, method, ctx, true) && !isNotACollectionQuery(node);
+        };
+        for (const node of sentToClient) {
+            const builder = builders.unbounded.get(node);
+            const method = builder ? chainTitle(builder).replace(/ query$/, '') : node.callee?.property?.name;
+            const loc = node.loc?.start;
+            if (!loc || !method)
+                continue;
+            if (!acceptedQuery(node))
+                continue;
+            if (!builder && (anyArgumentHasRowLimit(node) || filterIsBoundedByKey(node)))
+                continue;
+            const what = builder ? chainTitle(builder) : `${method}()`;
+            issues.push(flow.sentGraphql.has(node) ? {
+                id: '', rule: 'payload/unbounded-graphql', category: 'payload', severity: 'high',
+                file: filePath, line: loc.line, column: loc.column,
+                title: `${what} result returned by a GraphQL resolver without a row limit`,
+                description: GRAPHQL_DESCRIPTION,
+                snippet: snippetAt(content, loc.line),
+                codeBefore: sourceOf(content, node),
+                recommendation: GRAPHQL_RECOMMENDATION,
+                studyReference: 'Study 09',
+                confidence: 0.7,
+            } : {
+                id: '', rule: 'payload/api-response', category: 'payload', severity: 'high',
+                file: filePath, line: loc.line, column: loc.column,
+                title: `${what} result sent in an API response without a row limit`,
+                description: 'Every matching row is loaded, serialised and sent to the client. The response grows with the table, and so do memory, parse time and transfer size on both ends.',
+                snippet: snippetAt(content, loc.line),
+                codeBefore: sourceOf(content, node),
+                recommendation: 'Paginate the endpoint: accept a page size (with a maximum) and a cursor or offset, and pass them to the query as take/limit.',
+                studyReference: 'Study 09',
+                confidence: 0.7,
+            });
+        }
         (0, traverse_1.default)(ast, {
             noScope: true,
             CallExpression(path) {
                 const node = path.node;
+                if (sentToClient.has(node))
+                    return;
                 const methodName = node.callee?.property?.name;
                 const loc = node.loc?.start;
                 if (!loc || !methodName)
                     return;
                 // A ReturnStatement wrapping this call is handled by the ReturnStatement
-                // visitor below (more specific "returning unbounded results" framing).
+                // visitor below (more specific "returning unbounded results" framing),
+                // including through an await: `return await x.findMany()` was reported
+                // by both rules.
                 if (path.parent?.type === 'ReturnStatement')
+                    return;
+                if (path.parent?.type === 'AwaitExpression' && path.parentPath?.parent?.type === 'ReturnStatement')
                     return;
                 const awaited = PROMISE_CONTEXT.has(path.parent?.type ?? '');
                 if (!isCollectionQuery(node, methodName, ctx, awaited))
                     return;
-                const { hasSelect, hasLimit } = optionsHaveSelectAndLimit(node.arguments?.[0]);
-                if (hasSelect && hasLimit)
+                if (isNotACollectionQuery(node))
                     return;
-                const missing = [!hasSelect ? 'field selection' : null, !hasLimit ? 'a row limit' : null]
-                    .filter(Boolean)
-                    .join(' and ');
+                if (anyArgumentHasRowLimit(node) || chainBoundsRows(path) || filterIsBoundedByKey(node))
+                    return;
                 issues.push({
                     id: '', rule: 'payload/unbounded-query', category: 'payload', severity: 'medium',
                     file: filePath, line: loc.line, column: loc.column,
-                    title: `${methodName}() without ${missing}`,
-                    description: `Database query selects all fields and/or rows without ${missing}. This can load unnecessary data and impact performance.`,
+                    title: `${methodName}() without a row limit`,
+                    description: `This query returns every matching row. As the table grows, so does the result — and the memory and response time that come with it.`,
                     snippet: snippetAt(content, loc.line),
-                    recommendation: 'Specify the required fields (select/attributes) and add pagination (limit/take).',
+                    codeBefore: sourceOf(content, node),
+                    recommendation: 'Add a row limit (take/limit) or paginate the query.',
                     studyReference: 'Study 09',
                     confidence: 0.6,
                 });
@@ -3860,10 +5086,15 @@ function detectPayloadIssues(filePath, content, ast) {
                 const methodName = argument.callee?.property?.name;
                 if (!methodName)
                     return;
+                if (sentToClient.has(argument))
+                    return;
                 if (!isCollectionQuery(argument, methodName, ctx, true))
                     return;
-                const { hasLimit } = optionsHaveSelectAndLimit(argument.arguments?.[0]);
-                if (hasLimit)
+                if (isNotACollectionQuery(argument))
+                    return;
+                // The returned call is the argument of the return (or of its await);
+                // its chain has already ended, so only the arguments can bound it.
+                if (anyArgumentHasRowLimit(argument) || filterIsBoundedByKey(argument))
                     return;
                 issues.push({
                     id: '', rule: 'payload/large-return', category: 'payload', severity: 'high',
@@ -3871,15 +5102,613 @@ function detectPayloadIssues(filePath, content, ast) {
                     title: 'Returning unbounded database results',
                     description: `Function returns '${methodName}()' results directly without pagination, which can cause large response payloads and memory pressure.`,
                     snippet: snippetAt(content, loc.line),
+                    codeBefore: sourceOf(content, argument),
                     recommendation: 'Add pagination (limit/offset or cursor-based) before returning results.',
                     studyReference: 'Study 09',
                     confidence: 0.65,
                 });
             },
         });
+        // Builder queries not already reported as api-response.
+        for (const q of builders.executed) {
+            if (sentToClient.has(q.node))
+                continue;
+            const loc = q.node.loc?.start;
+            if (!loc)
+                continue;
+            issues.push({
+                id: '', rule: q.returned ? 'payload/large-return' : 'payload/unbounded-query', category: 'payload',
+                severity: q.returned ? 'high' : 'medium',
+                file: filePath, line: loc.line, column: loc.column,
+                title: q.returned ? `Returning unbounded ${chainTitle(q.chain)} results` : `${chainTitle(q.chain)} without a row limit`,
+                description: 'This query builder returns every matching row: nothing on the chain, or on the variable holding it, limits the result.',
+                snippet: snippetAt(content, loc.line),
+                codeBefore: sourceOf(content, q.node),
+                recommendation: 'Add .limit() (or .take()), or paginate the query.',
+                studyReference: 'Study 09',
+                confidence: 0.6,
+            });
+        }
+        // Cross-file registry. Each returned query is recorded by the location of
+        // the issue it produced, so finalize() can find and convert that issue.
+        const reported = new Set(issues.map(issueKey));
+        for (const fn of flow.functions) {
+            const queryIssues = [...fn.queries]
+                .map(q => q.loc?.start ? issueKey({ file: filePath, line: q.loc.start.line }) : '')
+                .filter(k => reported.has(k));
+            const calls = [...fn.calls];
+            for (const q of fn.queries) {
+                const ref = !acceptedQuery(q) ? calleeRefOf(q) : null;
+                if (ref)
+                    calls.push(ref);
+            }
+            const self = { file: filePath, name: fn.name, cls: fn.cls };
+            registryFunctions.push({ ...self, queryIssues, calls: calls.map(c => ({ ...c, caller: self })) });
+        }
+        for (const sink of flow.sinkCalls) {
+            registrySinks.push({ ...sink, file: filePath, caller: sink.caller && { ...sink.caller, file: filePath } });
+        }
+        // Call sites of reported queries, so finalize() can tell a query from a
+        // call into the application's own method of the same name.
+        const seenSites = new Set();
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            CallExpression(p) {
+                const loc = p.node.loc?.start;
+                if (!loc)
+                    return;
+                const key = issueKey({ file: filePath, line: loc.line });
+                if (!reported.has(key) || seenSites.has(key))
+                    return;
+                const method = p.node.callee?.property?.name;
+                if (!method || !COLLECTION_FINDERS.has(method))
+                    return;
+                const ref = calleeRefOf(p.node);
+                if (!ref?.receiver)
+                    return;
+                seenSites.add(key);
+                registryCallSites.push({ ...ref, key, file: filePath, line: loc.line });
+            },
+        });
+        for (const { node, line, graphql } of flow.sinkFinders) {
+            const ref = !acceptedQuery(node) ? calleeRefOf(node) : null;
+            if (ref)
+                registrySinks.push({ ...ref, line, file: filePath, ...(graphql ? { graphql } : {}) });
+        }
     }
     catch {
         // AST traversal failed — skip
+    }
+    return issues;
+}
+// ---------------------------------------------------------------------------
+// payload/deep-include — Stage 2, item 3
+// ---------------------------------------------------------------------------
+//
+// Study 09's `deep_nested_include` fired on any call whose first argument
+// nested three objects deep, so a `where` on a JSON field counted, and so did
+// route definitions. Here the depth is counted in relations, per ORM syntax,
+// and only on an ORM read.
+/** ORM read methods that take relation options. */
+const INCLUDE_READS = new Set([
+    'findMany', 'findFirst', 'findFirstOrThrow', 'findUnique', 'findUniqueOrThrow', // Prisma, Drizzle
+    'findAll', 'findOne', 'findByPk', 'findAndCountAll', // Sequelize
+    'find', 'findBy', 'findOneBy', 'findAndCount', 'findOneOrFail', 'findOneByOrFail', // TypeORM, MikroORM
+]);
+/** Keys of a Prisma relation's own options: a `select` entry holding one of these is a relation. */
+const RELATION_OPTION_KEYS = new Set(['select', 'include', 'where', 'orderBy', 'take', 'skip', 'cursor', 'distinct', 'with', 'limit', 'offset']);
+/** Receivers whose `find*` is not an ORM: a browser driver, a test harness. */
+const NON_ORM_RECEIVERS = new Set(['testSubjects', 'browser', 'page', 'cy', 'wrapper', 'screen', 'element', '$', 'jQuery', '_', 'lodash', 'R']);
+/** Options inside a Strapi populate entry, not relations. */
+const POPULATE_OPTION_KEYS = new Set([
+    'where', 'filters', 'fields', 'select', 'orderBy', 'sort', 'limit', 'offset', 'start', 'count', 'on', 'publicationState', 'status', 'locale',
+]);
+const propValue = (obj, key) => obj?.type === 'ObjectExpression'
+    ? obj.properties.find((p) => p.type === 'ObjectProperty' && keyName(p) === key)?.value
+    : undefined;
+const dottedDepth = (s) => s.split('.').filter(Boolean).length;
+/** Prisma `include` / Drizzle `with`: each key is a relation. */
+function keyedRelationDepth(node, depth) {
+    if (node?.type !== 'ObjectExpression' || depth > 12)
+        return 0;
+    let max = 0;
+    for (const p of node.properties) {
+        if (p.type !== 'ObjectProperty')
+            continue;
+        if (keyName(p) === '_count')
+            continue;
+        const v = p.value;
+        if (v?.type === 'BooleanLiteral' && !v.value)
+            continue;
+        max = Math.max(max, 1 + (v?.type === 'ObjectExpression' ? optionsDepth(v, depth + 1) : 0));
+    }
+    return max;
+}
+/** Prisma `select`: only an entry whose value carries relation options is a relation. */
+function selectRelationDepth(node, depth) {
+    if (node?.type !== 'ObjectExpression' || depth > 12)
+        return 0;
+    let max = 0;
+    for (const p of node.properties) {
+        if (p.type !== 'ObjectProperty' || keyName(p) === '_count')
+            continue;
+        const v = p.value;
+        if (v?.type !== 'ObjectExpression')
+            continue;
+        const isRelation = v.properties.some((q) => q.type === 'ObjectProperty' && RELATION_OPTION_KEYS.has(keyName(q) ?? ''));
+        if (isRelation)
+            max = Math.max(max, 1 + optionsDepth(v, depth + 1));
+    }
+    return max;
+}
+/** Sequelize `include: [Model, { model, include: [...] }]`, or a single include object. */
+function sequelizeIncludeDepth(node, depth) {
+    if (depth > 12)
+        return 0;
+    const items = node?.type === 'ArrayExpression' ? node.elements : [node];
+    let max = 0;
+    for (const el of items) {
+        if (!el)
+            continue;
+        if (el.type === 'ObjectExpression') {
+            const all = propValue(el, 'all'), nested = propValue(el, 'nested');
+            if (all?.value === true && nested?.value === true)
+                return Infinity;
+            max = Math.max(max, 1 + optionsDepth(el, depth + 1));
+        }
+        else if (el.type === 'Identifier' || el.type === 'MemberExpression' || el.type === 'StringLiteral') {
+            max = Math.max(max, 1);
+        }
+    }
+    return max;
+}
+/** TypeORM `relations` / MikroORM `populate`: dotted strings, or nested `{ a: { b: true } }`. */
+function pathRelationDepth(node, depth) {
+    if (!node || depth > 12)
+        return 0;
+    if (node.type === 'StringLiteral')
+        return dottedDepth(node.value);
+    if (node.type === 'ArrayExpression')
+        return Math.max(0, ...node.elements.map((e) => pathRelationDepth(e, depth + 1)));
+    if (node.type === 'ObjectExpression') {
+        let max = 0;
+        for (const p of node.properties) {
+            if (p.type !== 'ObjectProperty')
+                continue;
+            const k = keyName(p) ?? '';
+            const v = p.value;
+            if (v?.type === 'BooleanLiteral' && !v.value)
+                continue;
+            // Strapi's populate object mixes relations with their options:
+            // `populate: { roles: { where, fields, populate: { ... } } }`.
+            if (POPULATE_OPTION_KEYS.has(k))
+                continue;
+            if (k === 'populate') {
+                max = Math.max(max, pathRelationDepth(v, depth + 1));
+                continue;
+            }
+            max = Math.max(max, 1 + (v?.type === 'ObjectExpression' ? pathRelationDepth(v, depth + 1) : 0));
+        }
+        return max;
+    }
+    return 0;
+}
+/** Mongoose `populate`: a path string, `{ path, populate }`, or an array of either. */
+function mongoosePopulateDepth(node, depth) {
+    if (!node || depth > 12)
+        return 0;
+    if (node.type === 'StringLiteral')
+        return node.value.trim() ? 1 : 0;
+    if (node.type === 'ArrayExpression')
+        return Math.max(0, ...node.elements.map((e) => mongoosePopulateDepth(e, depth + 1)));
+    if (node.type === 'ObjectExpression') {
+        if (!propValue(node, 'path'))
+            return 0;
+        return 1 + mongoosePopulateDepth(propValue(node, 'populate'), depth + 1);
+    }
+    return 0;
+}
+/** The deepest relation path an options object loads. */
+function optionsDepth(opts, depth = 0) {
+    if (opts?.type !== 'ObjectExpression' || depth > 12)
+        return 0;
+    let max = 0;
+    const include = propValue(opts, 'include');
+    const sequelizeObject = include?.type === 'ObjectExpression'
+        && ['model', 'association', 'all'].some(k => propValue(include, k) !== undefined);
+    if (include?.type === 'ObjectExpression' && !sequelizeObject) {
+        max = Math.max(max, keyedRelationDepth(include, depth));
+    }
+    else if (include) {
+        max = Math.max(max, sequelizeIncludeDepth(include, depth));
+    }
+    max = Math.max(max, keyedRelationDepth(propValue(opts, 'with'), depth));
+    max = Math.max(max, selectRelationDepth(propValue(opts, 'select'), depth));
+    max = Math.max(max, pathRelationDepth(propValue(opts, 'relations'), depth));
+    const populate = propValue(opts, 'populate');
+    if (populate?.type === 'ObjectExpression' && propValue(populate, 'path'))
+        max = Math.max(max, mongoosePopulateDepth(populate, depth));
+    else
+        max = Math.max(max, pathRelationDepth(populate, depth));
+    return max;
+}
+function prismaRelationTree(opts, depth = 0) {
+    if (opts?.type !== 'ObjectExpression' || depth > 12)
+        return [];
+    const out = [];
+    for (const key of ['include', 'select']) {
+        const v = propValue(opts, key);
+        if (v?.type !== 'ObjectExpression')
+            continue;
+        for (const p of v.properties) {
+            if (p.type !== 'ObjectProperty')
+                continue;
+            const field = keyName(p);
+            if (!field || field === '_count')
+                continue;
+            if (p.value?.type === 'BooleanLiteral' && !p.value.value)
+                continue;
+            out.push({ field, children: prismaRelationTree(p.value, depth + 1) });
+        }
+    }
+    return out;
+}
+/**
+ * Every field of every model with its declared type, relation fields included
+ * (`posts Post[]`, `author User? @relation(...)`). The index rules' parseSchema
+ * keeps columns only, and leaves the owning side of a relation out.
+ */
+function prismaFieldTypes(content) {
+    const models = new Map();
+    const src = content.replace(/\/\*[\s\S]*?\*\//g, '');
+    const re = /^\s*model\s+(\w+)\s*\{([\s\S]*?)^\s*\}/gm;
+    let m;
+    while ((m = re.exec(src))) {
+        const fields = new Map();
+        for (const raw of m[2].split('\n')) {
+            const line = raw.replace(/\/\/.*$/, '').trim();
+            if (!line || line.startsWith('@@'))
+                continue;
+            const f = line.match(/^(\w+)\s+(\w+(?:\[\])?\??)/);
+            if (f)
+                fields.set(f[1], { type: f[2] });
+        }
+        models.set(m[1], fields);
+    }
+    return models;
+}
+let deepIncludeRecords = [];
+let prismaModels = new Map();
+function resetDeepIncludes() {
+    deepIncludeRecords = [];
+    prismaModels = new Map();
+}
+/**
+ * With the project's schema.prisma in hand, a Prisma relation tree whose
+ * relations are all to-one loads one row per level: drop it. A tree that
+ * names a field the schema does not have is kept, since the schema read may
+ * not be the one the query runs against.
+ */
+function finalizeDeepIncludes(issues) {
+    if (!prismaModels.size)
+        return issues;
+    const byLower = new Map([...prismaModels].map(([name, fields]) => [name.toLowerCase(), fields]));
+    const records = new Map(deepIncludeRecords.map(r => [r.key, r]));
+    // 'many' if any to-many is reached, 'one' if every relation resolved to-one,
+    // 'unknown' if a field is missing from the schema.
+    const walk = (model, nodes) => {
+        const fields = byLower.get(model.toLowerCase());
+        if (!fields)
+            return 'unknown';
+        let result = 'one';
+        for (const n of nodes) {
+            const f = fields.get(n.field);
+            if (!f) {
+                result = 'unknown';
+                continue;
+            }
+            const base = f.type.replace(/[[\]?]/g, '');
+            if (!byLower.has(base.toLowerCase()))
+                continue; // a scalar in a select
+            if (f.type.includes('[]'))
+                return 'many';
+            const sub = walk(base, n.children);
+            if (sub === 'many')
+                return 'many';
+            if (sub === 'unknown')
+                result = 'unknown';
+        }
+        return result;
+    };
+    return issues.filter(issue => {
+        if (issue.rule !== 'payload/deep-include')
+            return true;
+        const r = records.get(issueKey(issue));
+        if (!r)
+            return true;
+        return walk(r.model, r.tree) !== 'one';
+    });
+}
+/** Objection's relation expressions: `'[owner.pets, children.[pets, movies.actors]]'`. */
+function relationExpressionDepth(expr) {
+    let i = 0;
+    const skip = () => { while (i < expr.length && /\s/.test(expr[i]))
+        i++; };
+    const list = () => {
+        let max = 0;
+        do {
+            skip();
+            if (expr[i] === ',')
+                i++;
+            max = Math.max(max, item());
+            skip();
+        } while (expr[i] === ',');
+        return max;
+    };
+    const item = () => {
+        skip();
+        if (expr[i] === '[') {
+            i++;
+            const d = list();
+            skip();
+            if (expr[i] === ']')
+                i++;
+            return d;
+        }
+        const start = i;
+        while (i < expr.length && /[\w$*^]/.test(expr[i]))
+            i++;
+        if (i === start)
+            return 0;
+        skip();
+        if (expr[i] === '.') {
+            i++;
+            return 1 + item();
+        }
+        return 1;
+    };
+    try {
+        return list();
+    }
+    catch {
+        return 0;
+    }
+}
+function detectDeepIncludes(filePath, content, ast) {
+    if (/\.prisma$/.test(filePath)) {
+        if (NOT_SERVED_PATH.test(filePath.replace(/\\/g, '/')))
+            return [];
+        // A monorepo can hold several schemas (trigger.dev keeps sample apps with
+        // their own `User`): merge fields by model name rather than let the last
+        // file read win.
+        for (const [name, fields] of prismaFieldTypes(content)) {
+            const into = prismaModels.get(name) ?? new Map();
+            for (const [f, info] of fields)
+                if (!into.has(f))
+                    into.set(f, info);
+            prismaModels.set(name, into);
+        }
+        return [];
+    }
+    if (!ast)
+        return [];
+    if (NOT_SERVED_PATH.test(filePath.replace(/\\/g, '/')) || looksMinified(content))
+        return [];
+    const issues = [];
+    const reported = new Set();
+    const report = (node, method, depth) => {
+        const loc = node.loc?.start;
+        if (!loc || reported.has(node))
+            return;
+        reported.add(node);
+        const levels = depth === Infinity ? 'every association, nested' : `relations ${depth} levels deep`;
+        issues.push({
+            id: '', rule: 'payload/deep-include', category: 'payload', severity: 'medium',
+            file: filePath, line: loc.line, column: loc.column,
+            title: `${method}() loads ${levels}`,
+            description: 'Each to-many level multiplies the rows per parent, so the result grows with the product of the fan-outs, not with the number of root rows.',
+            snippet: snippetAt(content, loc.line),
+            recommendation: 'Load only the relations the caller uses: select the fields it needs, give nested to-many relations their own take/limit, or fetch the deepest level in a separate, paginated query.',
+            studyReference: 'Study 09',
+            confidence: 0.55,
+        });
+    };
+    try {
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            CallExpression(path) {
+                const node = path.node;
+                const callee = node.callee;
+                if (callee?.type !== 'MemberExpression' || callee.property?.type !== 'Identifier')
+                    return;
+                const method = callee.property.name;
+                const recv = (0, db_call_heuristics_1.receiverName)(callee.object);
+                if (recv && NON_ORM_RECEIVERS.has(recv))
+                    return;
+                if (INCLUDE_READS.has(method)) {
+                    const depth = Math.max(0, ...(node.arguments ?? []).map((a) => optionsDepth(a)));
+                    if (depth >= 3) {
+                        report(node, method, depth);
+                        // prisma.booking.findUnique(...): the model is the receiver's last property.
+                        const model = callee.object?.type === 'MemberExpression' && callee.object.property?.type === 'Identifier'
+                            ? callee.object.property.name : null;
+                        const opts = node.arguments?.[0];
+                        if (model && node.loc) {
+                            deepIncludeRecords.push({ key: issueKey({ file: filePath, line: node.loc.start.line }), model, tree: prismaRelationTree(opts) });
+                        }
+                    }
+                    return;
+                }
+                // Mongoose: Model.find(q).populate({ path, populate: { ... } })
+                if (method === 'populate') {
+                    const depth = Math.max(0, ...(node.arguments ?? []).map((a) => mongoosePopulateDepth(a, 0)));
+                    if (depth >= 3)
+                        report(node, method, depth);
+                    return;
+                }
+                // Objection: .withGraphFetched('[a.[b.c]]')
+                if (method === 'withGraphFetched' || method === 'withGraphJoined' || method === 'eager') {
+                    const arg = node.arguments?.[0];
+                    const expr = arg?.type === 'StringLiteral' ? arg.value
+                        : arg?.type === 'TemplateLiteral' && arg.quasis.length === 1 ? arg.quasis[0].value.cooked : null;
+                    if (expr) {
+                        const depth = relationExpressionDepth(expr);
+                        if (depth >= 3)
+                            report(node, method, depth);
+                    }
+                }
+            },
+        });
+    }
+    catch {
+        // partial result
+    }
+    return issues;
+}
+// ---------------------------------------------------------------------------
+// payload/select-star — Stage 2, item 4
+// ---------------------------------------------------------------------------
+//
+// Study 09's `select_star` matched `SELECT * FROM` in any string: log lines,
+// SQL editor placeholders, a SQL parser's test inputs. Here the string has to
+// reach a database call.
+const SELECT_STAR = /\bselect\s+(?:distinct\s+)?(?:[\w"`]+\.)?\*\s+from\b/gi;
+/** Calls that send SQL text to a database. */
+const SQL_SINKS = new Set([
+    'query', 'raw', 'execute', 'exec', 'unsafe', 'prepare', '$queryRaw', '$queryRawUnsafe', 'queryRaw',
+    'any', 'many', 'one', 'oneOrNone', 'manyOrNone', 'all', 'get', 'each', 'queryRows', 'select',
+]);
+/** Tags that make a template a SQL query: postgres.js `sql`, Prisma.sql, drizzle's `sql`, slonik. */
+const SQL_TAGS = new Set(['sql', 'SQL', 'raw']);
+const sqlText = (n) => n.type === 'StringLiteral' ? n.value
+    // An interpolation stands for a value or a name: `${schema}.add_job(` must still read as a call.
+    : n.type === 'TemplateLiteral' ? n.quasis.map((q) => q.value.cooked ?? q.value.raw).join('__p__')
+        : '';
+/**
+ * The `SELECT *` matches in a statement whose rows come back: not inside
+ * `EXISTS (...)` or `IN (...)`, and not in an INSERT or CREATE that keeps the
+ * rows in the database.
+ */
+function returningSelectStar(text) {
+    if (/^\s*(insert|create|replace|merge)\b/i.test(text))
+        return false;
+    SELECT_STAR.lastIndex = 0;
+    let m;
+    while ((m = SELECT_STAR.exec(text))) {
+        const before = text.slice(0, m.index);
+        if (/\b(exists|in)\s*\(\s*$/i.test(before))
+            continue;
+        // FROM (subquery), FROM unnest(...), FROM add_job(...): the columns are the
+        // subquery's or the function's, not a table's.
+        const after = text.slice(m.index + m[0].length);
+        if (/^\s*(\(|[\w."$`]+\s*\()/.test(after))
+            continue;
+        return true;
+    }
+    return false;
+}
+const sinkName = (callee) => callee?.type === 'MemberExpression' && callee.property?.type === 'Identifier' ? callee.property.name
+    : callee?.type === 'Identifier' ? callee.name
+        : null;
+const tagName = (tag) => tag?.type === 'Identifier' ? tag.name
+    : tag?.type === 'MemberExpression' && tag.property?.type === 'Identifier' ? tag.property.name
+        : null;
+function detectSelectStar(filePath, content, ast) {
+    if (!ast)
+        return [];
+    if (NOT_SERVED_PATH.test(filePath.replace(/\\/g, '/')) || looksMinified(content))
+        return [];
+    if (!/select\s+(?:distinct\s+)?(?:[\w"`]+\.)?\*\s+from/i.test(content))
+        return [];
+    const issues = [];
+    const reported = new Set();
+    // Variables holding a SELECT * string, per enclosing function (or program).
+    const held = new Map();
+    const report = (literal) => {
+        const loc = literal.loc?.start;
+        if (!loc || reported.has(literal))
+            return;
+        reported.add(literal);
+        issues.push({
+            id: '', rule: 'payload/select-star', category: 'payload', severity: 'low',
+            file: filePath, line: loc.line, column: loc.column,
+            title: 'SELECT * sent to the database',
+            description: 'Every column of every row comes back, whether the caller uses it or not. Wide columns (JSON, text, blobs) travel on every call, and the payload grows each time a column is added.',
+            snippet: snippetAt(content, loc.line),
+            recommendation: 'Name the columns the caller uses.',
+            studyReference: 'Study 09',
+            confidence: 0.6,
+        });
+    };
+    // The expression a SQL string is part of: 'SELECT * FROM ' + table, (sql), `${a}`.
+    const stringRoot = (path) => {
+        let p = path;
+        while (p.parentPath && ['BinaryExpression', 'ParenthesizedExpression', 'TSAsExpression'].includes(p.parent.type))
+            p = p.parentPath;
+        return p;
+    };
+    const scopeOf = (path) => path.getFunctionParent?.()?.node ?? null;
+    try {
+        const candidates = [];
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            'StringLiteral|TemplateLiteral'(path) {
+                const text = sqlText(path.node);
+                if (!returningSelectStar(text))
+                    return;
+                candidates.push({ literal: path.node, root: stringRoot(path) });
+            },
+        });
+        if (!candidates.length)
+            return [];
+        // Pass 1: strings bound to a variable.
+        const fnOf = new Map();
+        for (const { literal, root } of candidates) {
+            const parent = root.parent;
+            if (parent?.type === 'TaggedTemplateExpression' && SQL_TAGS.has(tagName(parent.tag) ?? '')) {
+                report(literal);
+                continue;
+            }
+            if (parent?.type === 'CallExpression' && parent.arguments.includes(root.node) && SQL_SINKS.has(sinkName(parent.callee) ?? '')) {
+                // `.get` / `.all` / `.select` are too common a name to trust unless the SQL is the first argument.
+                const name = sinkName(parent.callee);
+                if (['all', 'get', 'each', 'select'].includes(name) && parent.arguments[0] !== root.node)
+                    continue;
+                report(literal);
+                continue;
+            }
+            if (parent?.type === 'VariableDeclarator' && parent.id?.type === 'Identifier' && parent.init === root.node) {
+                const fn = scopeOf(root) ?? ast.program;
+                const vars = held.get(fn) ?? new Map();
+                vars.set(parent.id.name, literal);
+                held.set(fn, vars);
+                fnOf.set(literal, fn);
+            }
+        }
+        if (!held.size)
+            return issues;
+        // Pass 2: a held string passed to a sink in the same function, or at the top level.
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            CallExpression(path) {
+                const name = sinkName(path.node.callee);
+                if (!name || !SQL_SINKS.has(name))
+                    return;
+                const fn = scopeOf(path) ?? ast.program;
+                path.node.arguments.forEach((a, i) => {
+                    if (a.type !== 'Identifier')
+                        return;
+                    if (['all', 'get', 'each', 'select'].includes(name) && i !== 0)
+                        return;
+                    const literal = held.get(fn)?.get(a.name) ?? held.get(ast.program)?.get(a.name);
+                    if (literal)
+                        report(literal);
+                });
+            },
+        });
+    }
+    catch {
+        // partial result
     }
     return issues;
 }
@@ -3887,10 +5716,31 @@ exports.payloadRules = [
     {
         id: 'payload/unbounded-query', name: 'Unbounded Query', category: 'payload', severity: 'medium',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectPayloadIssues,
+        reset: resetPayloadRegistry, finalize: finalizePayload,
     },
     {
         id: 'payload/large-return', name: 'Large Return Payload', category: 'payload', severity: 'high',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectPayloadIssues,
+        reset: resetPayloadRegistry, finalize: finalizePayload,
+    },
+    {
+        id: 'payload/api-response', name: 'Unbounded API Response', category: 'payload', severity: 'high',
+        filePatterns: JS_PATTERNS, needsAst: true, detect: detectPayloadIssues,
+        reset: resetPayloadRegistry, finalize: finalizePayload,
+    },
+    {
+        id: 'payload/unbounded-graphql', name: 'Unbounded GraphQL List', category: 'payload', severity: 'high',
+        filePatterns: JS_PATTERNS, needsAst: true, detect: detectPayloadIssues,
+        reset: resetPayloadRegistry, finalize: finalizePayload,
+    },
+    {
+        id: 'payload/deep-include', name: 'Deep Relation Include', category: 'payload', severity: 'medium',
+        filePatterns: [...JS_PATTERNS, '*.prisma'], needsAst: true, detect: detectDeepIncludes,
+        reset: resetDeepIncludes, finalize: finalizeDeepIncludes,
+    },
+    {
+        id: 'payload/select-star', name: 'SELECT * Query', category: 'payload', severity: 'low',
+        filePatterns: JS_PATTERNS, needsAst: true, detect: detectSelectStar,
     },
 ];
 //# sourceMappingURL=payload-rules.js.map
@@ -4818,6 +6668,169 @@ exports.FitnessCalculator = FitnessCalculator;
 
 /***/ }),
 
+/***/ 4693:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Missing Index Solution Generator
+ *
+ * Every index finding names one model and the exact columns an index should
+ * lead with, and carries that model's block from schema.prisma as
+ * `codeBefore`. The solution is that block with one `@@index` line added —
+ * the reader's own model, fields, comments and indentation, ready to paste
+ * over the original. It is the only thing this generator produces.
+ *
+ * Why not port the backend version (`missing-index-solution-generator.ts`,
+ * private copy):
+ *
+ *   It was written for a different detector. It keyed on issue types the
+ *   core-engine rules do not emit, and guessed the model and fields from the
+ *   query text. When a guess failed it fell back to `FIELD_NAME`,
+ *   `TABLE_NAME` and `COLUMN_NAME` and still reported success — a template
+ *   that reads as a fix and cannot be applied. Here the rule has already
+ *   decided the model and the columns from the parsed schema, so there is
+ *   nothing to guess, and when the pieces do not line up the answer is no
+ *   solution at all.
+ *
+ *   It also offered Sequelize, TypeORM, Mongoose and raw-SQL variants. The
+ *   index rules only read `schema.prisma`, so those strategies could never be
+ *   reached by a real finding.
+ *
+ * What is deliberately left out: a `CREATE INDEX CONCURRENTLY` migration.
+ * Adding an index to a large, busy Postgres table with a plain `CREATE INDEX`
+ * blocks writes while it builds, and that is worth knowing — but the right SQL
+ * depends on the provider, the mapped table and column names, and how the
+ * project runs its migrations, none of which a single finding can see. One
+ * line of guidance goes in the explanation instead of SQL that may not apply.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.IndexSolutionGenerator = void 0;
+exports.addIndexToModel = addIndexToModel;
+const base_generator_1 = __nccwpck_require__(8788);
+const index_rules_1 = __nccwpck_require__(1548);
+class IndexSolutionGenerator extends base_generator_1.BaseSolutionGenerator {
+    constructor() {
+        super(...arguments);
+        this.name = 'Missing Index Solution Generator';
+    }
+    async generateSolutions(issue, _context) {
+        if (issue.category !== 'index')
+            return [];
+        const block = issue.codeBefore || '';
+        if (!block.trim())
+            return [];
+        const wanted = (0, index_rules_1.parseIndexRecommendation)(issue.recommendation);
+        if (!wanted)
+            return [];
+        const patched = addIndexToModel(block, wanted.model, wanted.columns);
+        if (!patched)
+            return [];
+        const reasoning = [
+            `Add @@index([${wanted.columns.join(', ')}]) to model ${wanted.model} in schema.prisma, then create a migration with \`npx prisma migrate dev\`.`,
+            wanted.columns.length > 1
+                ? 'Column order matters: an index serves a filter only on a leading prefix of its columns. Put columns compared with equality before columns compared with a range (gt, lt, gte, lte).'
+                : null,
+            'On a large table in production, a plain CREATE INDEX blocks writes while it builds. On Postgres, generate the migration with --create-only and build the index CONCURRENTLY instead.',
+        ].filter(Boolean).join('\n');
+        return [
+            this.createSolution(issue.id || '', 1, 'prisma-schema-index', patched, 95, reasoning, 'low'),
+        ];
+    }
+}
+exports.IndexSolutionGenerator = IndexSolutionGenerator;
+/**
+ * Return `block` with `@@index([columns])` added before its closing brace, or
+ * null if the block is not the named model, a column is not a field of it, or
+ * the index is already there.
+ *
+ * Returning null is the point of most of this function. Each check stands
+ * between the reader and a suggestion that would fail `prisma validate`, or
+ * that would add an index they already have.
+ */
+function addIndexToModel(block, model, columns) {
+    const eol = block.includes('\r\n') ? '\r\n' : '\n';
+    const lines = block.split(/\r?\n/);
+    const header = lines[0].match(/^\s*model\s+(\w+)\s*\{/);
+    if (!header || header[1] !== model)
+        return null;
+    const closeIdx = lines.length - 1;
+    if (closeIdx < 1 || !/^\s*\}\s*$/.test(lines[closeIdx]))
+        return null;
+    const body = lines.slice(1, closeIdx);
+    const code = body.map(stripLineComment);
+    // Every column must be declared as a field in this block. The rule found
+    // them in the parsed model, so a miss means the block and the finding have
+    // come apart — suggesting an index on a field that is not there would fail
+    // `prisma validate`.
+    const fieldNames = new Set();
+    for (const line of code) {
+        const field = line.match(/^\s*(\w+)\s+[\w[\]?]+/);
+        if (field && !line.trim().startsWith('@@'))
+            fieldNames.add(field[1]);
+    }
+    if (!columns.every(c => fieldNames.has(c)))
+        return null;
+    const indexLine = `@@index([${columns.join(', ')}])`;
+    const target = columns.join(',');
+    const existing = code.some(line => {
+        const m = line.match(/@@index\s*\(\s*(?:fields\s*:\s*)?\[([^\]]+)\]/);
+        return !!m && m[1].split(',').map(c => c.trim().split('(')[0].trim()).join(',') === target;
+    });
+    if (existing)
+        return null;
+    // Match the block's own style: the indentation of its existing @@ lines if
+    // it has any, otherwise that of its fields.
+    const attrIdx = lastIndexWhere(code, l => /^\s*@@/.test(l));
+    const fieldIdx = code.findIndex(l => /^\s*\w+\s+[\w[\]?]+/.test(l));
+    const styleLine = attrIdx >= 0 ? body[attrIdx] : fieldIdx >= 0 ? body[fieldIdx] : '';
+    const indent = styleLine.match(/^\s*/)[0];
+    const out = [...body];
+    if (attrIdx >= 0) {
+        // Alongside the other block attributes.
+        out.splice(attrIdx + 1, 0, indent + indexLine);
+    }
+    else {
+        // After the last non-blank line, separated from the fields by a blank
+        // line — the layout `prisma format` produces.
+        const last = lastIndexWhere(out, l => l.trim() !== '');
+        out.splice(last + 1, out.length - last - 1, '', indent + indexLine);
+    }
+    return [lines[0], ...out, lines[closeIdx]].join(eol);
+}
+/** A Prisma line with any `//` comment removed, respecting quoted strings. */
+function stripLineComment(line) {
+    let inString = false;
+    for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (inString) {
+            if (c === '\\') {
+                i++;
+                continue;
+            }
+            if (c === '"')
+                inString = false;
+        }
+        else if (c === '"') {
+            inString = true;
+        }
+        else if (c === '/' && line[i + 1] === '/') {
+            return line.slice(0, i);
+        }
+    }
+    return line;
+}
+function lastIndexWhere(items, test) {
+    for (let i = items.length - 1; i >= 0; i--)
+        if (test(items[i]))
+            return i;
+    return -1;
+}
+//# sourceMappingURL=index-generator.js.map
+
+/***/ }),
+
 /***/ 7653:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
@@ -4826,24 +6839,33 @@ exports.FitnessCalculator = FitnessCalculator;
 /**
  * Solution generation.
  *
- * Attaches suggested rewrites to findings. One generator per category; only
- * N+1 is ported so far, and a category without a generator simply gets no
- * solutions rather than a generic template.
+ * Attaches suggested rewrites to findings. One generator per category; N+1,
+ * missing index and payload are covered so far, and a category without a
+ * generator simply gets no solutions rather than a generic template.
  *
  * Generators read `DiagnosticIssue.codeBefore` — the whole loop or construct,
  * not the reported line — so the suggestion comes back with the reader's own
  * variable names in it.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.extractVariables = exports.parseCodeSafe = exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = void 0;
+exports.extractVariables = exports.parseCodeSafe = exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.DEFAULT_ROW_LIMIT = exports.addRowLimit = exports.PayloadSolutionGenerator = exports.addIndexToModel = exports.IndexSolutionGenerator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = void 0;
 exports.hasSolutionGenerator = hasSolutionGenerator;
 exports.generateSolutionsFor = generateSolutionsFor;
 exports.attachSolutions = attachSolutions;
 const n1_generator_1 = __nccwpck_require__(6500);
+const index_generator_1 = __nccwpck_require__(4693);
+const payload_generator_1 = __nccwpck_require__(9031);
 var base_generator_1 = __nccwpck_require__(8788);
 Object.defineProperty(exports, "BaseSolutionGenerator", ({ enumerable: true, get: function () { return base_generator_1.BaseSolutionGenerator; } }));
 var n1_generator_2 = __nccwpck_require__(6500);
 Object.defineProperty(exports, "N1SolutionGenerator", ({ enumerable: true, get: function () { return n1_generator_2.N1SolutionGenerator; } }));
+var index_generator_2 = __nccwpck_require__(4693);
+Object.defineProperty(exports, "IndexSolutionGenerator", ({ enumerable: true, get: function () { return index_generator_2.IndexSolutionGenerator; } }));
+Object.defineProperty(exports, "addIndexToModel", ({ enumerable: true, get: function () { return index_generator_2.addIndexToModel; } }));
+var payload_generator_2 = __nccwpck_require__(9031);
+Object.defineProperty(exports, "PayloadSolutionGenerator", ({ enumerable: true, get: function () { return payload_generator_2.PayloadSolutionGenerator; } }));
+Object.defineProperty(exports, "addRowLimit", ({ enumerable: true, get: function () { return payload_generator_2.addRowLimit; } }));
+Object.defineProperty(exports, "DEFAULT_ROW_LIMIT", ({ enumerable: true, get: function () { return payload_generator_2.DEFAULT_ROW_LIMIT; } }));
 var fitness_calculator_1 = __nccwpck_require__(318);
 Object.defineProperty(exports, "FitnessCalculator", ({ enumerable: true, get: function () { return fitness_calculator_1.FitnessCalculator; } }));
 Object.defineProperty(exports, "WEIGHT_PRESETS", ({ enumerable: true, get: function () { return fitness_calculator_1.WEIGHT_PRESETS; } }));
@@ -4854,6 +6876,8 @@ Object.defineProperty(exports, "parseCodeSafe", ({ enumerable: true, get: functi
 Object.defineProperty(exports, "extractVariables", ({ enumerable: true, get: function () { return code_transformer_1.extractVariables; } }));
 const GENERATORS = {
     n1: () => new n1_generator_1.N1SolutionGenerator(),
+    index: () => new index_generator_1.IndexSolutionGenerator(),
+    payload: () => new payload_generator_1.PayloadSolutionGenerator(),
 };
 /** True when a generator exists for this finding's category. */
 function hasSolutionGenerator(category) {
@@ -5272,6 +7296,327 @@ exports.N1SolutionGenerator = N1SolutionGenerator;
 
 /***/ }),
 
+/***/ 9031:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Payload Solution Generator
+ *
+ * Held to the Missing Index standard: paste the suggestion over the query and
+ * the finding it came from is gone. The row-limit findings (`unbounded-query`,
+ * `large-return`, `api-response`, `unbounded-graphql`) carry the query exactly
+ * as written in `codeBefore`, and the suggestion is that query with a row
+ * limit in the form its library takes:
+ *
+ *   Prisma            findMany({ ..., take: 100 })
+ *   Drizzle           db.query.x.findMany({ ..., limit: 100 })
+ *   Sequelize         findAll({ ..., limit: 100 })
+ *   TypeORM           repo.find({ ..., take: 100 }), manager.find(E, { ..., take: 100 })
+ *   MikroORM          em.find(E, where, { ..., limit: 100 })
+ *   Mongoose / Mongo  Model.find(filter).limit(100)
+ *   knex              knex('t')....limit(100)
+ *   TypeORM builder   qb....take(100).getMany()   (.limit for getRawMany)
+ *   Kysely            db.selectFrom('t')....limit(100).execute()
+ *
+ * Nothing is produced when the library cannot be told from the code: a
+ * guessed option name that the library ignores would look like a fix and
+ * change nothing.
+ *
+ * What is deliberately left out:
+ *
+ * - `deep-include`. A per-relation `take` bounds the rows but not the depth
+ *   the rule counts, so the finding would stay; and which relations the caller
+ *   can drop is not visible in the query.
+ * - `select-star`. Naming the columns needs the table's schema and every use
+ *   of the result.
+ *
+ * A fixed limit is a cap, not pagination. The explanation says so, and for
+ * an endpoint says what the next step is: accept a page size and a cursor from
+ * the request and pass them on.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.PayloadSolutionGenerator = exports.DEFAULT_ROW_LIMIT = void 0;
+exports.builderKindOf = builderKindOf;
+exports.addRowLimit = addRowLimit;
+const parser_1 = __nccwpck_require__(1755);
+const base_generator_1 = __nccwpck_require__(8788);
+/** The cap the suggestion writes. A round number a reader will replace. */
+exports.DEFAULT_ROW_LIMIT = 100;
+const ROW_LIMIT_RULES = new Set([
+    'payload/unbounded-query', 'payload/large-return', 'payload/api-response', 'payload/unbounded-graphql',
+]);
+const TYPEORM_OPTION_KEYS = new Set([
+    'where', 'relations', 'order', 'select', 'skip', 'cache', 'withDeleted', 'lock', 'loadRelationIds', 'loadEagerRelations', 'relationLoadStrategy',
+]);
+const BUILDER_TERMINALS = new Set(['getMany', 'getRawMany', 'getManyAndCount', 'getRawAndEntities']);
+class PayloadSolutionGenerator extends base_generator_1.BaseSolutionGenerator {
+    constructor() {
+        super(...arguments);
+        this.name = 'Payload Solution Generator';
+    }
+    async generateSolutions(issue, _context) {
+        if (issue.category !== 'payload' || !ROW_LIMIT_RULES.has(issue.rule))
+            return [];
+        const before = issue.codeBefore ?? '';
+        if (!before.trim())
+            return [];
+        const edit = addRowLimit(before, exports.DEFAULT_ROW_LIMIT, builderKindOf(issue.title));
+        if (!edit)
+            return [];
+        const endpoint = issue.rule === 'payload/api-response' || issue.rule === 'payload/unbounded-graphql';
+        const reasoning = [
+            `Cap the query at ${exports.DEFAULT_ROW_LIMIT} rows (${edit.library}).`,
+            `This is a cap, not pagination: rows past the first ${exports.DEFAULT_ROW_LIMIT} are no longer returned, so check what the caller does with them before applying it.`,
+            endpoint
+                ? (issue.rule === 'payload/unbounded-graphql'
+                    ? 'For a list field, add pagination arguments (first/after, or limit/offset with a maximum) and pass them to the query in place of the constant.'
+                    : 'For an endpoint, accept a page size (with a maximum) and a cursor or offset from the request, pass them to the query in place of the constant, and return the cursor for the next page.')
+                : 'If every row is needed (an export, a batch job), keep the limit and loop over pages with a cursor or offset instead of loading the table at once.',
+        ].join('\n');
+        return [this.createSolution(issue.id || '', 1, 'payload-row-limit', edit.code, 80, reasoning, 'medium')];
+    }
+}
+exports.PayloadSolutionGenerator = PayloadSolutionGenerator;
+/**
+ * The rule names the builder in the title: `knex('t') query`,
+ * `createQueryBuilder() query`, `selectFrom('t') query`. A chain held in a
+ * variable (`query.where(...)`) does not show its root, so the title is what
+ * says which library it is.
+ */
+function builderKindOf(title) {
+    if (/\bknex\(/.test(title))
+        return 'knex';
+    if (/createQueryBuilder\(\) query/.test(title))
+        return 'typeorm-qb';
+    if (/selectFrom\(/.test(title))
+        return 'kysely';
+    return undefined;
+}
+/**
+ * The query with a row limit added, or null when its library cannot be told
+ * from the code or the shape is not one this can rewrite.
+ */
+function addRowLimit(code, limit, builder) {
+    let expr;
+    try {
+        // errorRecovery: `this.#client.x.findMany()` is a private name, which only
+        // parses inside a class; the query text alone is still a well-formed call.
+        expr = (0, parser_1.parseExpression)(code, { plugins: ['typescript', 'jsx'], errorRecovery: true });
+        if (expr?.errors?.some((e) => !/private name/i.test(String(e?.message ?? e?.reasonCode ?? ''))))
+            return null;
+    }
+    catch {
+        return null;
+    }
+    // The parser's offsets are relative to `code`, which is what the edits use.
+    while (expr?.type === 'AwaitExpression' || expr?.type === 'TSAsExpression' || expr?.type === 'ParenthesizedExpression') {
+        expr = expr.argument ?? expr.expression;
+    }
+    if (expr?.type !== 'CallExpression' || expr.callee?.type !== 'MemberExpression' || expr.callee.property?.type !== 'Identifier') {
+        return null;
+    }
+    const method = expr.callee.property.name;
+    const chain = chainMethods(expr);
+    const insertAt = (pos, text) => code.slice(0, pos) + text + code.slice(pos);
+    const append = (text) => insertAt(expr.end, text);
+    // TypeORM query builder: the limit goes before the terminal call, or at the
+    // end of a chain that is held in a variable and run later.
+    if (chain.includes('createQueryBuilder') || builder === 'typeorm-qb') {
+        if (BUILDER_TERMINALS.has(method)) {
+            const take = method === 'getRawMany' || method === 'getRawAndEntities' ? 'limit' : 'take';
+            return { code: insertAt(expr.callee.object.end, `.${take}(${limit})`), library: `TypeORM query builder, .${take}()` };
+        }
+        if (builder !== 'typeorm-qb' || method === 'execute')
+            return null;
+        return { code: append(`.take(${limit})`), library: 'TypeORM query builder, .take()' };
+    }
+    // Kysely: before execute(), or at the end of a held chain.
+    if (chain.includes('selectFrom') || builder === 'kysely') {
+        if (method === 'execute')
+            return { code: insertAt(expr.callee.object.end, `.limit(${limit})`), library: 'Kysely, .limit()' };
+        if (builder !== 'kysely')
+            return null;
+        return { code: append(`.limit(${limit})`), library: 'Kysely, .limit()' };
+    }
+    // A knex chain the rule identified, including one continued from a variable.
+    if (builder === 'knex')
+        return { code: append(`.limit(${limit})`), library: 'knex, .limit()' };
+    const recv = expr.callee.object;
+    const recvName = receiverName(recv);
+    const args = expr.arguments ?? [];
+    switch (method) {
+        case 'findMany': {
+            // db.query.users.findMany(): Drizzle's relational API takes `limit`.
+            const drizzle = memberPath(recv).includes('query');
+            return withOption(code, expr, 0, drizzle ? 'limit' : 'take', limit, drizzle ? 'Drizzle, limit' : 'Prisma, take');
+        }
+        case 'findAll':
+        case 'findAndCountAll':
+            return withOption(code, expr, 0, 'limit', limit, 'Sequelize, limit');
+        case 'find':
+        case 'findAndCount': {
+            // MikroORM: em.find(Entity, where, options)
+            if (recvName && /^(em|entityManager|orm)$/i.test(recvName) && args.length >= 1 && isEntityRef(args[0])) {
+                return withOption(code, expr, 2, 'limit', limit, 'MikroORM, limit', args.length < 2);
+            }
+            // TypeORM EntityManager: manager.find(Entity, options)
+            if (args.length >= 1 && isEntityRef(args[0]) && recvName && /(manager|^trx|^tx|transaction)$/i.test(recvName)) {
+                return withOption(code, expr, 1, 'take', limit, 'TypeORM, take');
+            }
+            // TypeORM repository: repo.find(options)
+            const typeormOptions = args[0]?.type === 'ObjectExpression'
+                && args[0].properties.some((p) => TYPEORM_OPTION_KEYS.has(keyOf(p) ?? ''));
+            if ((recvName && /(repository|repo)$/i.test(recvName) && (args.length === 0 || typeormOptions)) || typeormOptions) {
+                return withOption(code, expr, 0, 'take', limit, 'TypeORM, take');
+            }
+            if (method === 'findAndCount')
+                return null;
+            // Mongoose model or a native MongoDB collection: a cursor, limited by chaining.
+            if (isMongoReceiver(recv))
+                return { code: append(`.limit(${limit})`), library: 'MongoDB, .limit()' };
+            return null;
+        }
+        default:
+            break;
+    }
+    // A knex chain: knex('t').where(...), this.database(T).select(...).
+    if (isKnexChain(expr))
+        return { code: append(`.limit(${limit})`), library: 'knex, .limit()' };
+    return null;
+}
+/** Add `key: limit` to the options object at argument `index`, creating it if absent. */
+function withOption(code, call, index, key, limit, library, padWhere = false) {
+    const args = call.arguments ?? [];
+    const prop = `${key}: ${limit}`;
+    const arg = args[index];
+    if (!arg) {
+        if (args.length < index) {
+            // em.find(Entity) -> em.find(Entity, {}, { limit })
+            if (!padWhere || args.length !== index - 1)
+                return null;
+            const last = args[args.length - 1];
+            return { code: code.slice(0, last.end) + `, {}, { ${prop} }` + code.slice(last.end), library };
+        }
+        if (args.length === 0) {
+            // findMany() -> findMany({ take: 100 }); the parentheses are the call's last two characters.
+            const close = code.lastIndexOf(')', call.end - 1);
+            if (close < call.callee.end)
+                return null;
+            return { code: code.slice(0, close) + `{ ${prop} }` + code.slice(close), library };
+        }
+        const last = args[args.length - 1];
+        return { code: code.slice(0, last.end) + `, { ${prop} }` + code.slice(last.end), library };
+    }
+    if (arg.type === 'ObjectExpression') {
+        if (arg.properties.length === 0) {
+            return { code: code.slice(0, arg.start) + `{ ${prop} }` + code.slice(arg.end), library };
+        }
+        const lastProp = arg.properties[arg.properties.length - 1];
+        const between = code.slice(lastProp.end, arg.end - 1);
+        if (between.includes(',')) {
+            // A trailing comma: add the option after it, on the same layout.
+            const comma = lastProp.end + between.indexOf(',') + 1;
+            const multiline = /\n/.test(code.slice(arg.start, arg.end));
+            const indent = multiline ? (code.slice(0, lastProp.start).match(/\n([ \t]*)$/)?.[1] ?? '  ') : '';
+            return { code: code.slice(0, comma) + (multiline ? `\n${indent}${prop},` : ` ${prop},`) + code.slice(comma), library };
+        }
+        return { code: code.slice(0, lastProp.end) + `, ${prop}` + code.slice(lastProp.end), library };
+    }
+    if (arg.type === 'SpreadElement' || arg.type === 'ArrowFunctionExpression' || arg.type === 'FunctionExpression')
+        return null;
+    // findMany(args) -> findMany({ ...args, take: 100 })
+    const inner = code.slice(arg.start, arg.end);
+    return { code: code.slice(0, arg.start) + `{ ...${inner}, ${prop} }` + code.slice(arg.end), library };
+}
+function chainMethods(call) {
+    const out = [];
+    let n = call;
+    for (let i = 0; i < 40 && n; i++) {
+        if (n.type === 'CallExpression') {
+            if (n.callee?.type === 'MemberExpression' && n.callee.property?.type === 'Identifier')
+                out.push(n.callee.property.name);
+            n = n.callee?.type === 'MemberExpression' ? n.callee.object : null;
+        }
+        else if (n.type === 'MemberExpression') {
+            n = n.object;
+        }
+        else
+            break;
+    }
+    return out;
+}
+function memberPath(node) {
+    const out = [];
+    let n = node;
+    for (let i = 0; i < 12 && n; i++) {
+        if (n.type === 'MemberExpression') {
+            if (n.property?.type === 'Identifier')
+                out.push(n.property.name);
+            n = n.object;
+        }
+        else if (n.type === 'Identifier') {
+            out.push(n.name);
+            break;
+        }
+        else
+            break;
+    }
+    return out;
+}
+function receiverName(node) {
+    if (node?.type === 'Identifier')
+        return node.name;
+    if (node?.type === 'MemberExpression' && node.property?.type === 'Identifier')
+        return node.property.name;
+    return null;
+}
+const keyOf = (p) => p?.key?.type === 'Identifier' ? p.key.name : p?.key?.type === 'StringLiteral' ? p.key.value : null;
+/** `User`, `entities.User`, `'User'`: the entity argument of an EntityManager call. */
+const isEntityRef = (n) => (n?.type === 'Identifier' && /^[A-Z]/.test(n.name))
+    || (n?.type === 'MemberExpression' && n.property?.type === 'Identifier' && /^[A-Z]/.test(n.property.name))
+    || n?.type === 'StringLiteral';
+/** `Model.find`, `this.userModel.find`, `db.collection('x').find`, `collections.Orders.find`. */
+function isMongoReceiver(recv) {
+    if (recv?.type === 'Identifier')
+        return /^[A-Z]/.test(recv.name);
+    if (recv?.type === 'MemberExpression' && recv.property?.type === 'Identifier') {
+        return /^[A-Z]/.test(recv.property.name) || /Model$/.test(recv.property.name);
+    }
+    // db.collection('x').find(), getCollection(NAME).find()
+    if (recv?.type === 'CallExpression') {
+        const name = recv.callee?.type === 'MemberExpression' ? recv.callee.property?.name
+            : recv.callee?.type === 'Identifier' ? recv.callee.name : null;
+        return !!name && /collection$/i.test(name);
+    }
+    return false;
+}
+/** The chain is rooted at a knex handle called with a table, or starts at knex.select/from. */
+function isKnexChain(call) {
+    let n = call;
+    for (let i = 0; i < 40 && n; i++) {
+        if (n.type !== 'CallExpression')
+            return false;
+        const c = n.callee;
+        if (c?.type === 'Identifier' || (c?.type === 'MemberExpression' && c.object?.type === 'ThisExpression')
+            || (c?.type === 'MemberExpression' && c.property?.name === 'knex')) {
+            return (n.arguments?.length ?? 0) >= 1;
+        }
+        if (c?.type !== 'MemberExpression')
+            return false;
+        // knex.select(...), this.knex.from(...), trx.queryBuilder()
+        if (['select', 'from', 'table', 'queryBuilder'].includes(c.property?.name)
+            && (c.object?.type === 'Identifier' || (c.object?.type === 'MemberExpression' && c.object.object?.type === 'ThisExpression')))
+            return true;
+        n = c.object;
+    }
+    return false;
+}
+//# sourceMappingURL=payload-generator.js.map
+
+/***/ }),
+
 /***/ 2293:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -5316,7 +7661,8 @@ exports.filterIssuesByFiles = filterIssuesByFiles;
 exports.filterReportByFiles = filterReportByFiles;
 const github = __importStar(__nccwpck_require__(2146));
 /**
- * Fetch the set of files changed in the current pull request.
+ * Fetch the set of files changed in the current pull request, as paths
+ * relative to the repository root. Paginates: the API caps per_page at 100.
  * Returns an empty set when not running in a PR context.
  */
 async function getChangedFiles(context, token) {
@@ -5324,27 +7670,35 @@ async function getChangedFiles(context, token) {
     if (!pr)
         return new Set();
     const octokit = github.getOctokit(token);
-    const { data: files } = await octokit.rest.pulls.listFiles({
+    const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
         ...context.repo,
         pull_number: pr.number,
-        per_page: 300,
+        per_page: 100,
     });
     return new Set(files.map(f => f.filename));
+}
+/**
+ * Issue paths are relative to the scanned directory (the `path` input);
+ * PR file paths are relative to the repo root. `scanPrefix` is the scanned
+ * directory relative to the repo root ('' when scanning the root).
+ */
+function repoPath(issue, scanPrefix) {
+    return scanPrefix ? `${scanPrefix}/${issue.file}` : issue.file;
 }
 /**
  * Filter a list of issues down to only those in the given set of files.
  * Used to scope both the current-scan report and a baseline diff to the
  * same set of changed files, so summary counts and itemized lists agree.
  */
-function filterIssuesByFiles(issues, files) {
-    return issues.filter(issue => files.has(issue.file));
+function filterIssuesByFiles(issues, files, scanPrefix = '') {
+    return issues.filter(issue => files.has(repoPath(issue, scanPrefix)));
 }
 /**
  * Filter an analysis report to only include issues in the given changed
  * files, rebuilding its summary counts to match the filtered issue list.
  */
-function filterReportByFiles(report, files) {
-    const filtered = filterIssuesByFiles(report.issues, files);
+function filterReportByFiles(report, files, scanPrefix = '') {
+    const filtered = filterIssuesByFiles(report.issues, files, scanPrefix);
     const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
     const byCategory = {
         n1: 0, 'blocking-io': 0, memory: 0, loop: 0, index: 0,
@@ -5417,39 +7771,99 @@ const core_engine_1 = __nccwpck_require__(4850);
 const pr_comment_1 = __nccwpck_require__(2327);
 const diff_filter_1 = __nccwpck_require__(2293);
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
+const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+function readChoice(name, fallback, allowed) {
+    const value = (core.getInput(name) || fallback).trim().toLowerCase();
+    if (!allowed.includes(value)) {
+        throw new Error(`Invalid '${name}' input: '${value}'. Must be one of: ${allowed.join(', ')}.`);
+    }
+    return value;
+}
+/**
+ * Find the baseline snapshot. The CLI (`code-evolution-lab scan [path]`) writes
+ * it to .codeevolution/ in the directory it was run from, i.e. the repo root;
+ * older setups may have it next to the scanned path instead.
+ */
+function findBaseline(workspace, targetPath) {
+    const candidates = [
+        (0, path_1.join)(workspace, '.codeevolution', 'baseline.json'),
+        (0, path_1.join)(targetPath, '.codeevolution', 'baseline.json'),
+    ];
+    return candidates.find(p => (0, fs_1.existsSync)(p));
+}
+function loadBaseline(path) {
+    try {
+        const parsed = JSON.parse((0, fs_1.readFileSync)(path, 'utf-8'));
+        if (!Array.isArray(parsed?.issueHashes) || !Array.isArray(parsed?.issues)) {
+            throw new Error('missing issueHashes/issues');
+        }
+        return parsed;
+    }
+    catch (err) {
+        core.warning(`Ignoring baseline at ${path}: ${err.message}`);
+        return undefined;
+    }
+}
+/** Create the action's PR comment, or update it if a previous run left one. */
+async function upsertComment(token, prNumber, body) {
+    const { context } = github;
+    const octokit = github.getOctokit(token);
+    const comments = await octokit.paginate(octokit.rest.issues.listComments, {
+        ...context.repo,
+        issue_number: prNumber,
+        per_page: 100,
+    });
+    const existing = comments.find(c => c.body?.includes(pr_comment_1.COMMENT_MARKER));
+    if (existing) {
+        await octokit.rest.issues.updateComment({ ...context.repo, comment_id: existing.id, body });
+        core.info('PR comment updated');
+    }
+    else {
+        await octokit.rest.issues.createComment({ ...context.repo, issue_number: prNumber, body });
+        core.info('PR comment posted');
+    }
+}
 async function run() {
     try {
         const inputPath = core.getInput('path') || '.';
-        const severity = core.getInput('severity') || 'medium';
-        const failOn = core.getInput('fail-on') || 'critical';
+        const severity = readChoice('severity', 'medium', SEVERITIES);
+        const failOn = readChoice('fail-on', 'critical', [...SEVERITIES, 'none']);
         const useBaseline = core.getInput('baseline') === 'true';
         const postComment = core.getInput('comment') === 'true';
+        const token = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
+        const workspace = (0, path_1.resolve)(process.env.GITHUB_WORKSPACE || '.');
         const targetPath = (0, path_1.resolve)(inputPath);
+        if (!(0, fs_1.existsSync)(targetPath) || !(0, fs_1.statSync)(targetPath).isDirectory()) {
+            throw new Error(`'path' input '${inputPath}' is not a directory (resolved to ${targetPath}).`);
+        }
         const outputDir = (0, path_1.join)(targetPath, '.codeevolution');
+        // Issue paths are relative to targetPath; PR file paths are relative to
+        // the repo root. This prefix maps one onto the other.
+        const rel = (0, path_1.relative)(workspace, targetPath).replace(/\\/g, '/');
+        const scanPrefix = rel.startsWith('..') || (0, path_1.isAbsolute)(rel) ? '' : rel;
         core.info(`Scanning: ${targetPath}`);
         core.info(`Min severity: ${severity}`);
         const registry = new core_engine_1.RuleRegistry();
         registry.registerAll((0, core_engine_1.getAllRules)());
-        const report = (0, core_engine_1.analyzeDirectory)({
-            targetPath,
-            minSeverity: severity,
-        }, registry);
+        const report = (0, core_engine_1.analyzeDirectory)({ targetPath, minSeverity: severity }, registry);
         // Write output files
         (0, core_engine_1.writeJsonReport)(report, outputDir);
         (0, core_engine_1.writeMarkdownReport)(report, outputDir);
         (0, core_engine_1.writeScoreFile)(report, outputDir);
-        // Set outputs
+        // Set outputs (baseline counts default to 0 so `> 0` checks in workflows work)
         core.setOutput('issues-found', report.summary.issuesFound);
         core.setOutput('confidence-score', report.summary.confidenceScore);
+        core.setOutput('new-issues', 0);
+        core.setOutput('resolved-issues', 0);
         // Baseline comparison (repo-wide — tracks overall drift since the baseline was captured)
         let diff;
-        const baselinePath = (0, path_1.join)(outputDir, 'baseline.json');
-        if (useBaseline && (0, fs_1.existsSync)(baselinePath)) {
-            const baseline = JSON.parse((0, fs_1.readFileSync)(baselinePath, 'utf-8'));
+        const baselinePath = useBaseline ? findBaseline(workspace, targetPath) : undefined;
+        const baseline = baselinePath ? loadBaseline(baselinePath) : undefined;
+        if (baseline) {
             diff = (0, core_engine_1.compareBaseline)(baseline, report);
             core.setOutput('new-issues', diff.newIssues.length);
             core.setOutput('resolved-issues', diff.resolvedIssues.length);
-            core.info(`Baseline comparison: +${diff.newIssues.length} new, -${diff.resolvedIssues.length} resolved`);
+            core.info(`Baseline ${(0, path_1.relative)(workspace, baselinePath)}: +${diff.newIssues.length} new, -${diff.resolvedIssues.length} resolved`);
         }
         // Scope everything PR-facing (comment + fail check) to the files this PR
         // actually changed, so a pre-existing issue elsewhere in the repo can't
@@ -5457,38 +7871,36 @@ async function run() {
         // matches its itemized lists.
         let filteredReport = report;
         let prDiff = diff;
-        const context = github.context;
-        if (context.payload.pull_request) {
-            try {
-                const token = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
-                if (token) {
-                    const changedFiles = await (0, diff_filter_1.getChangedFiles)(context, token);
-                    filteredReport = (0, diff_filter_1.filterReportByFiles)(report, changedFiles);
+        const pr = github.context.payload.pull_request;
+        if (pr) {
+            if (!token) {
+                core.warning('No github-token available: the fail check covers the whole repo, not just this PR\'s changed files.');
+            }
+            else {
+                try {
+                    const changedFiles = await (0, diff_filter_1.getChangedFiles)(github.context, token);
+                    filteredReport = (0, diff_filter_1.filterReportByFiles)(report, changedFiles, scanPrefix);
                     if (diff) {
                         prDiff = {
                             ...diff,
-                            newIssues: (0, diff_filter_1.filterIssuesByFiles)(diff.newIssues, changedFiles),
-                            resolvedIssues: (0, diff_filter_1.filterIssuesByFiles)(diff.resolvedIssues, changedFiles),
+                            newIssues: (0, diff_filter_1.filterIssuesByFiles)(diff.newIssues, changedFiles, scanPrefix),
+                            resolvedIssues: (0, diff_filter_1.filterIssuesByFiles)(diff.resolvedIssues, changedFiles, scanPrefix),
                         };
                     }
                 }
-            }
-            catch (err) {
-                core.warning(`Could not filter by changed files: ${err.message}`);
+                catch (err) {
+                    core.warning(`Could not filter by changed files: ${err.message}`);
+                }
             }
         }
-        // Post PR comment
-        if (postComment && context.payload.pull_request) {
-            const token = core.getInput('github-token') || process.env.GITHUB_TOKEN || '';
-            if (token) {
-                const comment = (0, pr_comment_1.formatPrComment)(filteredReport, prDiff);
-                const octokit = github.getOctokit(token);
-                await octokit.rest.issues.createComment({
-                    ...context.repo,
-                    issue_number: context.payload.pull_request.number,
-                    body: comment,
-                });
-                core.info('PR comment posted');
+        // Post PR comment. A failure here (e.g. read-only token on a fork PR)
+        // must not change the check result.
+        if (postComment && pr && token) {
+            try {
+                await upsertComment(token, pr.number, (0, pr_comment_1.formatPrComment)(filteredReport, prDiff));
+            }
+            catch (err) {
+                core.warning(`Could not post PR comment: ${err.message}`);
             }
         }
         // Log summary
@@ -5498,7 +7910,7 @@ async function run() {
         // PR runs (filteredReport === report on push/schedule runs, where there's
         // no "changed files" concept to scope to).
         if (failOn !== 'none') {
-            const failOrder = SEVERITY_ORDER[failOn] ?? 0;
+            const failOrder = SEVERITY_ORDER[failOn];
             const hasFailure = filteredReport.issues.some(i => SEVERITY_ORDER[i.severity] <= failOrder);
             if (hasFailure) {
                 core.setFailed(`Issues found at severity '${failOn}' or above.`);
@@ -5520,6 +7932,7 @@ run();
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.COMMENT_MARKER = void 0;
 exports.formatPrComment = formatPrComment;
 function severityIcon(s) {
     switch (s) {
@@ -5540,8 +7953,10 @@ function issueRow(issue) {
     }
     return row;
 }
+/** Hidden marker used to find and update this action's comment on re-runs. */
+exports.COMMENT_MARKER = '<!-- code-evolution-diagnostics -->';
 function formatPrComment(report, diff) {
-    let md = `## Code Evolution Diagnostics\n\n`;
+    let md = `${exports.COMMENT_MARKER}\n## Code Evolution Diagnostics\n\n`;
     // Summary table
     const cats = ['n1', 'loop', 'memory', 'payload', 'index', 'blocking-io', 'redos', 'bundle', 'dom', 'caching', 'resource'];
     if (diff) {
@@ -82189,7 +84604,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = {"rE":"1.3.0"};
+module.exports = {"rE":"1.4.1"};
 
 /***/ }),
 

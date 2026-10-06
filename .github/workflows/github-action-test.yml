@@ -1,0 +1,143 @@
+# .github/workflows/github-action-test.yml
+#
+# Tests for packages/github-action at three levels:
+#   1. dist-fresh   - the committed action-dist matches a clean build of src
+#   2. e2e-harness  - run-action-tests.mjs drives the bundled action with a mock
+#                     GitHub API (29 cases: inputs, thresholds, PR scoping,
+#                     pagination, baseline, comment handling)
+#   3. live-smoke   - the action runs for real on a GitHub runner, from the
+#                     local checkout and from the published tags users pin to
+name: GitHub Action tests
+
+on:
+  pull_request:
+    paths:
+      - 'packages/github-action/**'
+      - 'packages/core-engine/**'
+      - '.github/workflows/github-action-test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/github-action/**'
+      - 'packages/core-engine/**'
+      - '.github/workflows/github-action-test.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  FIXTURES: packages/core-engine/src/__tests__/fixtures
+
+jobs:
+  dist-fresh:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: packages/package-lock.json
+      - run: npm ci
+      - run: npm run build --workspace=core-engine
+      - run: npm run build --workspace=github-action
+      - name: Committed action-dist must match the build
+        run: |
+          if ! git diff --quiet -- github-action/action-dist; then
+            echo "::error::action-dist is stale. Run 'npm run build --workspace=github-action' and commit."
+            git diff --stat -- github-action/action-dist
+            exit 1
+          fi
+
+  e2e-harness:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run harness against committed bundle
+        run: |
+          node packages/github-action/test/run-action-tests.mjs \
+            --action packages/github-action \
+            --fixtures "$FIXTURES" \
+            --json action-test-results.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: action-test-results-node${{ matrix.node }}
+          path: action-test-results.json
+
+  live-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Local checkout, reporting only: every category should fire.
+      - name: Scan fixtures (local action, fail-on none)
+        id: scan
+        uses: ./packages/github-action
+        with:
+          path: ${{ env.FIXTURES }}
+          severity: low
+          fail-on: none
+          comment: 'false'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert outputs and report files
+        env:
+          ISSUES: ${{ steps.scan.outputs.issues-found }}
+          SCORE: ${{ steps.scan.outputs.confidence-score }}
+        run: |
+          set -e
+          test -n "$ISSUES" && test "$ISSUES" -gt 0 || { echo "::error::issues-found='$ISSUES'"; exit 1; }
+          test -n "$SCORE" || { echo "::error::confidence-score not set"; exit 1; }
+          for f in results.json hotspots.md confidence-score.txt; do
+            test -s "$FIXTURES/.codeevolution/$f" || { echo "::error::$f missing"; exit 1; }
+          done
+          cats=$(jq '[.summary.byCategory[] | select(. > 0)] | length' "$FIXTURES/.codeevolution/results.json")
+          echo "issues=$ISSUES score=$SCORE categories=$cats/11"
+          test "$cats" -eq 11 || { echo "::error::only $cats/11 categories fired"; exit 1; }
+
+      # Threshold must fail on push runs (PR runs scope to changed files,
+      # which the harness covers with a mock API).
+      - name: Scan fixtures (local action, fail-on critical)
+        id: gate
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        uses: ./packages/github-action
+        with:
+          path: ${{ env.FIXTURES }}
+          fail-on: critical
+          comment: 'false'
+      - name: Assert threshold failed the step
+        if: github.event_name != 'pull_request'
+        run: |
+          test "${{ steps.gate.outcome }}" = "failure" || { echo "::error::fail-on critical did not fail (outcome=${{ steps.gate.outcome }})"; exit 1; }
+
+  published-refs:
+    # What users actually get when they follow the README.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Published @v1
+        uses: liangk/code-evolution-lab/packages/github-action@v1
+        with:
+          path: ${{ env.FIXTURES }}
+          severity: low
+          fail-on: none
+          comment: 'false'
+      - name: Assert @v1 detects all 11 categories
+        run: |
+          cats=$(jq '[.summary.byCategory[] | select(. > 0)] | length' "$FIXTURES/.codeevolution/results.json")
+          echo "@v1 categories: $cats/11"
+          test "$cats" -eq 11 || { echo "::error::@v1 only detects $cats/11 categories - move the v1 tag"; exit 1; }

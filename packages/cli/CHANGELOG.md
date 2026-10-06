@@ -7,6 +7,39 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-06
+
+GitHub Action fixes. The engine and CLI are unchanged; they are republished at
+1.4.1 so all three packages keep one version.
+
+### Fixed
+
+- GitHub Action: the bundled `action-dist` was built before the four new
+  payload rules landed, so the action ran 35 of the 39 rules. Rebuilt; CI now
+  fails if the committed bundle does not match a fresh build.
+- GitHub Action: `github-token` is now a declared input defaulting to
+  `${{ github.token }}`. Without it, workflows that did not pass a token got no
+  PR comment and the fail check covered the whole repository instead of the
+  PR's changed files.
+- GitHub Action: with `path:` set to a subdirectory, PR scoping compared
+  scan-relative issue paths with repo-root PR paths, so every finding was
+  filtered out and PRs passed.
+- GitHub Action: the PR's changed files are now paginated. Only the first 100
+  were read, so findings in later files were ignored.
+- GitHub Action: a failed PR comment (read-only token on a fork PR) is now a
+  warning instead of failing the check.
+- GitHub Action: re-runs update the action's PR comment instead of adding a
+  new one each push.
+- GitHub Action: invalid `severity` or `fail-on` values and a missing `path`
+  now fail with a clear error instead of passing silently.
+- GitHub Action: the baseline is looked up at the repo root (where
+  `code-evolution-lab scan` writes it) before `<path>/.codeevolution/`; a
+  corrupt baseline is a warning; `new-issues` and `resolved-issues` default to
+  `0` when there is no baseline.
+- GitHub Action: runs on `node24` (Node 20 was removed from GitHub runners on
+  2026-09-23).
+- Release: the `v1` tag is moved to each new `v1.x.y` release automatically.
+
 ## [1.4.0] - 2026-10-02
 
 The payload rules were recalibrated against the 300 repositories Study 09
