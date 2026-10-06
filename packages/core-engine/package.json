@@ -1,6 +1,6 @@
 {
   "name": "@code-evolution/core-engine",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Unified detection engine for empirical software diagnostics",
   "repository": {
     "type": "git",

@@ -2,7 +2,8 @@ import * as github from '@actions/github';
 import type { AnalysisReport, DiagnosticIssue } from '@code-evolution/core-engine';
 
 /**
- * Fetch the set of files changed in the current pull request.
+ * Fetch the set of files changed in the current pull request, as paths
+ * relative to the repository root. Paginates: the API caps per_page at 100.
  * Returns an empty set when not running in a PR context.
  */
 export async function getChangedFiles(
@@ -14,13 +15,22 @@ export async function getChangedFiles(
 
   const octokit = github.getOctokit(token);
 
-  const { data: files } = await octokit.rest.pulls.listFiles({
+  const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
     ...context.repo,
     pull_number: pr.number,
-    per_page: 300,
+    per_page: 100,
   });
 
   return new Set(files.map(f => f.filename));
+}
+
+/**
+ * Issue paths are relative to the scanned directory (the `path` input);
+ * PR file paths are relative to the repo root. `scanPrefix` is the scanned
+ * directory relative to the repo root ('' when scanning the root).
+ */
+function repoPath(issue: DiagnosticIssue, scanPrefix: string): string {
+  return scanPrefix ? `${scanPrefix}/${issue.file}` : issue.file;
 }
 
 /**
@@ -28,16 +38,24 @@ export async function getChangedFiles(
  * Used to scope both the current-scan report and a baseline diff to the
  * same set of changed files, so summary counts and itemized lists agree.
  */
-export function filterIssuesByFiles(issues: DiagnosticIssue[], files: Set<string>): DiagnosticIssue[] {
-  return issues.filter(issue => files.has(issue.file));
+export function filterIssuesByFiles(
+  issues: DiagnosticIssue[],
+  files: Set<string>,
+  scanPrefix = '',
+): DiagnosticIssue[] {
+  return issues.filter(issue => files.has(repoPath(issue, scanPrefix)));
 }
 
 /**
  * Filter an analysis report to only include issues in the given changed
  * files, rebuilding its summary counts to match the filtered issue list.
  */
-export function filterReportByFiles(report: AnalysisReport, files: Set<string>): AnalysisReport {
-  const filtered = filterIssuesByFiles(report.issues, files);
+export function filterReportByFiles(
+  report: AnalysisReport,
+  files: Set<string>,
+  scanPrefix = '',
+): AnalysisReport {
+  const filtered = filterIssuesByFiles(report.issues, files, scanPrefix);
 
   const bySeverity = { critical: 0, high: 0, medium: 0, low: 0 };
   const byCategory = {

@@ -20,8 +20,11 @@ function issueRow(issue: DiagnosticIssue): string {
   return row;
 }
 
+/** Hidden marker used to find and update this action's comment on re-runs. */
+export const COMMENT_MARKER = '<!-- code-evolution-diagnostics -->';
+
 export function formatPrComment(report: AnalysisReport, diff?: BaselineDiff): string {
-  let md = `## Code Evolution Diagnostics\n\n`;
+  let md = `${COMMENT_MARKER}\n## Code Evolution Diagnostics\n\n`;
 
   // Summary table
   const cats: DiagnosticCategory[] = ['n1', 'loop', 'memory', 'payload', 'index', 'blocking-io', 'redos', 'bundle', 'dom', 'caching', 'resource'];

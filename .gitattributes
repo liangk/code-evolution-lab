@@ -1,0 +1,2 @@
+# Bundled action output: keep LF so a build on any OS matches the committed file
+packages/github-action/action-dist/** text eol=lf linguist-generated=true
