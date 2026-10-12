@@ -7,6 +7,19 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+### Changed
+
+- Scans now also skip directories named `test`, `tests`, `fixtures`,
+  `__fixtures__`, `cypress` and `integration-tests`, alongside `__tests__`,
+  `__mocks__` and `e2e`. Many projects keep tests in `test/` or `tests/`
+  without `.test.` in the file name, so they were scanned as production code:
+  across the 237 repositories of the Blocking I/O study, 5,242 of 16,103
+  blocking-io findings (32.6%) were in these directories. Counts and scores on
+  a whole-repository scan will drop for projects laid out this way. A target
+  that is itself one of these directories is still scanned. Measured against
+  the published N+1, Missing Index and Large Payloads studies, no published
+  figure changes (`empirical-study/stories/04-blocking-io/scripts/walker-impact.js`).
+
 ## [1.4.1] - 2026-10-06
 
 GitHub Action fixes. The engine and CLI are unchanged; they are republished at

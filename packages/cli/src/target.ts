@@ -68,7 +68,8 @@ export function warnIfNothingScanned(filesScanned: number, targets: string[]): v
   for (const target of targets) console.warn(`  ${target}`);
   console.warn(`\nA score of 100 here means nothing was scanned, not that nothing is wrong.`);
   console.warn(`Directories named node_modules, dist, build, coverage, .next, .nuxt,`);
-  console.warn(`__tests__, __mocks__ and e2e are skipped, as are *.test.* and *.spec.* files.`);
+  console.warn(`__tests__, __mocks__, e2e, test, tests, fixtures, __fixtures__, cypress and`);
+  console.warn(`integration-tests are skipped, as are *.test.* and *.spec.* files.`);
   console.warn(`Most published npm packages ship only compiled output in dist/, so pass a`);
   console.warn(`source directory instead.\n`);
 }

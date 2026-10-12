@@ -101,6 +101,44 @@ function makeIssues(count: number, severity: Severity = 'high', confidence = 0.8
   }));
 }
 
+describe('file collection', () => {
+  // Test directories that are not named __tests__ are skipped (1.5.0).
+  const { mkdtempSync, mkdirSync, writeFileSync } = require('fs');
+  const { tmpdir } = require('os');
+  const BLOCKING = "const fs = require('fs');\nmodule.exports = () => fs.readFileSync('x');\n";
+
+  function scanTree(files: string[], target = '') {
+    const root = mkdtempSync(join(tmpdir(), 'walker-'));
+    for (const f of files) {
+      mkdirSync(join(root, f, '..'), { recursive: true });
+      writeFileSync(join(root, f), BLOCKING);
+    }
+    const registry = new RuleRegistry();
+    registry.registerAll(getAllRules());
+    const report = analyzeDirectory({ targetPath: join(root, target), categories: ['blocking-io'] }, registry);
+    return report.issues.map(i => i.file.replace(/\\/g, '/')).sort();
+  }
+
+  it('skips test, tests, fixtures, __fixtures__, cypress and integration-tests directories', () => {
+    const files = scanTree([
+      'src/app.js',
+      'test/cli.js', 'tests/unit/a.js', 'src/fixtures/f.js', 'src/__fixtures__/g.js',
+      'cypress/support/h.js', 'integration-tests/http/i.js',
+    ]);
+    expect(files).toEqual(['src/app.js']);
+  });
+
+  it('does not skip directories that only contain a test word', () => {
+    const files = scanTree(['src/testing/a.js', 'src/test-utils/b.js', 'src/latest/c.js', 'vendor/d.js']);
+    expect(files).toEqual(['src/latest/c.js', 'src/test-utils/b.js', 'src/testing/a.js', 'vendor/d.js']);
+  });
+
+  it('still scans a target that is itself a skipped directory name', () => {
+    const files = scanTree(['test/cli.js'], 'test');
+    expect(files).toEqual(['cli.js']);
+  });
+});
+
 describe('calculateScore', () => {
   it('scores a clean scan 100', () => {
     expect(calculateScore([], 250)).toBe(100);

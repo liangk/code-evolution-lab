@@ -23,6 +23,15 @@ const PRISMA_FILES = new Set(['schema.prisma']);
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__',
   '__tests__', '__mocks__', 'e2e', '.turbo',
+  // Test directories that are not named __tests__ (1.5.0). Many projects keep
+  // tests in test/ or tests/ with no .test. in the file name, so the file
+  // pattern below never caught them: in the Blocking I/O story's 237-repository
+  // corpus they were a third of all blocking-io findings (5,178 of 16,103).
+  // Only names that are unambiguously tests: vendor/ is a domain word in
+  // marketplace applications, and migrations/ and scripts/ are left to the
+  // rules that care (payload's NOT_SERVED_PATH). Matched against a directory's
+  // own name, so a scan whose target is itself one of these still runs.
+  'test', 'tests', 'fixtures', '__fixtures__', 'cypress', 'integration-tests',
 ]);
 
 // Test and spec files are excluded by default. A performance scan is about
