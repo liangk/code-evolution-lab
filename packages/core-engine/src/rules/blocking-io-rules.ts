@@ -204,7 +204,7 @@ const pending = new Map<DiagnosticIssue, { offset: number; promote: DiagnosticIs
  * call sits, so finalize() can write a refactor note naming the function to
  * make async and its callers.
  */
-const refactor = new Map<DiagnosticIssue, { offset: number; where: 'module' | 'callback' | 'named'; fnName: string | null; asyncForm: string }>();
+const refactor = new Map<DiagnosticIssue, { offset: number; where: 'module' | 'handler' | 'callback' | 'named'; fnName: string | null; asyncForm: string; handler: string | null }>();
 
 /**
  * Whether this file is plausibly part of a server at all.
@@ -279,7 +279,10 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
           if (!asyncForm) return;
           const fnPath = path.getFunctionParent?.();
           const fnName = fnPath ? nameOf(fnPath) : null;
-          refactor.set(issue, { offset: node.start, where: !fnPath ? 'module' : fnName ? 'named' : 'callback', fnName, asyncForm });
+          // A handler written as a sync function is fixed by making the handler
+          // itself async: frameworks await what it returns.
+          const handler = fnPath ? handlerKind(fnPath, filePath) : null;
+          refactor.set(issue, { offset: node.start, where: !fnPath ? 'module' : handler ? 'handler' : fnName ? 'named' : 'callback', fnName, asyncForm, handler });
         };
 
         if (SYNC_FILE_METHODS.has(methodName)) {
@@ -463,8 +466,11 @@ function finalizeBlockingIo(issues: DiagnosticIssue[]): DiagnosticIssue[] {
  * is, so the fix is to make its function async and await that function where
  * it is called. Names the callers the scan can see, up to three.
  */
-function refactorNote(issue: DiagnosticIssue, r: { offset: number; where: string; fnName: string | null; asyncForm: string }): string {
+function refactorNote(issue: DiagnosticIssue, r: { offset: number; where: string; fnName: string | null; asyncForm: string; handler: string | null }): string {
   const head = REFACTOR_PREFIX;
+  if (r.where === 'handler') {
+    return `${head} the call is in a synchronous handler, a ${r.handler}. Make the handler async, which the framework awaits, and await ${r.asyncForm} in it; nothing else calls a handler, so the change stays in this function.`;
+  }
   if (r.where === 'module') {
     return `${head} this runs at module level, when the module is first loaded. That is usually startup, where blocking is harmless; if the module is loaded lazily while serving, move the work into an async initialiser that uses ${r.asyncForm}.`;
   }

@@ -67,6 +67,7 @@ describe('blocking-io solutions (Stage 2, item 4)', () => {
         "exports.loadConfig = loadConfig;",
         "const boot = fs.existsSync('x');",
         "function all(dirs) { dirs.forEach((d) => fs.statSync(d)); }",
+        "app.get('/r', (req, res) => { res.send(fs.readFileSync('r')); });",
       ].join('\n'),
       'src/routes.js': "const { loadConfig } = require('./config');\napp.get('/c', function show(req, res) { res.json(loadConfig('c.json')); });",
     });
@@ -74,6 +75,7 @@ describe('blocking-io solutions (Stage 2, item 4)', () => {
       "src/config.js:2 Refactor, not a drop-in fix: 'loadConfig' is synchronous, so fs.promises.readFile cannot be awaited here. Make 'loadConfig' async and await fs.promises.readFile, then await 'loadConfig' where it is called (src/routes.js:2), and so on up to a caller that is already async.",
       'src/config.js:4 Refactor, not a drop-in fix: this runs at module level, when the module is first loaded. That is usually startup, where blocking is harmless; if the module is loaded lazily while serving, move the work into an async initialiser that uses fs.promises.access.',
       'src/config.js:5 Refactor, not a drop-in fix: the call is inside a synchronous callback, where await is not available. Turn the loop or callback into a for...of loop (or an async callback whose promise the caller awaits; Array.forEach does not), inside an async function, and await fs.promises.stat there.',
+      'src/config.js:6 Refactor, not a drop-in fix: the call is in a synchronous handler, a (req, res) function. Make the handler async, which the framework awaits, and await fs.promises.readFile in it; nothing else calls a handler, so the change stays in this function.',
     ]);
   });
 

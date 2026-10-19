@@ -7,6 +7,63 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-20
+
+The blocking-io rules were recalibrated against the 237 repositories of the
+Blocking I/O study (Study 02's corpus, rescanned at the same commits) and
+extended. They report about half as many findings. They rank findings by
+whether a request handler reaches the call, and suggest the async rewrite, or
+the refactor, that fixes each one.
+
+### Upgrading
+
+- **Blocking-io findings change a great deal from 1.4.x.** On the study's
+  corpus, 1.4.1 reported 16,103 blocking-io findings, an estimated 3.7% of
+  them real once test directories are left out. 1.5.0 reports 6,001.
+- **Severity has a new meaning.** High and critical now mean that a request
+  handler runs the call, directly or within two calls. Everything else is low,
+  even in a file that imports a server module.
+  - A `fail-on: high` gate can start failing where a handler reaches a sync
+    call through a helper.
+  - It can stop failing where 1.4.x flagged sync calls outside any handler.
+- **`sync-database-operation` no longer matches `runSync`, `getSync` or
+  `allSync`.** isolated-vm's calls moved to their own rule.
+- **The walker skips test directories.** Whole-repository scans count fewer
+  files and findings for projects that keep tests in `test/` or `tests/`.
+
+Take a new baseline after upgrading, or `compare` will show findings appearing
+and disappearing that have nothing to do with your code.
+
+### Added
+
+- `blocking-io/sync-zlib-operation`: the nine zlib `*Sync` methods
+  (`gzipSync`, `inflateSync`, `brotliCompressSync`, ...).
+- `blocking-io/sync-isolate-execution`: isolated-vm's synchronous API
+  (`runSync`, `applySync`, `evalSync`, ...), only in files that import
+  isolated-vm. These calls used to be counted as database operations.
+- `randomFillSync` is reported with the other synchronous crypto calls.
+- `.cjs` files are scanned by the blocking-io rules. A `.cjs` file that no
+  active rule reads is not collected, so file counts and scores of other
+  scans do not change.
+- A blocking I/O solution generator. It applies only when the call's function
+  is already async, so the `await` is legal. It rewrites:
+  - fs calls to `fs.promises`;
+  - crypto and zlib calls to their callback form wrapped in a promise;
+  - isolated-vm calls to their async twins.
+
+  It makes no suggestion for fd-based fs calls, child processes or database
+  calls, where the async form is not a drop-in.
+- Where a call cannot be awaited, the blocking-io recommendation is a
+  refactor note labelled `Refactor, not a drop-in fix:`:
+  - in a sync handler: make the handler async;
+  - in a sync function: make it async, and await it at the callers the scan
+    can see (it names them);
+  - in a sync callback: restructure it as a `for...of` in an async function;
+  - at module level: usually startup and fine as it is.
+
+  The generator returns this note as a `blocking-io-refactor` solution with
+  high risk and no code.
+
 ### Changed
 
 - Scans now also skip directories named `test`, `tests`, `fixtures`,
@@ -53,31 +110,6 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
   The description names the handler and how far up it is. On the Blocking I/O
   study's corpus, 30 of the 40 labelled true positives are now above low
   severity (14 before), and 258 of 5,924 findings are.
-
-### Added
-
-- `blocking-io/sync-zlib-operation`: the nine zlib `*Sync` methods
-  (`gzipSync`, `inflateSync`, `brotliCompressSync`, ...).
-- `blocking-io/sync-isolate-execution`: isolated-vm's synchronous API
-  (`runSync`, `applySync`, `evalSync`, ...), only in files that import
-  isolated-vm. These calls used to be counted as database operations.
-- `randomFillSync` is reported with the other synchronous crypto calls.
-- `.cjs` files are scanned by the blocking-io rules. A `.cjs` file that no
-  active rule reads is not collected, so file counts and scores of other
-  scans do not change.
-- A blocking I/O solution generator. It applies only when the call's function
-  is already async, so the `await` is legal. It rewrites:
-  - fs calls to `fs.promises`;
-  - crypto and zlib calls to their callback form wrapped in a promise;
-  - isolated-vm calls to their async twins.
-
-  It makes no suggestion for fd-based fs calls, child processes or database
-  calls, where the async form is not a drop-in.
-- Where a call cannot be awaited, because it is in a sync function, in a
-  callback or at module level, the blocking-io recommendation is a refactor
-  note labelled `Refactor, not a drop-in fix:`. It names the function to make
-  async and the callers the scan can see. The generator returns this note as a
-  `blocking-io-refactor` solution with high risk and no code.
 
 ## [1.4.1] - 2026-10-06
 

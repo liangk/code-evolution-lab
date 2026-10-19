@@ -62,11 +62,22 @@ const crypto_1 = __nccwpck_require__(6982);
 // (published), and npm always ships package.json regardless of `files`.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const VERSION = (__nccwpck_require__(3361)/* .version */ .rE);
-const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs']);
+// `.cjs` is collected since 1.5.0 (Blocking I/O Stage 2, item 2). Only rules
+// whose filePatterns list `*.cjs` read it: the blocking-io rules so far.
+const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs']);
 const PRISMA_FILES = new Set(['schema.prisma']);
 const SKIP_DIRS = new Set([
     'node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__',
     '__tests__', '__mocks__', 'e2e', '.turbo',
+    // Test directories that are not named __tests__ (1.5.0). Many projects keep
+    // tests in test/ or tests/ with no .test. in the file name, so the file
+    // pattern below never caught them: in the Blocking I/O story's 237-repository
+    // corpus they were a third of all blocking-io findings (5,178 of 16,103).
+    // Only names that are unambiguously tests: vendor/ is a domain word in
+    // marketplace applications, and migrations/ and scripts/ are left to the
+    // rules that care (payload's NOT_SERVED_PATH). Matched against a directory's
+    // own name, so a scan whose target is itself one of these still runs.
+    'test', 'tests', 'fixtures', '__fixtures__', 'cypress', 'integration-tests',
 ]);
 // Test and spec files are excluded by default. A performance scan is about
 // code that runs in production: a deliberate N+1 in a fixture is not a finding,
@@ -244,7 +255,11 @@ function analyzeDirectory(options, registry) {
     // each, but keep reported paths anchored at targetPath so they read the same
     // either way, and deduplicate in case one root nests inside another.
     const roots = includePaths?.length ? includePaths : [targetPath];
-    const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))].sort(schemaFirst);
+    // A .cjs file no active rule reads is left out entirely, so it does not
+    // change the file count (and the score) of a scan that has no use for it.
+    const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))]
+        .filter(f => (0, path_1.extname)(f) !== '.cjs' || rulesForFile((0, path_1.basename)(f), activeRules).length > 0)
+        .sort(schemaFirst);
     let allIssues = [];
     // Families with a finalize() hook: every rule id sharing that hook, whether
     // or not this scan enabled it.
@@ -405,7 +420,7 @@ function writeOutputFiles(report, outputDir) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.addRowLimit = exports.PayloadSolutionGenerator = exports.IndexSolutionGenerator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = exports.hasSolutionGenerator = exports.attachSolutions = exports.generateSolutionsFor = exports.generateScoreText = exports.writeScoreFile = exports.printBaselineDiff = exports.printReport = exports.generateMarkdownReport = exports.writeMarkdownReport = exports.writeJsonReport = exports.foreignKeyCoverage = exports.indexRuleMetrics = exports.parseSchema = exports.cachingRules = exports.redosRules = exports.payloadRules = exports.domRules = exports.bundleRules = exports.resourceRules = exports.blockingIoRules = exports.n1Rules = exports.resetIndexRuleCache = exports.indexRules = exports.memoryRules = exports.loopRules = exports.getAllRules = exports.writeOutputFiles = exports.compareBaseline = exports.createBaseline = exports.calculateScore = exports.hashIssue = exports.analyzeDirectory = exports.analyzeFile = exports.RuleRegistry = void 0;
+exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.toAsync = exports.BlockingIoSolutionGenerator = exports.addRowLimit = exports.PayloadSolutionGenerator = exports.IndexSolutionGenerator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = exports.hasSolutionGenerator = exports.attachSolutions = exports.generateSolutionsFor = exports.generateScoreText = exports.writeScoreFile = exports.printBaselineDiff = exports.printReport = exports.generateMarkdownReport = exports.writeMarkdownReport = exports.writeJsonReport = exports.foreignKeyCoverage = exports.indexRuleMetrics = exports.parseSchema = exports.cachingRules = exports.redosRules = exports.payloadRules = exports.domRules = exports.bundleRules = exports.resourceRules = exports.blockingIoRules = exports.n1Rules = exports.resetIndexRuleCache = exports.indexRules = exports.memoryRules = exports.loopRules = exports.getAllRules = exports.writeOutputFiles = exports.compareBaseline = exports.createBaseline = exports.calculateScore = exports.hashIssue = exports.analyzeDirectory = exports.analyzeFile = exports.RuleRegistry = void 0;
 // Core engine — public API
 var engine_1 = __nccwpck_require__(3606);
 Object.defineProperty(exports, "RuleRegistry", ({ enumerable: true, get: function () { return engine_1.RuleRegistry; } }));
@@ -456,6 +471,8 @@ Object.defineProperty(exports, "N1SolutionGenerator", ({ enumerable: true, get: 
 Object.defineProperty(exports, "IndexSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.IndexSolutionGenerator; } }));
 Object.defineProperty(exports, "PayloadSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.PayloadSolutionGenerator; } }));
 Object.defineProperty(exports, "addRowLimit", ({ enumerable: true, get: function () { return solutions_1.addRowLimit; } }));
+Object.defineProperty(exports, "BlockingIoSolutionGenerator", ({ enumerable: true, get: function () { return solutions_1.BlockingIoSolutionGenerator; } }));
+Object.defineProperty(exports, "toAsync", ({ enumerable: true, get: function () { return solutions_1.toAsync; } }));
 Object.defineProperty(exports, "FitnessCalculator", ({ enumerable: true, get: function () { return solutions_1.FitnessCalculator; } }));
 Object.defineProperty(exports, "WEIGHT_PRESETS", ({ enumerable: true, get: function () { return solutions_1.WEIGHT_PRESETS; } }));
 Object.defineProperty(exports, "analyzeCodePattern", ({ enumerable: true, get: function () { return solutions_1.analyzeCodePattern; } }));
@@ -722,6 +739,388 @@ function writeScoreFile(report, outputDir) {
 
 /***/ }),
 
+/***/ 9902:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resetReach = resetReach;
+exports.handlerKind = handlerKind;
+exports.registrationKind = registrationKind;
+exports.nameOf = nameOf;
+exports.indexFile = indexFile;
+exports.enclosingFn = enclosingFn;
+exports.callersOf = callersOf;
+exports.findHandlerPath = findHandlerPath;
+/**
+ * Reachability for the blocking-io rules: is a synchronous call one or two
+ * calls away from a request handler?
+ *
+ * The Blocking I/O story labelled findings by tracing callers up to two levels
+ * to an entry point. Seven of its eighteen sampled true positives were low
+ * severity because the handler was in a caller, not in the function holding
+ * the call. This module runs the same trace.
+ *
+ * While each file is scanned, `indexFile` records its functions, which of them
+ * are handlers, the calls each one makes, and what it imports. After the scan,
+ * `findHandlerPath` walks callers from a finding's enclosing function: first
+ * within its own file, then through imported bindings into other files. It
+ * stops at two levels, as the labelling did.
+ *
+ * Name matching is deliberately narrow. A call links to a function only by
+ * the name it was defined under in the same file, or through an import whose
+ * module resolves to a scanned file. No guessing across files by name alone,
+ * so an `update()` in one module never links to every `update` in the
+ * repository.
+ */
+const traverse_1 = __importDefault(__nccwpck_require__(8254));
+const path_1 = __nccwpck_require__(6928);
+const HTTP_METHODS = new Set(['get', 'post', 'put', 'delete', 'patch', 'use', 'all', 'head', 'options']);
+const ROUTER_OBJECTS = new Set(['app', 'router', 'express', 'server', 'api', 'routes', 'fastify']);
+const ROUTE_EXPORTS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+const IPC_METHODS = new Set(['handle', 'handleOnce', 'on', 'once']);
+const RESOLVE_EXT = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '/index.ts', '/index.tsx', '/index.js', '/index.mjs'];
+const MAX_LEVELS = 2;
+const index = new Map();
+/** Resolved target file -> the files importing it and the bindings they use. Built on first lookup. */
+let importers = null;
+function resetReach() {
+    index.clear();
+    importers = null;
+}
+function importersOf(file) {
+    if (!importers) {
+        importers = new Map();
+        for (const [other, oi] of index) {
+            for (const [local, imp] of oi.imports) {
+                const target = resolve(other, imp.from);
+                if (!target || target === other)
+                    continue;
+                const list = importers.get(target) ?? [];
+                list.push({ file: other, local, name: imp.name });
+                importers.set(target, list);
+            }
+        }
+    }
+    return importers.get(file) ?? [];
+}
+/** Why a function is a request handler, or null. */
+function handlerKind(fnPath, filePath) {
+    const node = fnPath.node;
+    const params = (node.params || []).map((p) => p?.name ?? p?.left?.name);
+    if (params.includes('req') && params.includes('res'))
+        return '(req, res) function';
+    // Fastify and plain http naming: (request, reply), (request, response).
+    if ((params[0] === 'req' || params[0] === 'request') && ['res', 'reply', 'response'].includes(params[1]))
+        return `(${params[0]}, ${params[1]}) function`;
+    const parent = fnPath.parentPath;
+    // Passed to app.get(...), router.post(...), ipcMain.handle(...).
+    if (parent?.node?.type === 'CallExpression' && parent.node.arguments?.includes(node)) {
+        const kind = registrationKind(parent.node, node);
+        if (kind)
+            return kind;
+    }
+    const file = filePath.replace(/\\/g, '/');
+    // Next.js API routes: pages/api default export, App Router route handlers.
+    if (/(^|\/)pages\/api\//.test(file) && isDefaultExport(fnPath))
+        return 'Next.js API route';
+    if (/(^|\/)app\/(.+\/)?route\.[cm]?[jt]sx?$/.test(file)) {
+        const name = exportedName(fnPath);
+        if (name && ROUTE_EXPORTS.has(name))
+            return `Next.js route ${name}`;
+    }
+    // Koa and Strapi controllers: only under controllers/, after the round-2
+    // trial found `ctx` alone also matches CLI task contexts.
+    if (/(^|\/)controllers?\//.test(file) && params[0] === 'ctx')
+        return 'controller (ctx)';
+    return null;
+}
+/**
+ * Whether a call registers `arg` as a handler: app.get(...), router.post(...),
+ * ipcMain.handle(...), http.createServer(...), or any call whose first
+ * argument is a URL path (plugins.register('/o/export', fn)). The path
+ * string is the signal there, not the object's name.
+ */
+function registrationKind(call, arg) {
+    const callee = call.callee;
+    const method = callee?.property?.name;
+    const objName = callee?.object?.name || callee?.object?.property?.name;
+    if (method && HTTP_METHODS.has(method) && objName && ROUTER_OBJECTS.has(objName))
+        return `${objName}.${method}() callback`;
+    if (objName === 'ipcMain' && method && IPC_METHODS.has(method))
+        return `ipcMain.${method}() handler`;
+    if ((callee?.name ?? method) === 'createServer')
+        return 'createServer() handler';
+    const first = call.arguments[0];
+    if (first !== arg && first?.type === 'StringLiteral' && /^\/[\w:.-]/.test(first.value))
+        return `callback for '${first.value}'`;
+    return null;
+}
+function isDefaultExport(fnPath) {
+    let p = fnPath.parentPath;
+    if (p?.node?.type === 'ExportDefaultDeclaration')
+        return true;
+    // const handler = (req, res) => {}; export default handler
+    if (p?.node?.type === 'VariableDeclarator' && p.node.id?.name) {
+        const prog = fnPath.findParent((x) => x.isProgram());
+        const name = p.node.id.name;
+        return !!prog?.node.body.some((s) => s.type === 'ExportDefaultDeclaration' && s.declaration?.name === name);
+    }
+    return false;
+}
+function exportedName(fnPath) {
+    const node = fnPath.node;
+    const p = fnPath.parentPath;
+    if (node.type === 'FunctionDeclaration' && p?.node?.type === 'ExportNamedDeclaration')
+        return node.id?.name ?? null;
+    if (p?.node?.type === 'VariableDeclarator' && p.parentPath?.parentPath?.node?.type === 'ExportNamedDeclaration')
+        return p.node.id?.name ?? null;
+    return null;
+}
+/** The name a function can be called by: declaration, variable, assignment or method key. */
+function nameOf(fnPath) {
+    const node = fnPath.node;
+    if (node.id?.name && node.type === 'FunctionDeclaration')
+        return node.id.name;
+    const p = fnPath.parentPath?.node;
+    if (!p)
+        return node.id?.name ?? null;
+    if (p.type === 'VariableDeclarator' && p.id?.type === 'Identifier')
+        return p.id.name;
+    if ((node.type === 'ClassMethod' || node.type === 'ObjectMethod' || node.type === 'ClassPrivateMethod') && node.key)
+        return node.key.name ?? node.key.id?.name ?? node.key.value ?? null;
+    if ((p.type === 'ObjectProperty' || p.type === 'ClassProperty') && p.key)
+        return p.key.name ?? p.key.value ?? null;
+    // exports.f = function () {}, X.prototype.f = ..., schema.statics.f = ...
+    if (p.type === 'AssignmentExpression' && p.left?.type === 'MemberExpression')
+        return p.left.property?.name ?? null;
+    return node.id?.name ?? null;
+}
+const FUNCTION_TYPES = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ObjectMethod', 'ClassMethod', 'ClassPrivateMethod']);
+/** Index one file. Call once per scanned file with its AST. */
+function indexFile(filePath, ast) {
+    const fns = [];
+    const imports = new Map();
+    const exports = new Map();
+    const stack = [];
+    /** Named functions registered as handlers by reference: createServer(handle). */
+    const handlerRefs = new Map();
+    /** `x = new Imported()`: x's methods are the imported module's functions. */
+    const instances = [];
+    const enter = (path) => {
+        const name = nameOf(path);
+        const handler = handlerKind(path, filePath);
+        if (!name && !handler)
+            return;
+        const info = { id: fns.length, name, line: path.node.loc?.start.line ?? 0, handler, calls: [], start: path.node.start, end: path.node.end };
+        fns.push(info);
+        stack.push(info);
+        path.setData('reachFn', info);
+    };
+    const exit = (path) => {
+        if (path.getData('reachFn'))
+            stack.pop();
+    };
+    try {
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            enter(path) {
+                if (FUNCTION_TYPES.has(path.node.type))
+                    enter(path);
+            },
+            exit(path) {
+                if (FUNCTION_TYPES.has(path.node.type))
+                    exit(path);
+            },
+            CallExpression(path) {
+                const callee = path.node.callee;
+                const top = stack[stack.length - 1];
+                // require('./x') bindings
+                if (callee?.name === 'require' && path.node.arguments?.[0]?.type === 'StringLiteral') {
+                    const from = path.node.arguments[0].value;
+                    const decl = path.parentPath?.node;
+                    if (decl?.type === 'VariableDeclarator') {
+                        if (decl.id?.type === 'Identifier')
+                            imports.set(decl.id.name, { from, name: '*' });
+                        else if (decl.id?.type === 'ObjectPattern') {
+                            for (const prop of decl.id.properties) {
+                                if (prop.type === 'ObjectProperty' && prop.value?.type === 'Identifier')
+                                    imports.set(prop.value.name, { from, name: prop.key?.name ?? prop.value.name });
+                            }
+                        }
+                    }
+                    return;
+                }
+                for (const arg of path.node.arguments || []) {
+                    if (arg?.type !== 'Identifier' && !(arg?.type === 'MemberExpression' && arg.object?.type === 'ThisExpression'))
+                        continue;
+                    const kind = registrationKind(path.node, arg);
+                    const name = arg.type === 'Identifier' ? arg.name : arg.property?.name;
+                    if (kind && name)
+                        handlerRefs.set(name, kind);
+                }
+                if (!top)
+                    return;
+                if (callee?.type === 'Identifier')
+                    top.calls.push({ obj: null, prop: callee.name });
+                else if (callee?.type === 'MemberExpression' && callee.property?.type === 'Identifier') {
+                    const obj = callee.object?.type === 'ThisExpression' ? 'this' : callee.object?.type === 'Identifier' ? callee.object.name : null;
+                    top.calls.push({ obj, prop: callee.property.name });
+                }
+            },
+            ImportDeclaration(path) {
+                const from = path.node.source.value;
+                for (const spec of path.node.specifiers) {
+                    if (spec.type === 'ImportDefaultSpecifier')
+                        imports.set(spec.local.name, { from, name: 'default' });
+                    else if (spec.type === 'ImportNamespaceSpecifier')
+                        imports.set(spec.local.name, { from, name: '*' });
+                    else
+                        imports.set(spec.local.name, { from, name: spec.imported?.name ?? spec.imported?.value });
+                }
+            },
+            ExportDefaultDeclaration(path) {
+                const d = path.node.declaration;
+                if (d?.type === 'Identifier')
+                    exports.set('default', d.name);
+                else if (d?.id?.name)
+                    exports.set('default', d.id.name);
+            },
+            ExportNamedDeclaration(path) {
+                for (const spec of path.node.specifiers || []) {
+                    if (spec.local?.name)
+                        exports.set(spec.exported?.name ?? spec.local.name, spec.local.name);
+                }
+            },
+            NewExpression(path) {
+                const c = path.node.callee;
+                if (c?.type !== 'Identifier')
+                    return;
+                const p = path.parentPath?.node;
+                if (p?.type === 'VariableDeclarator' && p.id?.type === 'Identifier')
+                    instances.push([p.id.name, c.name]);
+                else if (p?.type === 'AssignmentExpression' && p.left?.type === 'Identifier')
+                    instances.push([p.left.name, c.name]);
+            },
+            AssignmentExpression(path) {
+                // module.exports = f
+                const l = path.node.left;
+                if (l?.type === 'MemberExpression' && l.object?.name === 'module' && l.property?.name === 'exports' && path.node.right?.type === 'Identifier') {
+                    exports.set('default', path.node.right.name);
+                }
+            },
+        });
+    }
+    catch {
+        // An unparseable shape leaves the file out of the index: no reach through it.
+    }
+    for (const fn of fns)
+        if (!fn.handler && fn.name && handlerRefs.has(fn.name))
+            fn.handler = handlerRefs.get(fn.name);
+    for (const [local, ctor] of instances) {
+        const imp = imports.get(ctor);
+        if (imp && !imports.has(local))
+            imports.set(local, { from: imp.from, name: '*' });
+    }
+    index.set(filePath.replace(/\\/g, '/'), { fns, imports, exports });
+}
+/** The innermost indexed function containing a source offset. */
+function enclosingFn(filePath, offset) {
+    const fi = index.get(filePath.replace(/\\/g, '/'));
+    if (!fi)
+        return null;
+    let best = null;
+    for (const f of fi.fns)
+        if (f.start <= offset && offset < f.end && (!best || f.start >= best.start))
+            best = f;
+    return best;
+}
+function resolve(fromFile, spec) {
+    if (!spec.startsWith('.'))
+        return null;
+    const base = path_1.posix.normalize(path_1.posix.join(path_1.posix.dirname(fromFile), spec)).replace(/\.(js|mjs|cjs)$/, '');
+    for (const ext of RESOLVE_EXT) {
+        if (index.has(base + ext))
+            return base + ext;
+    }
+    if (index.has(path_1.posix.normalize(path_1.posix.join(path_1.posix.dirname(fromFile), spec))))
+        return path_1.posix.normalize(path_1.posix.join(path_1.posix.dirname(fromFile), spec));
+    return null;
+}
+/** Functions (in any file) that call `target`, defined in `file`. */
+function callersOf(file, target) {
+    const out = [];
+    file = file.replace(/\\/g, '/');
+    if (!target.name || !index.has(file))
+        return out;
+    const fi = index.get(file);
+    // Same file: f(), this.f(), obj.f() where obj is not an import.
+    for (const fn of fi.fns) {
+        if (fn === target)
+            continue;
+        if (fn.calls.some((c) => c.prop === target.name && (c.obj === null || c.obj === 'this' || !fi.imports.has(c.obj))))
+            out.push({ file, fn });
+    }
+    // Exported names under which other files may import it.
+    const exportedAs = new Set([target.name]);
+    for (const [exp, local] of fi.exports)
+        if (local === target.name)
+            exportedAs.add(exp);
+    const byFile = new Map();
+    for (const imp of importersOf(file)) {
+        const locals = byFile.get(imp.file) ?? [];
+        if (imp.name === '*' || imp.name === 'default') {
+            locals.push({ local: imp.local, member: true });
+            if (exportedAs.has('default'))
+                locals.push({ local: imp.local, member: false });
+        }
+        else if (exportedAs.has(imp.name))
+            locals.push({ local: imp.local, member: false });
+        byFile.set(imp.file, locals);
+    }
+    for (const [other, locals] of byFile) {
+        if (!locals.length)
+            continue;
+        for (const fn of index.get(other).fns) {
+            const hit = fn.calls.some((c) => locals.some((l) => (l.member ? c.obj === l.local && c.prop === target.name : c.obj === null && c.prop === l.local)));
+            if (hit)
+                out.push({ file: other, fn });
+        }
+    }
+    return out;
+}
+/** A handler within two calling levels of `start`, or null. */
+function findHandlerPath(file, start) {
+    const f = file.replace(/\\/g, '/');
+    if (start.handler)
+        return { handler: start.handler, file: f, line: start.line, levels: 0 };
+    let frontier = [{ file: f, fn: start }];
+    const seen = new Set([`${f}#${start.id}`]);
+    for (let level = 1; level <= MAX_LEVELS; level++) {
+        const next = [];
+        for (const node of frontier) {
+            for (const c of callersOf(node.file, node.fn)) {
+                const key = `${c.file}#${c.fn.id}`;
+                if (seen.has(key))
+                    continue;
+                seen.add(key);
+                if (c.fn.handler)
+                    return { handler: c.fn.handler, file: c.file, line: c.fn.line, levels: level };
+                next.push(c);
+            }
+        }
+        frontier = next;
+    }
+    return null;
+}
+//# sourceMappingURL=blocking-io-reach.js.map
+
+/***/ }),
+
 /***/ 5522:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -776,7 +1175,15 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.blockingIoRules = void 0;
 const traverse_1 = __importDefault(__nccwpck_require__(8254));
 const t = __importStar(__nccwpck_require__(9185));
-const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs'];
+const blocking_io_reach_1 = __nccwpck_require__(9902);
+const blocking_io_generator_1 = __nccwpck_require__(535);
+/**
+ * `.cjs` is scanned by the blocking-io rules only (Stage 2, item 2): Study 02
+ * scanned it, and CommonJS build output and config are where it is common.
+ * The walker collects it for every rule; rules whose patterns do not list it
+ * never see it, so no other rule's counts change.
+ */
+const JS_PATTERNS = ['*.js', '*.ts', '*.jsx', '*.tsx', '*.mjs', '*.cjs'];
 const LOOP_TYPES = new Set(['ForStatement', 'ForOfStatement', 'ForInStatement', 'WhileStatement', 'DoWhileStatement']);
 const SYNC_FILE_METHODS = new Set([
     'readFileSync', 'writeFileSync', 'appendFileSync', 'copyFileSync',
@@ -797,14 +1204,123 @@ const SYNC_FILE_METHODS = new Set([
  * The genuinely expensive ones are the key-derivation functions.
  */
 const SYNC_CRYPTO_METHODS = new Set([
-    'randomBytes',
+    'randomBytes', 'randomFillSync',
     'pbkdf2Sync', 'scryptSync', 'generateKeyPairSync', 'generateKeySync',
 ]);
 const EXPENSIVE_CRYPTO_METHODS = new Set([
     'pbkdf2Sync', 'scryptSync', 'generateKeyPairSync', 'generateKeySync',
 ]);
 const SYNC_CHILD_PROCESS_METHODS = new Set(['execSync', 'execFileSync', 'spawnSync']);
-const SYNC_DB_METHODS = new Set(['querySync', 'executeSync', 'runSync', 'getSync', 'allSync']);
+/**
+ * isolated-vm's synchronous API (Stage 2, item 3). Running a script in an
+ * isolate with `runSync` blocks the calling thread until the script finishes
+ * or times out: real blocking, but script execution, not the database call
+ * these names used to be counted as. Reported only in files that import
+ * isolated-vm, because `runSync` and `getSync` are common method names.
+ */
+const IVM_SYNC_METHODS = new Set([
+    'runSync', 'evalSync', 'evalClosureSync', 'applySync', 'applySyncPromise', 'getSync', 'setSync', 'deleteSync',
+    'compileScriptSync', 'compileModuleSync', 'createContextSync', 'instantiateSync', 'evaluateSync',
+]);
+function importsIsolatedVm(ast) {
+    for (const node of ast.program?.body ?? []) {
+        if (node.type === 'ImportDeclaration' && node.source?.value === 'isolated-vm')
+            return true;
+    }
+    let found = false;
+    try {
+        (0, traverse_1.default)(ast, {
+            noScope: true,
+            CallExpression(path) {
+                const n = path.node;
+                if (n.callee?.name === 'require' && n.arguments?.[0]?.value === 'isolated-vm') {
+                    found = true;
+                    path.stop();
+                }
+            },
+            ImportExpression(path) {
+                if (path.node.source?.value === 'isolated-vm') {
+                    found = true;
+                    path.stop();
+                }
+            },
+        });
+    }
+    catch {
+        // ignore
+    }
+    return found;
+}
+/**
+ * zlib's synchronous forms (Stage 2, item 2). Compression is CPU work on the
+ * calling thread: for a large buffer it blocks as long as a file read, and
+ * Study 02 reported 59 of them.
+ */
+const SYNC_ZLIB_METHODS = new Set([
+    'deflateSync', 'inflateSync', 'deflateRawSync', 'inflateRawSync', 'gzipSync', 'gunzipSync',
+    'unzipSync', 'brotliCompressSync', 'brotliDecompressSync',
+]);
+/**
+ * Only names that are a database driver's synchronous API (ibm_db, odbc).
+ * `runSync`, `getSync` and `allSync` were in this list and matched methods
+ * that happen to share the name: sequelize's in-memory hook runner, config
+ * getters, isolated-vm's script execution, async HTTP clients. In the Blocking
+ * I/O story's labelled sample, all 36 database findings were such methods and
+ * none was a blocking database call (2026-10-19).
+ */
+const SYNC_DB_METHODS = new Set(['querySync', 'executeSync', 'prepareSync']);
+/**
+ * Paths whose code does not run in a process that serves concurrent work:
+ * scripts, CLI entry points, examples and demos, benchmarks, codemods,
+ * migrations and seeds, build configuration, bundled tools, and test helpers
+ * the walker does not already skip.
+ *
+ * Measured against the Blocking I/O story's labels (2026-10-19): these paths
+ * held 4,762 of round 0's 10,861 findings, and 301 labelled locations, of
+ * which 296 were tooling and none was `tp`.
+ *
+ * `tools/`, `tasks/` and `docs/` count only at a repository or package root:
+ * deeper down they are domain words (directus serves `ai/tools/`). `vendor/`
+ * is left out for the same reason (a marketplace's `vendor/` routes); bundled
+ * yarn releases are matched by file name instead, and other bundles by
+ * `looksMinified`.
+ */
+const NOT_SERVED_PATH = new RegExp([
+    String.raw `(^|/)(scripts?|\.scripts|bin|examples?|samples?|demos?|playground|sandbox|bench|benchmarks?|codemods?|compiled|\.yarn)/`,
+    String.raw `^(tools?|tasks|internals|\.github|\.ci|docs?|www)/|^packages/[^/]+/(tools?|tasks|scripts|docs?)/`,
+    String.raw `(^|/)[\w-]*codemod[\w-]*/`,
+    String.raw `(^|/)(e2e|tests?|testing|samples?|examples?)-[\w.-]+/|(^|/)[\w.-]+-(e2e|tests|samples|examples)/`,
+    String.raw `(^|/)[\w.-]+-(test|testing)-(utils|helpers|shared|harness|kit)[\w.-]*/|(^|/)test-(helpers|utils)\.[cm]?[jt]sx?$`,
+    String.raw `(^|/)(migrations?|seeds?|seeders)(/|$)|(^|/)seed[-\w]*\.[cm]?[jt]s$`,
+    String.raw `(^|/)[\w.-]*\.config\.[cm]?[jt]s$|(^|/)(Makefile|gulpfile|Gruntfile|Jakefile)\.[cm]?[jt]s$`,
+    String.raw `(^|/)(prepublish|postinstall|preinstall|prepare)\.[cm]?js$|(^|/)\.pnp\.(c?js|loader\.mjs)$|(^|/)yarn-[\d.]+\.c?js$`,
+].join('|'), 'i');
+/** A bundle rather than source: any line this long is generated. */
+function looksMinified(content) {
+    let start = 0;
+    while (start < content.length) {
+        const end = content.indexOf('\n', start);
+        const stop = end === -1 ? content.length : end;
+        if (stop - start > 1000)
+            return true;
+        start = stop + 1;
+    }
+    return false;
+}
+/**
+ * The call's source, when an async rewrite can go in its place: its
+ * innermost function is async, so `await` is legal there. The solution
+ * generator rewrites only what this returns; a call in a sync function or at
+ * module level gets no suggestion, because making the caller async is a
+ * change to every caller.
+ */
+function awaitableSource(path, content) {
+    const fn = path.getFunctionParent?.() ?? path.findParent((p) => p.isFunction?.());
+    if (!fn?.node?.async)
+        return undefined;
+    const node = path.node;
+    return typeof node.start === 'number' && typeof node.end === 'number' ? content.slice(node.start, node.end) : undefined;
+}
 function snippetAt(code, line) {
     return (code.split('\n')[line - 1] ?? '').trim().slice(0, 120);
 }
@@ -820,7 +1336,10 @@ function isInLoop(path) {
     }
     return false;
 }
-function isInRequestHandler(path) {
+const FUNCTION_TYPES = new Set([
+    'FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ObjectMethod', 'ClassMethod', 'ClassPrivateMethod',
+]);
+function isInRequestHandler(path, filePath = '') {
     let p = path;
     while (p?.node) {
         const callee = p.node.callee;
@@ -830,15 +1349,27 @@ function isInRequestHandler(path) {
             if (['app', 'router', 'express', 'server'].includes(objName))
                 return true;
         }
-        if (p.node.type === 'FunctionDeclaration' || p.node.type === 'FunctionExpression') {
-            const names = (p.node.params || []).map((param) => param.name);
-            if (names.includes('req') && names.includes('res'))
-                return true;
-        }
+        // Any function form: `async (req, res) => {}` handlers and class or object
+        // methods were missed when only declarations and expressions counted.
+        // handlerKind also knows Next.js routes, controllers taking ctx and
+        // Electron ipcMain handlers (Stage 2, item 1).
+        if (FUNCTION_TYPES.has(p.node.type) && (0, blocking_io_reach_1.handlerKind)(p, filePath))
+            return true;
         p = p.parentPath;
     }
     return false;
 }
+/**
+ * Findings outside a handler, kept until finalize() can look for a handler
+ * among their callers. Cleared at the start of each scan.
+ */
+const pending = new Map();
+/**
+ * Findings with no drop-in fix whose call has an async counterpart: where the
+ * call sits, so finalize() can write a refactor note naming the function to
+ * make async and its callers.
+ */
+const refactor = new Map();
 /**
  * Whether this file is plausibly part of a server at all.
  *
@@ -885,9 +1416,13 @@ function fileLooksLikeServer(ast) {
 function detectBlockingIoIssues(filePath, content, ast) {
     if (!ast)
         return [];
+    if (NOT_SERVED_PATH.test(filePath.replace(/\\/g, '/')) || looksMinified(content))
+        return [];
     const issues = [];
+    (0, blocking_io_reach_1.indexFile)(filePath, ast);
     try {
         const serverFile = fileLooksLikeServer(ast);
+        const usesIvm = importsIsolatedVm(ast);
         (0, traverse_1.default)(ast, {
             noScope: true,
             CallExpression(path) {
@@ -897,19 +1432,38 @@ function detectBlockingIoIssues(filePath, content, ast) {
                 const loc = node.loc?.start;
                 if (!methodName || !loc)
                     return;
+                // A finding outside a handler waits for finalize(), which raises it to
+                // `promote` if a handler calls its function within two levels.
+                const later = (promote) => {
+                    pending.set(issues[issues.length - 1], { offset: node.start, promote });
+                };
+                // After a push: a call that cannot take a drop-in async rewrite gets a
+                // refactor note in finalize(), when the callers are known.
+                const noteRefactor = () => {
+                    const issue = issues[issues.length - 1];
+                    if (issue.codeBefore)
+                        return;
+                    const asyncForm = (0, blocking_io_generator_1.asyncFormOf)(methodName, issue.rule);
+                    if (!asyncForm)
+                        return;
+                    const fnPath = path.getFunctionParent?.();
+                    const fnName = fnPath ? (0, blocking_io_reach_1.nameOf)(fnPath) : null;
+                    // A handler written as a sync function is fixed by making the handler
+                    // itself async: frameworks await what it returns.
+                    const handler = fnPath ? (0, blocking_io_reach_1.handlerKind)(fnPath, filePath) : null;
+                    refactor.set(issue, { offset: node.start, where: !fnPath ? 'module' : handler ? 'handler' : fnName ? 'named' : 'callback', fnName, asyncForm, handler });
+                };
                 if (SYNC_FILE_METHODS.has(methodName)) {
                     const inLoop = isInLoop(path);
-                    const inHandler = isInRequestHandler(path);
-                    // Request-handler context dominates: blocking one request handler
-                    // stalls every other in-flight request. A loop only multiplies a
-                    // cost that matters in the first place.
-                    let severity;
-                    if (inHandler)
-                        severity = inLoop ? 'critical' : 'high';
-                    else if (serverFile)
-                        severity = inLoop ? 'high' : 'medium';
-                    else
-                        severity = inLoop ? 'medium' : 'low';
+                    const inHandler = isInRequestHandler(path, filePath);
+                    // Request-handler context is the only signal that ranks: blocking one
+                    // request handler stalls every other in-flight request. A loop only
+                    // multiplies a cost that matters in the first place. Being in a
+                    // file that imports a server module does not: in the Blocking I/O
+                    // story's labels, such findings outside a handler were tp no more
+                    // often than findings in files with no sign of a server (2.2% and
+                    // 4.2%), so both are low (2026-10-19).
+                    const severity = inHandler ? (inLoop ? 'critical' : 'high') : 'low';
                     const context = inHandler
                         ? ' In a request handler, this blocks every other in-flight request.'
                         : serverFile
@@ -921,11 +1475,15 @@ function detectBlockingIoIssues(filePath, content, ast) {
                         title: `Blocking file operation: ${methodName}`,
                         description: `Synchronous file operation '${methodName}' blocks the event loop.${inLoop ? ' It runs once per iteration here.' : ''}${context}`,
                         snippet: snippetAt(content, loc.line),
+                        codeBefore: awaitableSource(path, content),
                         recommendation: `Use ${methodName.replace('Sync', '')} with async/await instead.`,
                         studyReference: 'Study 02',
                         empiricalSpeedup: '5\u201315\u00d7 slower',
-                        confidence: inHandler ? 0.85 : serverFile ? 0.7 : 0.4,
+                        confidence: inHandler ? 0.85 : 0.4,
                     });
+                    noteRefactor();
+                    if (!inHandler)
+                        later(inLoop ? 'critical' : 'high');
                     return;
                 }
                 if (SYNC_CRYPTO_METHODS.has(methodName)) {
@@ -935,48 +1493,103 @@ function detectBlockingIoIssues(filePath, content, ast) {
                         if (last?.type === 'ArrowFunctionExpression' || last?.type === 'FunctionExpression')
                             return;
                     }
-                    const inHandler = isInRequestHandler(path);
+                    const inHandler = isInRequestHandler(path, filePath);
                     const expensive = EXPENSIVE_CRYPTO_METHODS.has(methodName);
                     issues.push({
                         id: '', rule: 'blocking-io/sync-crypto-operation', category: 'blocking-io',
-                        severity: expensive ? (inHandler ? 'high' : 'medium') : 'low',
+                        severity: expensive ? (inHandler ? 'high' : 'medium') : (inHandler ? 'medium' : 'low'),
                         file: filePath, line: loc.line, column: loc.column,
                         title: `Blocking crypto operation: ${methodName}`,
                         description: expensive
                             ? `Synchronous key derivation '${methodName}' is deliberately CPU-intensive and blocks the event loop for its entire duration.`
                             : `'${methodName}' is synchronous, though it is fast at typical sizes.`,
                         snippet: snippetAt(content, loc.line),
+                        codeBefore: awaitableSource(path, content),
                         recommendation: 'Use the async version with util.promisify or a native async equivalent.',
                         studyReference: 'Study 02',
                         confidence: expensive ? 0.75 : 0.4,
                     });
+                    noteRefactor();
+                    if (!inHandler)
+                        later(expensive ? 'high' : 'medium');
+                    return;
+                }
+                if (SYNC_ZLIB_METHODS.has(methodName)) {
+                    const inHandler = isInRequestHandler(path, filePath);
+                    issues.push({
+                        id: '', rule: 'blocking-io/sync-zlib-operation', category: 'blocking-io',
+                        severity: inHandler ? 'high' : 'low',
+                        file: filePath, line: loc.line, column: loc.column,
+                        title: `Blocking compression: ${methodName}`,
+                        description: `Synchronous zlib call '${methodName}' compresses or decompresses on the event loop; for a large buffer it blocks as long as a file read.`,
+                        snippet: snippetAt(content, loc.line),
+                        codeBefore: awaitableSource(path, content),
+                        recommendation: `Use ${methodName.replace(/Sync$/, '')} with util.promisify, or a stream, instead.`,
+                        studyReference: 'Study 02',
+                        confidence: inHandler ? 0.8 : 0.4,
+                    });
+                    noteRefactor();
+                    if (!inHandler)
+                        later('high');
                     return;
                 }
                 if (SYNC_CHILD_PROCESS_METHODS.has(methodName)) {
+                    // Outside a request handler, a synchronous child process is almost
+                    // always a CLI, a build step or a startup check: none of the 54 in
+                    // the Blocking I/O story's labelled sample was tp (2026-10-19).
+                    const inHandler = isInRequestHandler(path, filePath);
                     issues.push({
                         id: '', rule: 'blocking-io/sync-child-process', category: 'blocking-io',
-                        severity: serverFile ? 'high' : 'medium',
+                        severity: inHandler ? 'high' : 'low',
                         file: filePath, line: loc.line, column: loc.column,
                         title: `Blocking child process: ${methodName}`,
                         description: `Synchronous child process call '${methodName}' blocks until the process exits.${serverFile ? '' : ' This file shows no sign of being part of a server; in a build or CLI script this is usually intentional.'}`,
                         snippet: snippetAt(content, loc.line),
+                        codeBefore: awaitableSource(path, content),
                         recommendation: 'Use exec/execFile/spawn with callbacks or util.promisify instead.',
                         studyReference: 'Study 02',
-                        confidence: serverFile ? 0.85 : 0.5,
+                        confidence: inHandler ? 0.85 : 0.4,
                     });
+                    noteRefactor();
+                    if (!inHandler)
+                        later('high');
+                    return;
+                }
+                if (usesIvm && IVM_SYNC_METHODS.has(methodName) && t.isMemberExpression(callee)) {
+                    const inHandler = isInRequestHandler(path, filePath);
+                    issues.push({
+                        id: '', rule: 'blocking-io/sync-isolate-execution', category: 'blocking-io',
+                        severity: inHandler ? 'high' : 'low',
+                        file: filePath, line: loc.line, column: loc.column,
+                        title: `Blocking isolate call: ${methodName}`,
+                        description: `isolated-vm's '${methodName}' runs on the calling thread and blocks the event loop until the isolate returns or times out.`,
+                        snippet: snippetAt(content, loc.line),
+                        codeBefore: awaitableSource(path, content),
+                        recommendation: `Use the async form (${methodName.replace(/Sync(Promise)?$/, '')}) and await it; the isolate then runs on its own thread.`,
+                        studyReference: 'Study 02',
+                        confidence: inHandler ? 0.8 : 0.45,
+                    });
+                    noteRefactor();
+                    if (!inHandler)
+                        later('high');
                     return;
                 }
                 if (SYNC_DB_METHODS.has(methodName) && t.isMemberExpression(callee)) {
+                    const inHandler = isInRequestHandler(path, filePath);
                     issues.push({
-                        id: '', rule: 'blocking-io/sync-database-operation', category: 'blocking-io', severity: 'critical',
+                        id: '', rule: 'blocking-io/sync-database-operation', category: 'blocking-io', severity: inHandler ? 'critical' : 'medium',
                         file: filePath, line: loc.line, column: loc.column,
                         title: `Blocking database operation: ${methodName}`,
                         description: 'Synchronous database calls block the event loop and prevent handling other requests.',
                         snippet: snippetAt(content, loc.line),
+                        codeBefore: awaitableSource(path, content),
                         recommendation: 'Use the async database method with await.',
                         studyReference: 'Study 02',
                         confidence: 0.75,
                     });
+                    noteRefactor();
+                    if (!inHandler)
+                        later('critical');
                 }
             },
         });
@@ -986,22 +1599,98 @@ function detectBlockingIoIssues(filePath, content, ast) {
     }
     return issues;
 }
+/**
+ * After every file is scanned: raise a finding whose function a request
+ * handler calls within two levels, in its own file or through an import, to
+ * the severity it would have inside the handler, and say which handler.
+ */
+function finalizeBlockingIo(issues) {
+    for (const issue of issues) {
+        const r = refactor.get(issue);
+        if (r)
+            issue.recommendation = refactorNote(issue, r);
+    }
+    for (const issue of issues) {
+        const p = pending.get(issue);
+        if (!p)
+            continue;
+        const fn = (0, blocking_io_reach_1.enclosingFn)(issue.file, p.offset);
+        if (!fn)
+            continue;
+        const hp = (0, blocking_io_reach_1.findHandlerPath)(issue.file, fn);
+        if (!hp)
+            continue;
+        issue.severity = p.promote;
+        issue.confidence = 0.7;
+        const where = hp.file === issue.file.replace(/\\/g, '/') ? `line ${hp.line}` : `${hp.file}:${hp.line}`;
+        issue.description = issue.description.replace(/ This file shows no sign of being part of a server[^]*$/, '')
+            + (hp.levels === 0
+                ? ` It is in a handler (${hp.handler}, ${where}), so it runs while the process is serving other work.`
+                : ` It is reached from a handler (${hp.handler}, ${where}) ${hp.levels === 1 ? 'one call' : 'two calls'} up, so it runs while the process is serving other work.`);
+    }
+    return issues;
+}
+/**
+ * A refactor suggestion, labelled as one: the call cannot be awaited where it
+ * is, so the fix is to make its function async and await that function where
+ * it is called. Names the callers the scan can see, up to three.
+ */
+function refactorNote(issue, r) {
+    const head = blocking_io_generator_1.REFACTOR_PREFIX;
+    if (r.where === 'handler') {
+        return `${head} the call is in a synchronous handler, a ${r.handler}. Make the handler async, which the framework awaits, and await ${r.asyncForm} in it; nothing else calls a handler, so the change stays in this function.`;
+    }
+    if (r.where === 'module') {
+        return `${head} this runs at module level, when the module is first loaded. That is usually startup, where blocking is harmless; if the module is loaded lazily while serving, move the work into an async initialiser that uses ${r.asyncForm}.`;
+    }
+    if (r.where === 'callback') {
+        return `${head} the call is inside a synchronous callback, where await is not available. Turn the loop or callback into a for...of loop (or an async callback whose promise the caller awaits; Array.forEach does not), inside an async function, and await ${r.asyncForm} there.`;
+    }
+    const fn = (0, blocking_io_reach_1.enclosingFn)(issue.file, r.offset);
+    const callers = fn && fn.name === r.fnName ? (0, blocking_io_reach_1.callersOf)(issue.file, fn) : [];
+    const own = issue.file.replace(/\\/g, '/');
+    const list = callers.slice(0, 3).map((c) => (c.file === own ? `line ${c.fn.line}` : `${c.file}:${c.fn.line}`)).join(', ');
+    const more = callers.length > 3 ? ` and ${callers.length - 3} more` : '';
+    const where = callers.length
+        ? `then await '${r.fnName}' where it is called (${list}${more}), and so on up to a caller that is already async`
+        : `then await '${r.fnName}' wherever it is called (no caller was found in the scanned files; it may be exported or called dynamically)`;
+    return `${head} '${r.fnName}' is synchronous, so ${r.asyncForm} cannot be awaited here. Make '${r.fnName}' async and await ${r.asyncForm}, ${where}.`;
+}
+function resetBlockingIo() {
+    pending.clear();
+    refactor.clear();
+    (0, blocking_io_reach_1.resetReach)();
+}
 exports.blockingIoRules = [
     {
-        id: 'blocking-io/sync-file-operation', name: 'Sync File Operation', category: 'blocking-io', severity: 'high',
+        id: 'blocking-io/sync-file-operation', name: 'Sync File Operation', category: 'blocking-io', severity: 'low',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
+        reset: resetBlockingIo, finalize: finalizeBlockingIo,
     },
     {
         id: 'blocking-io/sync-crypto-operation', name: 'Sync Crypto Operation', category: 'blocking-io', severity: 'medium',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
+        reset: resetBlockingIo, finalize: finalizeBlockingIo,
     },
     {
-        id: 'blocking-io/sync-child-process', name: 'Sync Child Process', category: 'blocking-io', severity: 'medium',
+        id: 'blocking-io/sync-isolate-execution', name: 'Sync Isolate Execution', category: 'blocking-io', severity: 'low',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
+        reset: resetBlockingIo, finalize: finalizeBlockingIo,
     },
     {
-        id: 'blocking-io/sync-database-operation', name: 'Sync Database Operation', category: 'blocking-io', severity: 'critical',
+        id: 'blocking-io/sync-zlib-operation', name: 'Sync Zlib Operation', category: 'blocking-io', severity: 'low',
         filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
+        reset: resetBlockingIo, finalize: finalizeBlockingIo,
+    },
+    {
+        id: 'blocking-io/sync-child-process', name: 'Sync Child Process', category: 'blocking-io', severity: 'low',
+        filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
+        reset: resetBlockingIo, finalize: finalizeBlockingIo,
+    },
+    {
+        id: 'blocking-io/sync-database-operation', name: 'Sync Database Operation', category: 'blocking-io', severity: 'medium',
+        filePatterns: JS_PATTERNS, needsAst: true, detect: detectBlockingIoIssues,
+        reset: resetBlockingIo, finalize: finalizeBlockingIo,
     },
 ];
 //# sourceMappingURL=blocking-io-rules.js.map
@@ -6170,6 +6859,203 @@ exports.BaseSolutionGenerator = BaseSolutionGenerator;
 
 /***/ }),
 
+/***/ 535:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+/**
+ * Blocking I/O Solution Generator
+ *
+ * Held to the Missing Index standard: paste the suggestion over the call and
+ * the finding it came from is gone, and the file still parses. The rules put
+ * the call in `codeBefore` only when its function is already async, so the
+ * `await` in every suggestion is legal where it goes. A call in a sync
+ * function gets nothing: making it async changes every caller, which is a
+ * refactor, not a replacement.
+ *
+ *   fs           (await fs.promises.readFile(p, 'utf8'))
+ *   existsSync   (await fs.promises.access(p).then(() => true, () => false))
+ *   crypto, zlib (await new Promise((resolve, reject) => crypto.scrypt(pw, salt, 64, (err, key) => err ? reject(err) : resolve(key))))
+ *   isolated-vm  (await script.run(context, { timeout: 50 }))
+ *
+ * The Promise wrapper is used instead of `util.promisify` because it needs no
+ * import: the suggestion is complete as pasted.
+ *
+ * Where the call cannot take an await (its function is sync, it sits in a
+ * callback, or at module level), the rule writes a refactor note into the
+ * recommendation, naming the function to make async and its callers, and this
+ * generator returns it as a `blocking-io-refactor` solution: risk high, no
+ * code. It is advice for a person, not a replacement, and the corpus check
+ * leaves it out.
+ *
+ * What is deliberately left out:
+ *
+ * - fd-based fs calls (`openSync`, `closeSync`, `fstatSync`, ...): the async
+ *   API returns a FileHandle, not a descriptor, so every later use changes.
+ * - Child processes: `execSync` returns stdout and throws on a non-zero exit,
+ *   `spawnSync` returns a status object, and `stdio: 'inherit'` behaves
+ *   differently once the call is async. None of the 54 sampled was a real
+ *   problem; a rewrite would be all risk.
+ * - Database `querySync`: drivers differ on whether the async form takes a
+ *   callback or returns a promise.
+ * - A bare `readFileSync(...)` imported by name: the async name is not in
+ *   scope, and adding an import is outside the call.
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.BlockingIoSolutionGenerator = exports.REFACTOR_PREFIX = void 0;
+exports.asyncFormOf = asyncFormOf;
+exports.toAsync = toAsync;
+const parser_1 = __nccwpck_require__(1755);
+const base_generator_1 = __nccwpck_require__(8788);
+/** fs sync method -> fs.promises method with the same arguments and result. */
+const FS_PROMISES = {
+    readFileSync: 'readFile', writeFileSync: 'writeFile', appendFileSync: 'appendFile', copyFileSync: 'copyFile',
+    mkdirSync: 'mkdir', rmdirSync: 'rmdir', unlinkSync: 'unlink', renameSync: 'rename', statSync: 'stat',
+    lstatSync: 'lstat', readdirSync: 'readdir', readlinkSync: 'readlink', realpathSync: 'realpath',
+    chmodSync: 'chmod', chownSync: 'chown', truncateSync: 'truncate', utimesSync: 'utimes', accessSync: 'access',
+    linkSync: 'link', symlinkSync: 'symlink',
+};
+/** Callback APIs: sync method -> async method, and how the callback's results become the value. */
+const CALLBACK_FORMS = {
+    pbkdf2Sync: { async: 'pbkdf2', params: 'err, key', value: 'key' },
+    scryptSync: { async: 'scrypt', params: 'err, key', value: 'key' },
+    generateKeyPairSync: { async: 'generateKeyPair', params: 'err, publicKey, privateKey', value: '{ publicKey, privateKey }' },
+    generateKeySync: { async: 'generateKey', params: 'err, key', value: 'key' },
+    randomBytes: { async: 'randomBytes', params: 'err, buf', value: 'buf' },
+    randomFillSync: { async: 'randomFill', params: 'err, buf', value: 'buf' },
+    deflateSync: { async: 'deflate', params: 'err, buf', value: 'buf' },
+    inflateSync: { async: 'inflate', params: 'err, buf', value: 'buf' },
+    deflateRawSync: { async: 'deflateRaw', params: 'err, buf', value: 'buf' },
+    inflateRawSync: { async: 'inflateRaw', params: 'err, buf', value: 'buf' },
+    gzipSync: { async: 'gzip', params: 'err, buf', value: 'buf' },
+    gunzipSync: { async: 'gunzip', params: 'err, buf', value: 'buf' },
+    unzipSync: { async: 'unzip', params: 'err, buf', value: 'buf' },
+    brotliCompressSync: { async: 'brotliCompress', params: 'err, buf', value: 'buf' },
+    brotliDecompressSync: { async: 'brotliDecompress', params: 'err, buf', value: 'buf' },
+};
+/** isolated-vm: each Sync method has a promise-returning twin taking the same arguments. */
+const IVM_ASYNC = {
+    runSync: 'run', evalSync: 'eval', evalClosureSync: 'evalClosure', applySync: 'apply', getSync: 'get',
+    setSync: 'set', deleteSync: 'delete', compileScriptSync: 'compileScript', compileModuleSync: 'compileModule',
+    createContextSync: 'createContext', instantiateSync: 'instantiate', evaluateSync: 'evaluate',
+};
+/**
+ * The async API a sync call would become, written generically (`fs.promises.readFile`),
+ * for a refactor note where no drop-in rewrite is possible. Null when there is
+ * no direct async counterpart (fd-based fs calls, child processes, databases).
+ */
+function asyncFormOf(method, rule) {
+    if (rule === 'blocking-io/sync-file-operation') {
+        if (method === 'existsSync')
+            return 'fs.promises.access';
+        return FS_PROMISES[method] ? `fs.promises.${FS_PROMISES[method]}` : null;
+    }
+    if (rule === 'blocking-io/sync-crypto-operation')
+        return CALLBACK_FORMS[method] ? `crypto.${CALLBACK_FORMS[method].async} (callback form, or util.promisify)` : null;
+    if (rule === 'blocking-io/sync-zlib-operation')
+        return CALLBACK_FORMS[method] ? `zlib.${CALLBACK_FORMS[method].async} (callback form, or util.promisify)` : null;
+    if (rule === 'blocking-io/sync-isolate-execution')
+        return IVM_ASYNC[method] ? `${IVM_ASYNC[method]}()` : null;
+    return null;
+}
+/** How the rules mark a recommendation that is a refactor, not a replacement. */
+exports.REFACTOR_PREFIX = 'Refactor, not a drop-in fix:';
+class BlockingIoSolutionGenerator extends base_generator_1.BaseSolutionGenerator {
+    constructor() {
+        super(...arguments);
+        this.name = 'Blocking I/O Solution Generator';
+    }
+    async generateSolutions(issue, _context) {
+        if (issue.category !== 'blocking-io')
+            return [];
+        const before = issue.codeBefore ?? '';
+        if (!before.trim()) {
+            // No drop-in rewrite: offer the refactor the rule wrote into the
+            // recommendation, labelled as one, with no code to paste.
+            if (!issue.recommendation?.startsWith(exports.REFACTOR_PREFIX))
+                return [];
+            return [this.createSolution(issue.id || '', 1, 'blocking-io-refactor', '', 40, issue.recommendation, 'high')];
+        }
+        const edit = toAsync(before, issue.rule);
+        if (!edit)
+            return [];
+        const reasoning = [
+            edit.what,
+            'The enclosing function is already async, so the await is legal here; the call no longer holds the event loop while the work runs.',
+            'Errors now arrive as a rejected promise at the same place, so an existing try/catch around the call still catches them.',
+        ].join('\n');
+        return [this.createSolution(issue.id || '', 1, 'blocking-io-async', edit.code, 85, reasoning, 'low')];
+    }
+}
+exports.BlockingIoSolutionGenerator = BlockingIoSolutionGenerator;
+/** The call rewritten to its async form, or null when this shape is left alone. */
+function toAsync(code, rule) {
+    let call;
+    try {
+        call = (0, parser_1.parseExpression)(code, { plugins: ['typescript', 'jsx'] });
+    }
+    catch {
+        return null;
+    }
+    if (call?.type !== 'CallExpression')
+        return null;
+    const callee = call.callee;
+    const member = callee?.type === 'MemberExpression' && !callee.computed && callee.property?.type === 'Identifier';
+    const method = member ? callee.property.name : callee?.type === 'Identifier' ? callee.name : undefined;
+    if (!method)
+        return null;
+    // `(require('crypto') as typeof import('crypto')).randomBytes(16)`: the
+    // receiver's own parentheses are outside its range, and a rewrite that
+    // appends `.promises` needs them back.
+    const obj = member ? callee.object : null;
+    const simple = obj && ['Identifier', 'MemberExpression', 'ThisExpression', 'CallExpression'].includes(obj.type) && !obj.extra?.parenthesized;
+    const recv = obj ? (simple ? code.slice(obj.start, obj.end) : `(${code.slice(obj.start, obj.end)})`) : null;
+    const args = call.arguments.map((a) => code.slice(a.start, a.end));
+    if (call.arguments.some((a) => a.type === 'SpreadElement'))
+        return null;
+    if (rule === 'blocking-io/sync-file-operation') {
+        if (!recv)
+            return null;
+        if (method === 'existsSync') {
+            if (args.length !== 1)
+                return null;
+            return {
+                code: `(await ${recv}.promises.access(${args[0]}).then(() => true, () => false))`,
+                what: `Check existence with ${recv}.promises.access, which resolves when the path exists and rejects when it does not.`,
+            };
+        }
+        const target = FS_PROMISES[method];
+        if (!target)
+            return null;
+        return { code: `(await ${recv}.promises.${target}(${args.join(', ')}))`, what: `Use ${recv}.promises.${target}, which takes the same arguments and resolves to the same value as ${method}.` };
+    }
+    if (rule === 'blocking-io/sync-crypto-operation' || rule === 'blocking-io/sync-zlib-operation') {
+        const form = CALLBACK_FORMS[method];
+        if (!form)
+            return null;
+        // A bare `pbkdf2Sync(...)` has no `pbkdf2` in scope; `randomBytes` is its own async form.
+        if (!recv && form.async !== method)
+            return null;
+        const fn = recv ? `${recv}.${form.async}` : form.async;
+        const params = form.params;
+        return {
+            code: `(await new Promise((resolve, reject) => ${fn}(${[...args, `(${params}) => (err ? reject(err) : resolve(${form.value}))`].join(', ')})))`,
+            what: `Call ${fn} with a callback and await it. It does the same work off the event loop, on libuv's thread pool.`,
+        };
+    }
+    if (rule === 'blocking-io/sync-isolate-execution') {
+        const target = IVM_ASYNC[method];
+        if (!recv || !target)
+            return null;
+        return { code: `(await ${recv}.${target}(${args.join(', ')}))`, what: `Use isolated-vm's ${target}, which takes the same arguments; the isolate then runs on its own thread while the event loop continues.` };
+    }
+    return null;
+}
+//# sourceMappingURL=blocking-io-generator.js.map
+
+/***/ }),
+
 /***/ 6950:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -6840,7 +7726,7 @@ function lastIndexWhere(items, test) {
  * Solution generation.
  *
  * Attaches suggested rewrites to findings. One generator per category; N+1,
- * missing index and payload are covered so far, and a category without a
+ * missing index, payload and blocking I/O are covered so far, and a category without a
  * generator simply gets no solutions rather than a generic template.
  *
  * Generators read `DiagnosticIssue.codeBefore` — the whole loop or construct,
@@ -6848,13 +7734,14 @@ function lastIndexWhere(items, test) {
  * variable names in it.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.extractVariables = exports.parseCodeSafe = exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.DEFAULT_ROW_LIMIT = exports.addRowLimit = exports.PayloadSolutionGenerator = exports.addIndexToModel = exports.IndexSolutionGenerator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = void 0;
+exports.extractVariables = exports.parseCodeSafe = exports.generateTransformationCandidates = exports.analyzeCodePattern = exports.WEIGHT_PRESETS = exports.FitnessCalculator = exports.toAsync = exports.BlockingIoSolutionGenerator = exports.DEFAULT_ROW_LIMIT = exports.addRowLimit = exports.PayloadSolutionGenerator = exports.addIndexToModel = exports.IndexSolutionGenerator = exports.N1SolutionGenerator = exports.BaseSolutionGenerator = void 0;
 exports.hasSolutionGenerator = hasSolutionGenerator;
 exports.generateSolutionsFor = generateSolutionsFor;
 exports.attachSolutions = attachSolutions;
 const n1_generator_1 = __nccwpck_require__(6500);
 const index_generator_1 = __nccwpck_require__(4693);
 const payload_generator_1 = __nccwpck_require__(9031);
+const blocking_io_generator_1 = __nccwpck_require__(535);
 var base_generator_1 = __nccwpck_require__(8788);
 Object.defineProperty(exports, "BaseSolutionGenerator", ({ enumerable: true, get: function () { return base_generator_1.BaseSolutionGenerator; } }));
 var n1_generator_2 = __nccwpck_require__(6500);
@@ -6866,6 +7753,9 @@ var payload_generator_2 = __nccwpck_require__(9031);
 Object.defineProperty(exports, "PayloadSolutionGenerator", ({ enumerable: true, get: function () { return payload_generator_2.PayloadSolutionGenerator; } }));
 Object.defineProperty(exports, "addRowLimit", ({ enumerable: true, get: function () { return payload_generator_2.addRowLimit; } }));
 Object.defineProperty(exports, "DEFAULT_ROW_LIMIT", ({ enumerable: true, get: function () { return payload_generator_2.DEFAULT_ROW_LIMIT; } }));
+var blocking_io_generator_2 = __nccwpck_require__(535);
+Object.defineProperty(exports, "BlockingIoSolutionGenerator", ({ enumerable: true, get: function () { return blocking_io_generator_2.BlockingIoSolutionGenerator; } }));
+Object.defineProperty(exports, "toAsync", ({ enumerable: true, get: function () { return blocking_io_generator_2.toAsync; } }));
 var fitness_calculator_1 = __nccwpck_require__(318);
 Object.defineProperty(exports, "FitnessCalculator", ({ enumerable: true, get: function () { return fitness_calculator_1.FitnessCalculator; } }));
 Object.defineProperty(exports, "WEIGHT_PRESETS", ({ enumerable: true, get: function () { return fitness_calculator_1.WEIGHT_PRESETS; } }));
@@ -6878,6 +7768,7 @@ const GENERATORS = {
     n1: () => new n1_generator_1.N1SolutionGenerator(),
     index: () => new index_generator_1.IndexSolutionGenerator(),
     payload: () => new payload_generator_1.PayloadSolutionGenerator(),
+    'blocking-io': () => new blocking_io_generator_1.BlockingIoSolutionGenerator(),
 };
 /** True when a generator exists for this finding's category. */
 function hasSolutionGenerator(category) {
@@ -84604,7 +85495,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = {"rE":"1.4.1"};
+module.exports = {"rE":"1.5.0"};
 
 /***/ }),
 
