@@ -19,6 +19,28 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
   that is itself one of these directories is still scanned. Measured against
   the published N+1, Missing Index and Large Payloads studies, no published
   figure changes (`empirical-study/stories/04-blocking-io/scripts/walker-impact.js`).
+- blocking-io rules no longer report code in scripts, CLI entry points
+  (`bin/`), examples and demos, benchmarks, codemods, migrations and seeds,
+  build configuration (`*.config.*`, `Makefile.js`, `gulpfile.js`), bundled
+  tools (`compiled/`, `.yarn/`, yarn releases, minified files) and test
+  helpers the walker does not skip. `tools/`, `tasks/` and `docs/` count only
+  at a repository or package root. On the Blocking I/O study's 237
+  repositories this removes 4,902 of 10,861 findings (4,762 by path, 140 in
+  minified bundles), and none of the 40 locations labelled as blocking a
+  serving process.
+- `blocking-io/sync-database-operation` reports only `querySync`,
+  `executeSync` and `prepareSync`. `runSync`, `getSync` and `allSync` matched
+  unrelated methods of the same name (an ORM's hook runner, config getters,
+  async API clients); none of the 36 such findings in the study was a
+  blocking database call, and 35 of them are gone.
+- blocking-io severity now follows request-handler context only. A call in a
+  request handler is high (critical in a loop); elsewhere it is low, whether
+  or not the file imports a server module, which did not separate real
+  problems from noise. `randomBytes` in a handler is medium; a synchronous
+  child process outside a handler is low.
+- blocking-io's request-handler check now recognises arrow functions and
+  class or object methods that take `(req, res)`, not only `function`
+  declarations and expressions.
 
 ## [1.4.1] - 2026-10-06
 

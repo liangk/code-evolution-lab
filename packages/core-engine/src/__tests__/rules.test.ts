@@ -84,6 +84,58 @@ describe('blocking-io rules', () => {
     const issues = detectAll(blockingIoRules, code);
     expect(issues).toEqual([]);
   });
+
+  const detectAt = (file: string, code: string) => blockingIoRules[0].detect(file, code, parse(code));
+
+  it('skips paths that do not run in a serving process', () => {
+    const code = `fs.readFileSync('x'); execSync('git status');`;
+    for (const file of [
+      'scripts/release.js', 'packages/cli/bin/run.js', 'examples/http/server.js', 'playground/ssr/server.js',
+      'bench/run.mjs', 'packages/next/src/compiled/tar/index.js', 'migrations/001.js', 'vite.config.ts',
+      'Makefile.js', '.yarn/releases/yarn-4.js', 'vendor/yarn-1.21.1.js', 'e2e-tests/util.ts',
+      'tools/build.js', 'packages/kit/scripts/sync.js', '.github/scripts/x.mjs', 'transforms/codemods/a.js',
+    ]) expect([file, detectAt(file, code).length]).toEqual([file, 0]);
+  });
+
+  it('keeps domain directories that share a tooling name below the root', () => {
+    const code = `fs.readFileSync('x');`;
+    for (const file of ['api/src/ai/tools/system/index.ts', 'src/services/docs/render.ts', 'vendor/routes/orders.js'])
+      expect([file, detectAt(file, code).length]).toEqual([file, 1]);
+  });
+
+  it('skips a minified bundle', () => {
+    const code = `fs.readFileSync('x');` + ' '.repeat(1200) + `\n`;
+    expect(detectAt('lib/bundle.js', code)).toEqual([]);
+  });
+
+  it('reports database names only for a driver sync API', () => {
+    const code = `db.querySync('SELECT 1'); hooks.runSync('afterInit'); config.getSync('pm2'); stmt.allSync();`;
+    const issues = detectAt('src/db.js', code).filter((i: any) => i.rule === 'blocking-io/sync-database-operation');
+    expect(issues.map((i: any) => i.title)).toEqual(['Blocking database operation: querySync']);
+  });
+
+  it('treats arrow functions and methods taking (req, res) as handlers', () => {
+    const code = `
+      exports.postSignup = async (req, res) => { const t = crypto.randomBytes(16); fs.readFileSync('x'); };
+      class C { show(req, res) { return fs.readFileSync('y'); } }
+    `;
+    const sev = detectAt('controllers/user.js', code).map((i: any) => i.severity).sort();
+    expect(sev).toEqual(['high', 'high', 'medium']);
+  });
+
+  it('ranks by request-handler context only', () => {
+    const code = `
+      const express = require('express');
+      const app = express();
+      const cfg = fs.readFileSync('config.json');
+      app.get('/x', (req, res) => { res.send(fs.readFileSync('page.html')); execSync('ls'); });
+      execSync('git rev-parse HEAD');
+    `;
+    const bySeverity = detectAt('src/server.js', code).map((i: any) => `${i.rule.replace('blocking-io/', '')}:${i.severity}`).sort();
+    expect(bySeverity).toEqual([
+      'sync-child-process:high', 'sync-child-process:low', 'sync-file-operation:high', 'sync-file-operation:low',
+    ]);
+  });
 });
 
 describe('memory rules', () => {

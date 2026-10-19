@@ -105,17 +105,26 @@ describe('file collection', () => {
   // Test directories that are not named __tests__ are skipped (1.5.0).
   const { mkdtempSync, mkdirSync, writeFileSync } = require('fs');
   const { tmpdir } = require('os');
-  const BLOCKING = "const fs = require('fs');\nmodule.exports = () => fs.readFileSync('x');\n";
+  // One finding per file the walker hands to rules, so these tests see the
+  // walker alone and not any rule's own path filtering.
+  const EVERY_FILE = {
+    id: 'test/every-file', name: 'Every file', category: 'blocking-io', severity: 'low',
+    filePatterns: ['*.js'], needsAst: false,
+    detect: (file: string) => [{
+      id: '', rule: 'test/every-file', category: 'blocking-io', severity: 'low', file, line: 1, column: 0,
+      title: 'file', description: '', snippet: '', recommendation: '', confidence: 1,
+    }],
+  } as any;
 
   function scanTree(files: string[], target = '') {
     const root = mkdtempSync(join(tmpdir(), 'walker-'));
     for (const f of files) {
       mkdirSync(join(root, f, '..'), { recursive: true });
-      writeFileSync(join(root, f), BLOCKING);
+      writeFileSync(join(root, f), 'module.exports = 1;\n');
     }
     const registry = new RuleRegistry();
-    registry.registerAll(getAllRules());
-    const report = analyzeDirectory({ targetPath: join(root, target), categories: ['blocking-io'] }, registry);
+    registry.registerAll([EVERY_FILE]);
+    const report = analyzeDirectory({ targetPath: join(root, target) }, registry);
     return report.issues.map(i => i.file.replace(/\\/g, '/')).sort();
   }
 
