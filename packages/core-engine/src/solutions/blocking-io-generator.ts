@@ -16,6 +16,13 @@
  * The Promise wrapper is used instead of `util.promisify` because it needs no
  * import: the suggestion is complete as pasted.
  *
+ * Where the call cannot take an await (its function is sync, it sits in a
+ * callback, or at module level), the rule writes a refactor note into the
+ * recommendation, naming the function to make async and its callers, and this
+ * generator returns it as a `blocking-io-refactor` solution: risk high, no
+ * code. It is advice for a person, not a replacement, and the corpus check
+ * leaves it out.
+ *
  * What is deliberately left out:
  *
  * - fd-based fs calls (`openSync`, `closeSync`, `fstatSync`, ...): the async
@@ -69,6 +76,25 @@ const IVM_ASYNC: Record<string, string> = {
   createContextSync: 'createContext', instantiateSync: 'instantiate', evaluateSync: 'evaluate',
 };
 
+/**
+ * The async API a sync call would become, written generically (`fs.promises.readFile`),
+ * for a refactor note where no drop-in rewrite is possible. Null when there is
+ * no direct async counterpart (fd-based fs calls, child processes, databases).
+ */
+export function asyncFormOf(method: string, rule: string): string | null {
+  if (rule === 'blocking-io/sync-file-operation') {
+    if (method === 'existsSync') return 'fs.promises.access';
+    return FS_PROMISES[method] ? `fs.promises.${FS_PROMISES[method]}` : null;
+  }
+  if (rule === 'blocking-io/sync-crypto-operation') return CALLBACK_FORMS[method] ? `crypto.${CALLBACK_FORMS[method].async} (callback form, or util.promisify)` : null;
+  if (rule === 'blocking-io/sync-zlib-operation') return CALLBACK_FORMS[method] ? `zlib.${CALLBACK_FORMS[method].async} (callback form, or util.promisify)` : null;
+  if (rule === 'blocking-io/sync-isolate-execution') return IVM_ASYNC[method] ? `${IVM_ASYNC[method]}()` : null;
+  return null;
+}
+
+/** How the rules mark a recommendation that is a refactor, not a replacement. */
+export const REFACTOR_PREFIX = 'Refactor, not a drop-in fix:';
+
 export interface AsyncEdit {
   code: string;
   /** One line on what the rewrite does, for the explanation. */
@@ -81,7 +107,12 @@ export class BlockingIoSolutionGenerator extends BaseSolutionGenerator {
   async generateSolutions(issue: DiagnosticIssue, _context: SolutionContext): Promise<Solution[]> {
     if (issue.category !== 'blocking-io') return [];
     const before = issue.codeBefore ?? '';
-    if (!before.trim()) return [];
+    if (!before.trim()) {
+      // No drop-in rewrite: offer the refactor the rule wrote into the
+      // recommendation, labelled as one, with no code to paste.
+      if (!issue.recommendation?.startsWith(REFACTOR_PREFIX)) return [];
+      return [this.createSolution(issue.id || '', 1, 'blocking-io-refactor', '', 40, issue.recommendation, 'high')];
+    }
     const edit = toAsync(before, issue.rule);
     if (!edit) return [];
     const reasoning = [

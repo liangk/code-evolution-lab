@@ -142,7 +142,7 @@ function exportedName(fnPath: any): string | null {
 }
 
 /** The name a function can be called by: declaration, variable, assignment or method key. */
-function nameOf(fnPath: any): string | null {
+export function nameOf(fnPath: any): string | null {
   const node = fnPath.node;
   if (node.id?.name && node.type === 'FunctionDeclaration') return node.id.name;
   const p = fnPath.parentPath?.node;
@@ -284,9 +284,10 @@ function resolve(fromFile: string, spec: string): string | null {
 }
 
 /** Functions (in any file) that call `target`, defined in `file`. */
-function callersOf(file: string, target: FnInfo): { file: string; fn: FnInfo }[] {
+export function callersOf(file: string, target: FnInfo): { file: string; fn: FnInfo }[] {
   const out: { file: string; fn: FnInfo }[] = [];
-  if (!target.name) return out;
+  file = file.replace(/\\/g, '/');
+  if (!target.name || !index.has(file)) return out;
   const fi = index.get(file)!;
   // Same file: f(), this.f(), obj.f() where obj is not an import.
   for (const fn of fi.fns) {

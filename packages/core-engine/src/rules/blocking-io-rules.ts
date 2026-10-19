@@ -11,7 +11,8 @@
 import traverse from '@babel/traverse';
 import * as t from '@babel/types';
 import type { RuleDefinition, DiagnosticIssue } from '../types';
-import { indexFile, enclosingFn, findHandlerPath, handlerKind, resetReach } from './blocking-io-reach';
+import { indexFile, enclosingFn, findHandlerPath, handlerKind, resetReach, nameOf, callersOf } from './blocking-io-reach';
+import { asyncFormOf, REFACTOR_PREFIX } from '../solutions/blocking-io-generator';
 
 /**
  * `.cjs` is scanned by the blocking-io rules only (Stage 2, item 2): Study 02
@@ -199,6 +200,13 @@ function isInRequestHandler(path: any, filePath = ''): boolean {
 const pending = new Map<DiagnosticIssue, { offset: number; promote: DiagnosticIssue['severity'] }>();
 
 /**
+ * Findings with no drop-in fix whose call has an async counterpart: where the
+ * call sits, so finalize() can write a refactor note naming the function to
+ * make async and its callers.
+ */
+const refactor = new Map<DiagnosticIssue, { offset: number; where: 'module' | 'callback' | 'named'; fnName: string | null; asyncForm: string }>();
+
+/**
  * Whether this file is plausibly part of a server at all.
  *
  * Blocking the event loop only matters when there is an event loop serving
@@ -262,6 +270,17 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
         const later = (promote: DiagnosticIssue['severity']) => {
           pending.set(issues[issues.length - 1], { offset: node.start, promote });
         };
+        // After a push: a call that cannot take a drop-in async rewrite gets a
+        // refactor note in finalize(), when the callers are known.
+        const noteRefactor = () => {
+          const issue = issues[issues.length - 1];
+          if (issue.codeBefore) return;
+          const asyncForm = asyncFormOf(methodName, issue.rule);
+          if (!asyncForm) return;
+          const fnPath = path.getFunctionParent?.();
+          const fnName = fnPath ? nameOf(fnPath) : null;
+          refactor.set(issue, { offset: node.start, where: !fnPath ? 'module' : fnName ? 'named' : 'callback', fnName, asyncForm });
+        };
 
         if (SYNC_FILE_METHODS.has(methodName)) {
           const inLoop = isInLoop(path);
@@ -294,6 +313,7 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
             empiricalSpeedup: '5\u201315\u00d7 slower',
             confidence: inHandler ? 0.85 : 0.4,
           });
+          noteRefactor();
           if (!inHandler) later(inLoop ? 'critical' : 'high');
           return;
         }
@@ -320,6 +340,7 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
             studyReference: 'Study 02',
             confidence: expensive ? 0.75 : 0.4,
           });
+          noteRefactor();
           if (!inHandler) later(expensive ? 'high' : 'medium');
           return;
         }
@@ -338,6 +359,7 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
             studyReference: 'Study 02',
             confidence: inHandler ? 0.8 : 0.4,
           });
+          noteRefactor();
           if (!inHandler) later('high');
           return;
         }
@@ -359,6 +381,7 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
             studyReference: 'Study 02',
             confidence: inHandler ? 0.85 : 0.4,
           });
+          noteRefactor();
           if (!inHandler) later('high');
           return;
         }
@@ -377,6 +400,7 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
             studyReference: 'Study 02',
             confidence: inHandler ? 0.8 : 0.45,
           });
+          noteRefactor();
           if (!inHandler) later('high');
           return;
         }
@@ -394,6 +418,7 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
             studyReference: 'Study 02',
             confidence: 0.75,
           });
+          noteRefactor();
           if (!inHandler) later('critical');
         }
       },
@@ -412,6 +437,10 @@ function detectBlockingIoIssues(filePath: string, content: string, ast: any): Di
  */
 function finalizeBlockingIo(issues: DiagnosticIssue[]): DiagnosticIssue[] {
   for (const issue of issues) {
+    const r = refactor.get(issue);
+    if (r) issue.recommendation = refactorNote(issue, r);
+  }
+  for (const issue of issues) {
     const p = pending.get(issue);
     if (!p) continue;
     const fn = enclosingFn(issue.file, p.offset);
@@ -429,8 +458,33 @@ function finalizeBlockingIo(issues: DiagnosticIssue[]): DiagnosticIssue[] {
   return issues;
 }
 
+/**
+ * A refactor suggestion, labelled as one: the call cannot be awaited where it
+ * is, so the fix is to make its function async and await that function where
+ * it is called. Names the callers the scan can see, up to three.
+ */
+function refactorNote(issue: DiagnosticIssue, r: { offset: number; where: string; fnName: string | null; asyncForm: string }): string {
+  const head = REFACTOR_PREFIX;
+  if (r.where === 'module') {
+    return `${head} this runs at module level, when the module is first loaded. That is usually startup, where blocking is harmless; if the module is loaded lazily while serving, move the work into an async initialiser that uses ${r.asyncForm}.`;
+  }
+  if (r.where === 'callback') {
+    return `${head} the call is inside a synchronous callback, where await is not available. Turn the loop or callback into a for...of loop (or an async callback whose promise the caller awaits; Array.forEach does not), inside an async function, and await ${r.asyncForm} there.`;
+  }
+  const fn = enclosingFn(issue.file, r.offset);
+  const callers = fn && fn.name === r.fnName ? callersOf(issue.file, fn) : [];
+  const own = issue.file.replace(/\\/g, '/');
+  const list = callers.slice(0, 3).map((c) => (c.file === own ? `line ${c.fn.line}` : `${c.file}:${c.fn.line}`)).join(', ');
+  const more = callers.length > 3 ? ` and ${callers.length - 3} more` : '';
+  const where = callers.length
+    ? `then await '${r.fnName}' where it is called (${list}${more}), and so on up to a caller that is already async`
+    : `then await '${r.fnName}' wherever it is called (no caller was found in the scanned files; it may be exported or called dynamically)`;
+  return `${head} '${r.fnName}' is synchronous, so ${r.asyncForm} cannot be awaited here. Make '${r.fnName}' async and await ${r.asyncForm}, ${where}.`;
+}
+
 function resetBlockingIo(): void {
   pending.clear();
+  refactor.clear();
   resetReach();
 }
 

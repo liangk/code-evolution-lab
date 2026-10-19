@@ -73,6 +73,11 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
   It makes no suggestion for fd-based fs calls, child processes or database
   calls, where the async form is not a drop-in.
+- Where a call cannot be awaited, because it is in a sync function, in a
+  callback or at module level, the blocking-io recommendation is a refactor
+  note labelled `Refactor, not a drop-in fix:`. It names the function to make
+  async and the callers the scan can see. The generator returns this note as a
+  `blocking-io-refactor` solution with high risk and no code.
 
 ## [1.4.1] - 2026-10-06
 
