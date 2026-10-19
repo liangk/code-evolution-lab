@@ -142,6 +142,16 @@ describe('file collection', () => {
     expect(files).toEqual(['src/latest/c.js', 'src/test-utils/b.js', 'src/testing/a.js', 'vendor/d.js']);
   });
 
+  it('counts a .cjs file only when an active rule reads it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'cjs-'));
+    writeFileSync(join(root, 'a.js'), 'module.exports = 1;\n');
+    writeFileSync(join(root, 'b.cjs'), "module.exports = require('fs').readFileSync('x');\n");
+    const registry = new RuleRegistry();
+    registry.registerAll(getAllRules());
+    expect(analyzeDirectory({ targetPath: root, categories: ['payload'] }, registry).summary.filesScanned).toBe(1);
+    expect(analyzeDirectory({ targetPath: root, categories: ['blocking-io'] }, registry).summary.filesScanned).toBe(2);
+  });
+
   it('still scans a target that is itself a skipped directory name', () => {
     const files = scanTree(['test/cli.js'], 'test');
     expect(files).toEqual(['cli.js']);

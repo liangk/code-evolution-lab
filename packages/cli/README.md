@@ -374,10 +374,12 @@ Coverage follows Postgres: an index serves a column only when that column **lead
 
 | Rule | Severity | What it detects | Measured cost |
 |------|----------|----------------|--------------|
-| `blocking-io/sync-file-operation` | low–critical | `readFileSync`/`writeFileSync`/etc. blocking the event loop | **5–15× slower** under concurrent load. Severity depends on context: critical in a request handler inside a loop, low when the file shows no sign of belonging to a server — synchronous fs is usually the right call in a CLI or build script |
-| `blocking-io/sync-crypto-operation` | low–high | `pbkdf2Sync`, `scryptSync`, `generateKeyPairSync` | Key derivation is deliberately CPU-intensive and blocks for its whole duration. `randomBytes` is low severity; `createHash`/`createHmac` are not reported at all — constructing a hash object does no work |
-| `blocking-io/sync-child-process` | medium–high | `execSync`, `execFileSync`, `spawnSync` | Blocks until the child process exits |
-| `blocking-io/sync-database-operation` | critical | `querySync`/`runSync`-style DB calls | Blocks all concurrent requests |
+| `blocking-io/sync-file-operation` | low–critical | `readFileSync`/`writeFileSync`/etc. blocking the event loop | **5–15× slower** under concurrent load. High in a request handler (critical in a loop), and also when a handler calls the function within two levels, in the same file or through an import; the description names the handler. Low everywhere else. Scripts, `bin/`, examples, benchmarks, codemods, migrations, build config and bundles are not reported |
+| `blocking-io/sync-crypto-operation` | low–high | `pbkdf2Sync`, `scryptSync`, `generateKeyPairSync`, `randomBytes`, `randomFillSync` | Key derivation is deliberately CPU-intensive and blocks for its whole duration. `randomBytes`/`randomFillSync` are low, medium when a handler reaches them; `createHash`/`createHmac` are not reported at all — constructing a hash object does no work |
+| `blocking-io/sync-zlib-operation` | low–high | `gzipSync`, `inflateSync`, `brotliCompressSync` and the other zlib `*Sync` methods | Compression runs on the event loop; for a large buffer it blocks as long as a file read |
+| `blocking-io/sync-child-process` | low–high | `execSync`, `execFileSync`, `spawnSync` | Blocks until the child process exits. Low outside a handler, where it is almost always a CLI or build step |
+| `blocking-io/sync-isolate-execution` | low–high | isolated-vm `runSync`, `applySync`, `evalSync`, ... (files importing isolated-vm) | Runs the isolate on the calling thread until it returns or times out |
+| `blocking-io/sync-database-operation` | medium–critical | driver sync APIs: `querySync`, `executeSync`, `prepareSync` | Blocks all concurrent requests |
 
 ### Resource Rules (Study 06 — Resource Leaks)
 

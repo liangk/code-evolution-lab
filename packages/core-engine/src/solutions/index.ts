@@ -2,7 +2,7 @@
  * Solution generation.
  *
  * Attaches suggested rewrites to findings. One generator per category; N+1,
- * missing index and payload are covered so far, and a category without a
+ * missing index, payload and blocking I/O are covered so far, and a category without a
  * generator simply gets no solutions rather than a generic template.
  *
  * Generators read `DiagnosticIssue.codeBefore` — the whole loop or construct,
@@ -13,6 +13,7 @@
 import { N1SolutionGenerator } from './n1-generator';
 import { IndexSolutionGenerator } from './index-generator';
 import { PayloadSolutionGenerator } from './payload-generator';
+import { BlockingIoSolutionGenerator } from './blocking-io-generator';
 import type { BaseSolutionGenerator } from './base-generator';
 import type { DiagnosticCategory } from '../types';
 import type { DiagnosticIssue, Solution, SolutionContext } from './types';
@@ -22,6 +23,7 @@ export { BaseSolutionGenerator } from './base-generator';
 export { N1SolutionGenerator } from './n1-generator';
 export { IndexSolutionGenerator, addIndexToModel } from './index-generator';
 export { PayloadSolutionGenerator, addRowLimit, DEFAULT_ROW_LIMIT } from './payload-generator';
+export { BlockingIoSolutionGenerator, toAsync } from './blocking-io-generator';
 export { FitnessCalculator, WEIGHT_PRESETS } from './fitness-calculator';
 export type { FitnessWeights, FitnessBreakdown, FitnessResult, WeightPreset } from './fitness-calculator';
 export {
@@ -36,6 +38,7 @@ const GENERATORS: Partial<Record<DiagnosticCategory, () => BaseSolutionGenerator
   n1: () => new N1SolutionGenerator(),
   index: () => new IndexSolutionGenerator(),
   payload: () => new PayloadSolutionGenerator(),
+  'blocking-io': () => new BlockingIoSolutionGenerator(),
 };
 
 /** True when a generator exists for this finding's category. */

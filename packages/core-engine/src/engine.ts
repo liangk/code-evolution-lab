@@ -1,6 +1,6 @@
 import * as parser from '@babel/parser';
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join, extname, relative } from 'path';
+import { join, extname, relative, basename } from 'path';
 import { createHash } from 'crypto';
 import type {
   RuleDefinition, DiagnosticIssue, ScanOptions, AnalysisReport,
@@ -18,7 +18,9 @@ import type {
 // (published), and npm always ships package.json regardless of `files`.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const VERSION: string = require('../package.json').version;
-const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs']);
+// `.cjs` is collected since 1.5.0 (Blocking I/O Stage 2, item 2). Only rules
+// whose filePatterns list `*.cjs` read it: the blocking-io rules so far.
+const JS_EXTENSIONS = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs']);
 const PRISMA_FILES = new Set(['schema.prisma']);
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', '.next', '.nuxt', 'build', 'coverage', '__pycache__',
@@ -212,7 +214,11 @@ export function analyzeDirectory(options: ScanOptions, registry: RuleRegistry): 
   // each, but keep reported paths anchored at targetPath so they read the same
   // either way, and deduplicate in case one root nests inside another.
   const roots = includePaths?.length ? includePaths : [targetPath];
-  const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))].sort(schemaFirst);
+  // A .cjs file no active rule reads is left out entirely, so it does not
+  // change the file count (and the score) of a scan that has no use for it.
+  const files = [...new Set(roots.flatMap(root => collectFiles(root, exclude)))]
+    .filter(f => extname(f) !== '.cjs' || rulesForFile(basename(f), activeRules).length > 0)
+    .sort(schemaFirst);
   let allIssues: DiagnosticIssue[] = [];
 
   // Families with a finalize() hook: every rule id sharing that hook, whether

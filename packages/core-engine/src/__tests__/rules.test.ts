@@ -123,6 +123,20 @@ describe('blocking-io rules', () => {
     expect(sev).toEqual(['high', 'high', 'medium']);
   });
 
+  it('reports zlib sync calls and randomFillSync', () => {
+    const code = `const z = zlib.gzipSync(buf); zlib.brotliDecompressSync(b); crypto.randomFillSync(arr); zlib.gzip(buf, cb);`;
+    const got = detectAt('src/pack.js', code).map((i: any) => `${i.rule.replace('blocking-io/', '')}:${i.title.split(': ')[1]}`).sort();
+    expect(got).toEqual(['sync-crypto-operation:randomFillSync', 'sync-zlib-operation:brotliDecompressSync', 'sync-zlib-operation:gzipSync']);
+  });
+
+  it('reports isolated-vm sync calls only in files that import isolated-vm', () => {
+    const withIvm = `import ivm from 'isolated-vm';\nconst r = script.runSync(ctx, { timeout: 50 }); ref.applySync(undefined, []); hooks.runSync('x');`;
+    const without = `hooks.runSync('afterInit'); config.getSync('pm2');`;
+    const titles = (code: string) => detectAt('src/vm.ts', code).filter((i: any) => i.rule === 'blocking-io/sync-isolate-execution').map((i: any) => i.title);
+    expect(titles(withIvm)).toEqual(['Blocking isolate call: runSync', 'Blocking isolate call: applySync', 'Blocking isolate call: runSync']);
+    expect(titles(without)).toEqual([]);
+  });
+
   it('ranks by request-handler context only', () => {
     const code = `
       const express = require('express');

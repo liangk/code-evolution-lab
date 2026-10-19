@@ -41,6 +41,38 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 - blocking-io's request-handler check now recognises arrow functions and
   class or object methods that take `(req, res)`, not only `function`
   declarations and expressions.
+- blocking-io findings are raised to handler severity when a handler calls
+  their function within two levels, in the same file or through an imported
+  binding (including `x = new Imported()` instances). Handlers now include:
+  - callbacks registered on `app`/`router`, under a URL path, with
+    `createServer` or with `ipcMain`, whether inline or by name;
+  - `(request, reply)` and `(request, response)` functions;
+  - Next.js `pages/api` default exports and App Router route handlers;
+  - controller methods taking `ctx` under `controllers/`.
+
+  The description names the handler and how far up it is. On the Blocking I/O
+  study's corpus, 30 of the 40 labelled true positives are now above low
+  severity (14 before), and 258 of 5,924 findings are.
+
+### Added
+
+- `blocking-io/sync-zlib-operation`: the nine zlib `*Sync` methods
+  (`gzipSync`, `inflateSync`, `brotliCompressSync`, ...).
+- `blocking-io/sync-isolate-execution`: isolated-vm's synchronous API
+  (`runSync`, `applySync`, `evalSync`, ...), only in files that import
+  isolated-vm. These calls used to be counted as database operations.
+- `randomFillSync` is reported with the other synchronous crypto calls.
+- `.cjs` files are scanned by the blocking-io rules. A `.cjs` file that no
+  active rule reads is not collected, so file counts and scores of other
+  scans do not change.
+- A blocking I/O solution generator. It applies only when the call's function
+  is already async, so the `await` is legal. It rewrites:
+  - fs calls to `fs.promises`;
+  - crypto and zlib calls to their callback form wrapped in a promise;
+  - isolated-vm calls to their async twins.
+
+  It makes no suggestion for fd-based fs calls, child processes or database
+  calls, where the async form is not a drop-in.
 
 ## [1.4.1] - 2026-10-06
 

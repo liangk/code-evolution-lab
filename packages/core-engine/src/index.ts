@@ -66,6 +66,8 @@ export {
   IndexSolutionGenerator,
   PayloadSolutionGenerator,
   addRowLimit,
+  BlockingIoSolutionGenerator,
+  toAsync,
   FitnessCalculator,
   WEIGHT_PRESETS,
   analyzeCodePattern,
