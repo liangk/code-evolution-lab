@@ -942,7 +942,12 @@ function indexFile(filePath, ast) {
                 // require('./x') bindings
                 if (callee?.name === 'require' && path.node.arguments?.[0]?.type === 'StringLiteral') {
                     const from = path.node.arguments[0].value;
-                    const decl = path.parentPath?.node;
+                    // `require('./x') as typeof import('./x')` (Next.js) and parenthesised
+                    // or non-null-asserted requires bind the same way.
+                    let up = path.parentPath;
+                    while (up && ['TSAsExpression', 'TSSatisfiesExpression', 'TSNonNullExpression', 'ParenthesizedExpression', 'TSTypeAssertion'].includes(up.node.type))
+                        up = up.parentPath;
+                    const decl = up?.node;
                     if (decl?.type === 'VariableDeclarator') {
                         if (decl.id?.type === 'Identifier')
                             imports.set(decl.id.name, { from, name: '*' });
@@ -85495,7 +85500,7 @@ module.exports = parseParams
 /***/ ((module) => {
 
 "use strict";
-module.exports = {"rE":"1.5.0"};
+module.exports = {"rE":"1.5.1"};
 
 /***/ }),
 

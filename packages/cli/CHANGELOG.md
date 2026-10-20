@@ -7,6 +7,17 @@ This project follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) an
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-20
+
+### Fixed
+
+- blocking-io reachability now follows a `require` wrapped in a TypeScript
+  cast, `require('./x') as typeof import('./x')`, and parenthesised or
+  non-null-asserted requires. Next.js loads its crypto helpers this way, so
+  `decryptWithSecret`'s `pbkdf2Sync` (run on every request in Preview Mode)
+  was reported at medium with "no caller found". It is now high, reached
+  from `tryGetPreviewData` one call up.
+
 ## [1.5.0] - 2026-10-20
 
 The blocking-io rules were recalibrated against the 237 repositories of the
@@ -88,13 +99,14 @@ and disappearing that have nothing to do with your code.
 - `blocking-io/sync-database-operation` reports only `querySync`,
   `executeSync` and `prepareSync`. `runSync`, `getSync` and `allSync` matched
   unrelated methods of the same name (an ORM's hook runner, config getters,
-  async API clients); none of the 36 such findings in the study was a
-  blocking database call, and 35 of them are gone.
+  async API clients, isolated-vm script calls); 35 of the 36 such findings in
+  the study were not database calls, and those 35 are gone.
 - blocking-io severity now follows request-handler context only. A call in a
   request handler is high (critical in a loop); elsewhere it is low, whether
   or not the file imports a server module, which did not separate real
-  problems from noise. `randomBytes` in a handler is medium; a synchronous
-  child process outside a handler is low.
+  problems from noise. Key derivation (`pbkdf2Sync`, `scryptSync`, ...) never
+  goes below medium; `randomBytes` in a handler is medium; a synchronous child
+  process outside a handler is low.
 - blocking-io's request-handler check now recognises arrow functions and
   class or object methods that take `(req, res)`, not only `function`
   declarations and expressions.

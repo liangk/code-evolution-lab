@@ -52,6 +52,14 @@ describe('blocking-io reachability (Stage 2, item 1)', () => {
     expect(issues).toEqual(['api/helper.js:2:high']);
   });
 
+  it('follows a require cast with `as typeof import(...)`', () => {
+    const issues = scan({
+      'server/crypto-utils.ts': "import crypto from 'crypto';\nexport function decrypt(secret, data) { return crypto.pbkdf2Sync(secret, data, 100000, 32, 'sha512'); }",
+      'server/preview.ts': "export function tryGetPreviewData(req, res) {\n  const { decrypt } = require('./crypto-utils') as typeof import('./crypto-utils');\n  return decrypt(req.secret, req.cookies.data);\n}",
+    });
+    expect(issues).toEqual(['server/crypto-utils.ts:2:high']);
+  });
+
   it('does not link functions across files by name alone', () => {
     const issues = scan({
       'lib/cache.js': "const fs = require('fs');\nexports.load = function load() { return fs.readFileSync('x'); };",
